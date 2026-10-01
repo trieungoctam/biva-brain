@@ -24,7 +24,7 @@ và **điểm sai chung**. BIVA Brain là bộ tri thức + các job xử lý gi
 L0  PLATFORM   luật chung cho mọi bot (không phụ thuộc ngành)
  └─ L1  NGÀNH       thông lệ, template onboarding, thuật ngữ, bài học của ngành xe khách
      └─ L2  NHÀ XE      điểm riêng của từng nhà xe (ghi đè L1)
-         └─ L3  BOT        (tuỳ chọn) biến thể theo kênh: Zalo, web, hotline
+         └─ L3  BOT        (tuỳ chọn) biến thể theo kênh: Zalo, Messenger, web
 ```
 
 Mỗi tầng chứa 4 loại tri thức, lưu và dùng khác nhau:
@@ -95,7 +95,9 @@ Item rời `active` → observation liên quan stale → re-consolidate → re-c
 
 ### 3.4 recall()
 
-4 arm song song → RRF (k=60) → rerank (top 300) → boost nhân → pack theo `max_tokens`.
+4 arm song song → RRF (k=60) → rerank → boost nhân → pack theo `max_tokens`.
+Không có GPU: trên hot path chỉ rerank top 30–50 (CPU, ngân sách 80 ms, quá hạn thì dùng điểm RRF);
+rerank sâu (top 300) chỉ dùng ở đường nền (reflect, compile, testgen).
 
 | Arm | Cách làm |
 |---|---|
@@ -149,7 +151,8 @@ Danh mục tool đầy đủ: xem [mcp.md](mcp.md).
 ## 6. Kiến trúc runtime: Go + Python
 
 Nguyên tắc: **mọi lượt chat của bot không đi qua Python.** Go giữ hot path và mọi thứ nhiều kết nối;
-Python giữ việc cần LLM/NLP chạy nền; embedding/rerank tách ra TEI.
+Python giữ việc cần LLM/NLP chạy nền; embedding/rerank tách ra TEI (chạy CPU, không cần GPU).
+LLM được gọi **qua thư viện** trong từng service (không có LLM gateway riêng).
 
 ```
  Kênh chat ──► bot-runtime (Go)  ──┐            Builder (AI) ──MCP──► brain-api (Go)
@@ -161,7 +164,7 @@ Python giữ việc cần LLM/NLP chạy nền; embedding/rerank tách ra TEI.
                                    ▲                                         ▲
                      ai-worker (Python): ingest · consolidate · promote · compile · testgen · eval · learn
                                    │
-                                   └──► TEI (Rust): /embed bge-m3 · /rerank bge-reranker-v2-m3
+                                   └──► TEI (Rust, CPU): /embed bge-m3 · /rerank bge-reranker-v2-m3
 ```
 
 | Deployable | Ngôn ngữ | Trách nhiệm |
@@ -169,7 +172,7 @@ Python giữ việc cần LLM/NLP chạy nền; embedding/rerank tách ra TEI.
 | `brain-api` | Go | REST (console), MCP server, recall engine, enqueue job, scheduler (expire, requeue, TTL) |
 | `bot-runtime` | Go | webhook kênh, snapshot hot-reload, LLM streaming, tool calls, recall in-process |
 | `ai-worker` | Python | mọi job dùng LLM/NLP; **mọi prompt nằm ở đây** |
-| `tei` | Rust (HF TEI) | embedding, rerank |
+| `tei` | Rust (HF TEI), CPU | embedding, rerank |
 
 **Giao tiếp giữa Go và Python**
 
@@ -232,17 +235,22 @@ Chưa bắt đầu code. Thứ tự dự kiến:
 | M4 | compile + testgen + sandbox + `/prepare_release`; bot-runtime |
 | M5 | feedback/lessons + knowledge gap + endpoint platform |
 
-## 9. Các điểm cần chốt
+## 9. Quyết định đã chốt
 
-| # | Câu hỏi | Đề xuất hiện tại |
-|---|---|---|
-| 1 | Định dạng hợp đồng Go ⇄ Python | **protobuf** (như đã thống nhất). Phương án gọn hơn: JSON Schema + fixture chung, vì hiện chỉ trao đổi qua payload JSONB, chưa có RPC |
-| 2 | Công cụ migration | Atlas hoặc golang-migrate |
-| 3 | Nhà xe gửi update dưới dạng gì (Zalo, Excel, form, gọi điện)? | Ảnh hưởng thứ tự làm parser ở M1 |
-| 4 | Đã có API đặt vé / tra ghế của nhà xe chưa? | Nếu chưa: bot chỉ tư vấn + handoff |
-| 5 | Quy mô: số nhà xe hiện tại / dự kiến | Quyết định ngưỡng N cho promote và cỡ hạ tầng |
-| 6 | LLM provider cho worker và cho bot | Cần chốt để ước tính chi phí và quota |
-| 7 | Ngưỡng release gate cụ thể | Như mục 4; điều chỉnh sau khi có dữ liệu thật |
+| # | Chủ đề | Quyết định | Lý do |
+|---|---|---|---|
+| 1 | Hợp đồng Go ⇄ Python | **JSON Schema + fixture chung** cho v1; chuyển protobuf khi có RPC trực tiếp | hai bên chỉ trao đổi qua payload JSONB trong Postgres, chưa có RPC; JSON đọc được ngay bằng SQL |
+| 2 | Công cụ migration | **golang-migrate**, file SQL thuần (`up`/`down`) | đơn giản, cả Go và Python đọc được, không khoá vào ORM |
+| 3 | Định dạng update của nhà xe (v1) | **tin nhắn Zalo (text) + file Excel**; form ở M2; ảnh/ghi âm sau | hai nguồn phổ biến nhất, parser rõ ràng |
+| 4 | API đặt vé của nhà xe | **giả định chưa có**: bot tư vấn + handoff; interface `check_seats` sẵn sàng cho nhà xe có API | không chặn tiến độ vì phụ thuộc bên ngoài |
+| 5 | Quy mô thiết kế | **≤ 50 nhà xe, ≤ 2k hội thoại đồng thời** năm đầu; ngưỡng promote **N = 3** nhà xe | đủ để hạ tầng gọn, đo rồi tăng |
+| 6 | LLM | **gọi qua thư viện, không phụ thuộc provider**; 2 hạng model: *nhỏ* (extract, consolidate, eval) và *mạnh* (compile, reflect); model cho bot chọn bằng benchmark trên golden set tiếng Việt; luôn có provider dự phòng | tránh khoá vào một nhà cung cấp; chi phí nền thấp |
+| 7 | Release gate | như mục 4 (coverage bắt buộc 100%, khuyến nghị ≥ 80%, regression 100%, L2 ≥ 95%, 0 conflict, UAT) | điều chỉnh sau khi có dữ liệu thật |
+| 8 | Hạ tầng tính toán | **không có GPU** — TEI chạy CPU; rerank giới hạn trên hot path | xem system-architecture.md |
+| 9 | Kênh v1 | **Zalo, Messenger, web**; **không có hotline (voice)** | giảm phạm vi v1 |
+
+**Còn mở**: BIVA đã có nền tảng chạy bot chưa? Nếu có → Brain chỉ cung cấp tri thức (snapshot/recall/data API)
+và bỏ `bot-runtime`; nếu chưa → giữ `bot-runtime` như thiết kế hiện tại.
 
 ## Tài liệu liên quan
 

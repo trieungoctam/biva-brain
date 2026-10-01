@@ -8,7 +8,7 @@ bảo mật, quan sát và CI/CD. Thiết kế nghiệp vụ (tầng tri thức,
 
 ```
                     ┌──────────────────────┐
-   Hành khách ─────►│  Kênh chat           │  Zalo OA · Messenger · Web widget · Hotline (voice)
+   Hành khách ─────►│  Kênh chat           │  Zalo OA · Messenger · Web widget
                     └──────────┬───────────┘
                                │ webhook / websocket
                                ▼
@@ -24,7 +24,7 @@ bảo mật, quan sát và CI/CD. Thiết kế nghiệp vụ (tầng tri thức,
 
 | Tác nhân | Tương tác | Kênh |
 |---|---|---|
-| Hành khách | chat với bot | Zalo, Messenger, web, hotline |
+| Hành khách | chat với bot | Zalo, Messenger, web (không có hotline/voice ở v1) |
 | Nhà xe | gửi cập nhật, trả lời câu hỏi, UAT, nhận handoff | Zalo, form, file |
 | Builder | build và vận hành bot bằng AI | MCP |
 | Lead / Ops | duyệt thay đổi L0/L1, deploy, giám sát | Console web |
@@ -59,8 +59,8 @@ bảo mật, quan sát và CI/CD. Thiết kế nghiệp vụ (tầng tri thức,
              │                 │      └───────┬───────────────────────────┬───────────┘
              ▼                 ▼              ▼                           ▼
        ┌──────────────────────────────┐  ┌─────────────────────────────────────────┐
-       │ TEI (Rust) embed · rerank    │  │ LLM providers (qua LLM client chung:      │
-       │ GPU node pool                │  │ quota, fallback, cost metering)           │
+       │ TEI (Rust) embed · rerank    │  │ LLM providers (gọi qua thư viện llm/:     │
+       │ CPU                          │  │ quota Redis, fallback, cost metering)     │
        └──────────────────────────────┘  └─────────────────────────────────────────┘
 
  Console (SPA tĩnh) ── gọi /api của brain-api
@@ -73,7 +73,7 @@ bảo mật, quan sát và CI/CD. Thiết kế nghiệp vụ (tầng tri thức,
 | `brain-api` | Go | ✅ | phiên MCP, request console | scheduler chạy trên **1 instance leader** (pg advisory lock) |
 | `ai-worker` | Python | ✅ | độ dài queue | concurrency tách theo loại job |
 | `console` | TS (SPA) | ✅ | – | chủ yếu để **duyệt** và xem |
-| `tei-embed`, `tei-rerank` | Rust | ✅ | QPS | GPU; có thể CPU ở môi trường nhỏ |
+| `tei-embed`, `tei-rerank` | Rust | ✅ | QPS | **chạy CPU** (không có GPU) |
 | PostgreSQL | – | ❌ | dữ liệu, QPS đọc | primary (ghi + queue) + replica (recall, đọc console) |
 | Redis | – | ❌ (dữ liệu tạm) | – | session, rate limit, cache recall/embedding, quota LLM |
 | Object storage | – | ❌ | – | file gốc, artifact snapshot, export |
@@ -89,7 +89,7 @@ snapshot/        tải Bot Definition, validate schema, atomic swap; nghe NOTIFY
 orchestrator/    vòng lặp lượt chat: prompt từ snapshot → LLM → tool calls song song → LLM → stream
 tools/           query_data (Postgres replica), check_seats (API nhà xe, circuit breaker), handoff
 recall/          package dùng chung với brain-api: 4 arm, RRF, rerank, boost, pack
-llm/             client chung: provider chính + dự phòng, timeout, quota (Redis token bucket)
+llm/             thư viện LLM (xem §3.4): provider chính + dự phòng, timeout, quota (Redis token bucket)
 telemetry/       log hội thoại ẩn danh (buffer → batch insert), metrics, traces
 ```
 
@@ -113,9 +113,25 @@ runner/          claim job (SKIP LOCKED, lease, heartbeat), LISTEN để thức 
 jobs/            ingest · consolidate · promote · compile · testgen · eval · learn · refresh_pages
 prompts/         toàn bộ prompt (có version, có test)
 nlp/             chuẩn hoá tiếng Việt, tách từ, entity resolution, parse Excel/ảnh
-llm/             client chung (cùng quy ước quota/fallback với Go), structured output
+llm/             thư viện LLM (cùng quy ước với Go, xem §3.4), structured output
 index/           ghi search_text (không dấu + bigram), gọi TEI embed theo batch
 ```
+
+### 3.4 Thư viện LLM (không có gateway)
+
+LLM được gọi trực tiếp từ service qua thư viện `llm/` — một bản Go (bot-runtime, brain-api) và một bản Python
+(ai-worker), **cùng một quy ước**:
+
+| Quy ước | Cách làm |
+|---|---|
+| Cấu hình provider | một file `llm.yaml` dùng chung: provider, model theo hạng (*nhỏ* / *mạnh* / *bot*), thứ tự fallback, timeout |
+| Quota | token bucket trong Redis theo `(provider, purpose)`; purpose = `bot` · `build` · `eval` — job nền không ăn quota của bot |
+| Fallback | lỗi / timeout / 429 → provider kế tiếp; hết danh sách → lỗi rõ ràng (bot sẽ handoff) |
+| Đo chi phí | mỗi lời gọi ghi metrics `tokens_in/out`, `cost`, nhãn `operator_id`, `purpose`, `model` |
+| Kiểm thử | bộ test hợp đồng chung: cùng input cấu hình → cùng lựa chọn provider ở Go và Python |
+
+Lý do không dùng gateway riêng ở v1: ít thành phần vận hành hơn, không thêm một hop mạng trên hot path.
+Cân nhắc gateway khi số provider/tenant tăng hoặc cần quản lý key tập trung.
 
 ## 4. Luồng chạy chính
 
@@ -195,7 +211,20 @@ Backup: Postgres PITR (WAL archive) + snapshot hằng ngày; object storage bậ
 Snapshot có `stage` riêng (staging · canary · production) **bên trong** môi trường production —
 sandbox/UAT của nhà xe chạy trên hạ tầng production nhưng bằng snapshot draft, kênh test.
 
-### 6.2 Topology production (Kubernetes)
+### 6.2 Chạy không có GPU
+
+| Việc | Cách làm trên CPU |
+|---|---|
+| Embed query (hot path) | TEI CPU, câu ngắn → ~10–30 ms; **cache embedding theo query đã chuẩn hoá** (tỉ lệ trùng câu hỏi cao) |
+| Embed item (nền) | ai-worker gọi TEI theo batch; không ảnh hưởng hot path |
+| Rerank (hot path) | chỉ **top 30–50** sau RRF, ngân sách **80 ms**; quá hạn → dùng điểm RRF + boost |
+| Rerank sâu | top 300 chỉ ở đường nền: reflect, compile, testgen |
+| Cache recall | theo `(snapshot_id, query chuẩn hoá)` — với bot nhà xe, phần lớn lượt chat trúng cache |
+
+Phương án thay thế nếu CPU không đủ: gọi embedding/rerank qua API của provider bằng cùng thư viện `llm/`
+(đổi lại phụ thuộc mạng và chi phí theo lượt).
+
+### 6.3 Topology production (Kubernetes)
 
 ```
 namespace biva
@@ -203,14 +232,14 @@ namespace biva
 ├── deploy/brain-api       HPA theo CPU                   min 2   (1 leader cho scheduler)
 ├── deploy/ai-worker       KEDA theo COUNT(operations queued) min 1, max 20
 ├── deploy/console         static                         2
-├── deploy/tei-embed       node pool GPU                  1–2
-├── deploy/tei-rerank      node pool GPU                  1–2
+├── deploy/tei-embed       CPU (4 vCPU, 4 GB)             2
+├── deploy/tei-rerank      CPU (4 vCPU, 4 GB)             2
 └── otel-collector         daemonset
 Managed: PostgreSQL (primary + 1 replica, HA), Redis (HA), Object storage
 ```
 
 Ước lượng ban đầu (≤ 50 nhà xe, ≤ 2k hội thoại đồng thời): 3 bot-runtime × (1 vCPU, 512 MB),
-2 brain-api × (1 vCPU, 512 MB), 2 ai-worker × (1 vCPU, 1 GB), 1 GPU nhỏ dùng chung cho TEI,
+2 brain-api × (1 vCPU, 512 MB), 2 ai-worker × (1 vCPU, 1 GB), TEI 2 × embed + 2 × rerank (4 vCPU, 4 GB, CPU),
 Postgres 4 vCPU / 16 GB. Điều chỉnh sau khi đo tải thật.
 
 ## 7. Độ tin cậy
@@ -296,20 +325,20 @@ main ─► deploy staging tự động ──► smoke + regression trên bot m
 |---|---|
 | Hot path, API, MCP | Go 1.24+, `pgx`/`sqlc`, `modelcontextprotocol/go-sdk`, `errgroup` |
 | Worker | Python 3.12, asyncio + uvloop, `asyncpg`, Pydantic, underthesea |
-| Embedding / rerank | HF TEI: bge-m3, bge-reranker-v2-m3 |
+| Embedding / rerank | HF TEI trên CPU: bge-m3, bge-reranker-v2-m3 |
 | Database | PostgreSQL 16 + pgvector, pg_trgm, unaccent |
 | Cache / session | Redis |
 | Object storage | S3-compatible (MinIO ở local) |
-| Console | SPA TypeScript (framework chốt sau) |
+| Console | React + Vite + TypeScript, TanStack Query, shadcn/ui |
 | Hạ tầng | Kubernetes, KEDA, Helm; docker-compose cho local |
-| Quan sát | OpenTelemetry → backend traces/metrics/logs (chốt sau) |
+| Quan sát | OpenTelemetry → Grafana stack: Prometheus (metrics), Tempo (traces), Loki (logs) |
 
-## 12. Điểm cần chốt (bổ sung cho architecture.md §9)
+## 12. Quyết định đã chốt
 
-| # | Câu hỏi | Đề xuất |
+| # | Chủ đề | Quyết định |
 |---|---|---|
-| S1 | Cloud / nơi chạy (cloud VN hay quốc tế, có GPU không) | ảnh hưởng TEI và độ trễ tới LLM provider |
-| S2 | LLM client: thư viện trong từng service hay một LLM gateway riêng | v1 dùng thư viện + quota chung ở Redis; gateway riêng khi nhiều provider/tenant |
-| S3 | Hotline (voice) có trong phạm vi v1 không | nếu có: thêm STT/TTS, ngân sách latency khác |
-| S4 | Backend observability | chọn theo hạ tầng sẵn có của team |
-| S5 | Framework console | chọn theo năng lực team frontend |
+| S1 | Hạ tầng tính toán | **không có GPU**; TEI chạy CPU, rerank giới hạn trên hot path (§6.2) |
+| S2 | Gọi LLM | **qua thư viện** trong từng service, quy ước chung (§3.4); không có gateway ở v1 |
+| S3 | Hotline (voice) | **ngoài phạm vi v1** |
+| S4 | Observability | **OpenTelemetry → Grafana stack** (Prometheus, Tempo, Loki); tự host hoặc Grafana Cloud |
+| S5 | Console | **React + Vite + TypeScript**, TanStack Query, shadcn/ui — SPA tĩnh, chỉ gọi REST của brain-api |
