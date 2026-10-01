@@ -4,8 +4,9 @@ Tài liệu này mô tả kiến trúc **hệ thống** của BIVA Brain: thành
 bảo mật, quan sát và CI/CD. Thiết kế nghiệp vụ (tầng tri thức, luồng Brain, luồng build) ở
 [architecture.md](architecture.md) và [build-flow.md](build-flow.md).
 
-**Phạm vi**: Brain lo tri thức và quy trình build; **không chạy bot**. Các runtime chạy bot hiện có của BIVA
-(chưa thống nhất) nằm ngoài phạm vi và sẽ nối vào sau qua **Runtime Integration API** (§3.5).
+**Phạm vi**: **Brain + MCP** — AI dùng tri thức (nhà xe và logic) để build bot; Brain là nguồn sự thật và người kiểm tra.
+Brain **không chạy bot**. Các runtime chạy bot hiện có (chưa thống nhất) nằm ngoài phạm vi; **Runtime Integration API (§3.5)
+là thiết kế cho giai đoạn sau**, chưa nằm trong các mốc M0–M5.
 
 ## 1. Context — hệ thống và thế giới bên ngoài
 
@@ -85,7 +86,9 @@ bảo mật, quan sát và CI/CD. Thiết kế nghiệp vụ (tầng tri thức,
 ```
 httpapi/         REST cho console: operators, review, snapshots, releases, feedback
 mcp/             /mcp/operator/{id}/, /mcp/platform/ — tools, resources, prompts, confirm_token
-runtimeapi/      Runtime Integration API (§3.5): snapshot, recall, data, feedback, transcripts
+artifacts/       lưu artifact, validate tĩnh (trích dẫn, locked, hardcoded data, coverage), stale, export
+logic/           danh mục module, hồ sơ logic, ADR, impact_of_change
+runtimeapi/      (giai đoạn sau) Runtime Integration API (§3.5)
 webhooks/        phát snapshot.published tới runtime đã đăng ký (HMAC, retry, backoff)
 authz/           OIDC cho người, token cho MCP, API key cho runtime; role builder|lead|ops; scope operator
 services/        nghiệp vụ dùng chung cho REST, MCP và Runtime API (một lõi, nhiều giao diện)
@@ -100,7 +103,8 @@ textnorm/        chuẩn hoá tiếng Việt cho query (cùng thuật toán vớ
 
 ```
 runner/          claim job (SKIP LOCKED, lease, heartbeat), LISTEN để thức dậy, retry + backoff
-jobs/            ingest · consolidate · promote · compile · testgen · eval · learn · refresh_pages
+jobs/            ingest · consolidate · promote · validate (LLM checks) · testgen · eval · learn ·
+                 refresh_pages · index_code (code chunk theo commit) · logic_promote
 executor/        reference executor: chạy một snapshot như runtime thật (LLM + gọi Runtime API)
                  — chỉ dùng cho test, eval, sandbox; không phục vụ khách
 prompts/         toàn bộ prompt (có version, có test)
@@ -129,7 +133,10 @@ LLM được gọi trực tiếp từ service qua thư viện `llm/` — một b
 
 Không dùng gateway riêng ở v1: ít thành phần vận hành hơn. Cân nhắc khi số provider tăng hoặc cần quản lý key tập trung.
 
-### 3.5 Runtime Integration API
+### 3.5 Runtime Integration API (giai đoạn sau)
+
+> Chưa nằm trong M0–M5. Hiện bot được **xuất** bằng `export_bot` (json · markdown · faq_csv); phần dưới là thiết kế
+> để nối runtime khi cần.
 
 Hợp đồng duy nhất giữa Brain và mọi runtime chạy bot. Định nghĩa bằng JSON Schema trong `contracts/schemas/`.
 Xác thực bằng API key theo runtime, mỗi key chỉ được truy cập các bot được gán.

@@ -73,6 +73,26 @@ GIN trên `tsv`; HNSW trên `embedding`.
 | `test_cases` | regression theo tầng | `layer`, `operator_id`, `bot_id`, `input`, `expected` (must_call_tool, must_mention, must_not_say…), `source_item_id` |
 | `releases` | yêu cầu và lịch sử **phát hành snapshot** cho runtime | `stage` (staging · production), `status` (requested · approved · published · rolled_back · rejected), `requested_by`, `approved_by` |
 
+### Artifact của bot (AI viết, Brain kiểm)
+| Bảng | Vai trò | Cột chính |
+|---|---|---|
+| `bot_artifacts` | các phần của bot: persona · system_prompt · faq · flows · tool_spec · fallbacks | `bot_id`, `kind`, `version`, `content`, `status` (draft · valid · invalid · stale · published), `author` (ai:<session> / user), `validation` (JSONB lỗi có vị trí) |
+| `artifact_citations` | câu/đoạn trong artifact ↔ item được trích dẫn | `artifact_id`, `item_id`, `location` (dòng/đoạn) — dùng để đánh dấu **stale** khi item rời `active` |
+
+`snapshots` = tập artifact đã `valid` của một bot tại một thời điểm (đầu vào cho `export_bot` và `releases`).
+
+### Tri thức logic (xem [logic-knowledge.md](logic-knowledge.md))
+| Bảng | Vai trò | Cột chính |
+|---|---|---|
+| `logic_modules` | module L1 (chuẩn) hoặc L2 (custom) | `id`, `layer`, `operator_id`, `capability`, `name`, `version`, `interface`, `params_schema`, `hooks`, `repo`, `path`, `status` (active · deprecated · retired), `proof_count` |
+| `logic_profiles` | hồ sơ logic của nhà xe theo capability | `operator_id`, `capability`, `mode` (config · hook · custom), `module_id`, `params`, `hooks`, `decision_id`, `status` (pending · active · stale · retired) |
+| `logic_param_sources` | tham số ↔ item tri thức là nguồn | `profile_id`, `param_path`, `item_id` — để đánh dấu stale khi item đổi |
+| `logic_decisions` | ADR: vì sao hook/custom | `operator_id`, `capability`, `context`, `options`, `decision`, `author`, `approved_by` |
+| `logic_tests` | input → output kỳ vọng | `operator_id`, `capability`, `input`, `expected`, `source_item_id` |
+| `code_chunks` | index code theo symbol, gắn commit | `repo`, `path`, `commit`, `symbol`, `text`, `search_text`, `embedding`, `module_id` |
+
+Bài học về code dùng chung bảng `items` (`kind=lesson`, `topic=code:<capability>`).
+
 ### Runtime (ngoài phạm vi chạy bot, chỉ là điểm nối)
 | Bảng | Vai trò | Cột chính |
 |---|---|---|

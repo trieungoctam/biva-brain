@@ -13,8 +13,11 @@ và **điểm sai chung**. BIVA Brain là bộ tri thức + các job xử lý gi
 - thu thập, chuẩn hoá, duyệt thông tin của từng nhà xe;
 - tự phát hiện điểm chung giữa các nhà xe (và điểm lệch thông lệ);
 - **quên** đúng cách (thông tin cũ, hết hạn, nhập sai);
-- compile thành bot chạy thật, có test regression trước khi deploy;
-- mở toàn bộ quy trình cho builder dùng AI qua **MCP**.
+- lưu cả **tri thức logic** (cách xử lý/code cho từng nhà xe: logic chung và logic đặc biệt);
+- mở toàn bộ cho builder dùng AI qua **MCP**: AI đọc tri thức, **viết bot**, Brain **kiểm tra** và xuất bot.
+
+**Trọng tâm: Brain + MCP.** AI là người viết bot, Brain là nguồn sự thật và người kiểm tra.
+Brain không chạy bot; các runtime hiện có nằm ngoài phạm vi (Runtime Integration API để giai đoạn sau).
 
 **Không lưu thông tin khách hàng.** Log hội thoại chỉ giữ tạm (TTL) để rút bài học rồi xoá.
 
@@ -27,7 +30,7 @@ L0  PLATFORM   luật chung cho mọi bot (không phụ thuộc ngành)
          └─ L3  BOT        (tuỳ chọn) biến thể theo kênh: Zalo, Messenger, web
 ```
 
-Mỗi tầng chứa 4 loại tri thức, lưu và dùng khác nhau:
+Mỗi tầng chứa 5 loại tri thức, lưu và dùng khác nhau:
 
 | Loại | Lưu ở | Bot dùng qua |
 |---|---|---|
@@ -35,6 +38,7 @@ Mỗi tầng chứa 4 loại tri thức, lưu và dùng khác nhau:
 | **policy** — huỷ vé, hành lý, trẻ em, thú cưng… | `items` (facts → observations) | recall |
 | **lesson** — đúng/sai (do/don't) | `items` kind=lesson + `test_cases` | prompt + regression test |
 | **persona** — giọng, xưng hô | `items` kind=persona / bot config | system prompt |
+| **logic** — cách xử lý/code: tính giá, giữ chỗ, đồng bộ lịch, adapter API… | danh mục module + hồ sơ logic từng nhà xe; code ở git, Brain index theo commit | tool của bot trỏ tới capability ([logic-knowledge.md](logic-knowledge.md)) |
 
 **Luật kế thừa**
 
@@ -238,16 +242,17 @@ biva-brain/
 
 ## 8. Lộ trình
 
-Chưa bắt đầu code. Thứ tự dự kiến:
+Chưa bắt đầu code. Thứ tự dự kiến (trọng tâm Brain + MCP):
 
 | Mốc | Nội dung |
 |---|---|
 | M0 | skeleton: contracts, schema, operations queue, brain-api (health + enqueue + MCP stub), ai-worker (claim job), docker-compose |
-| M1 | ingest (LLM extract + diff + review queue), embed qua TEI, recall semantic + keyword; MCP nhóm đọc + ingest + review, prompt `/process_update` |
-| M2 | coverage + sinh câu hỏi + `/onboard_operator`; entity resolution |
-| M3 | graph + temporal arm, rerank; consolidate + promote |
-| M4 | compile + testgen + reference executor + sandbox + `/prepare_release`; Runtime Integration API |
-| M5 | feedback/lessons + knowledge gap + endpoint platform |
+| M1 | ingest + diff + review queue; recall semantic + keyword; **knowledge pack**; artifact (`save` / `validate` với hợp đồng trích dẫn); MCP đọc + ingest + review + build; prompt `/process_update`, `/build_bot` |
+| M2 | coverage + sinh câu hỏi + `/onboard_operator`; entity resolution; **tri thức logic** (module, hồ sơ, ADR, `find_similar_operators`); stale + `/refresh_bot`; `export_bot` |
+| M3 | graph + temporal arm, rerank; consolidate + promote (tri thức + logic); logic test; reference executor + `run_tests` + `sandbox_chat` |
+| M4 | release gate + `request_publish`; lessons + `/review_quality` |
+| M5 | endpoint platform (L0/L1, promote, regression toàn bộ) |
+| Sau | Runtime Integration API để nối các runtime chạy bot |
 
 ## 9. Quyết định đã chốt
 
@@ -262,7 +267,9 @@ Chưa bắt đầu code. Thứ tự dự kiến:
 | 7 | Release gate | như mục 4 (coverage bắt buộc 100%, khuyến nghị ≥ 80%, regression 100%, L2 ≥ 95%, 0 conflict, UAT) | điều chỉnh sau khi có dữ liệu thật |
 | 8 | Hạ tầng tính toán | **không có GPU** — TEI chạy CPU; rerank giới hạn trên đường đọc | xem system-architecture.md |
 | 9 | Kênh v1 | **Zalo, Messenger, web**; **không có hotline (voice)** | giảm phạm vi v1 |
-| 10 | Chạy bot | **ngoài phạm vi**: Brain không chạy bot, chỉ mở **Runtime Integration API**; việc nối các runtime hiện có làm sau | runtime hiện có chưa thống nhất; tách để Brain không phụ thuộc vào chúng |
+| 10 | Chạy bot | **ngoài phạm vi**: Brain không chạy bot; Runtime Integration API để giai đoạn sau | runtime hiện có chưa thống nhất; tách để Brain không phụ thuộc vào chúng |
+| 11 | Trọng tâm | **Brain + MCP**: AI viết bot từ knowledge pack, mọi câu có trích dẫn item; Brain validate, đánh dấu stale khi tri thức đổi, xuất bot ra json/markdown/faq_csv | giữ bot luôn khớp tri thức, kể cả khi "quên" |
+| 12 | Tri thức logic | Brain lưu **tri thức về code** (module, hồ sơ logic, ADR, test, index code theo commit); code ở git; bậc thang config → hook → custom; promote khi ≥ 3 nhà xe có custom giống nhau | dùng lại logic chung, nhà xe đặc biệt có lý do rõ ràng |
 
 
 
@@ -270,5 +277,6 @@ Chưa bắt đầu code. Thứ tự dự kiến:
 
 - [system-architecture.md](system-architecture.md) — kiến trúc hệ thống (triển khai, độ tin cậy, bảo mật, observability)
 - [build-flow.md](build-flow.md) — luồng build bot chi tiết
-- [mcp.md](mcp.md) — giao diện MCP cho builder
+- [mcp.md](mcp.md) — giao diện MCP: AI dùng tri thức để build bot
+- [logic-knowledge.md](logic-knowledge.md) — tri thức logic (code) cho nhà xe
 - [data-model.md](data-model.md) — data model
