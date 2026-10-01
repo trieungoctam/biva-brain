@@ -53,7 +53,7 @@ make test      # test-go chạy migration trước (nên chạy trước test-py
 ## Queue Go ⇄ Python
 
 brain-api ghi job vào bảng `operations` (`queue.Enqueue`, chống trùng bằng `idempotency_key`); trigger phát
-`NOTIFY operations` để đánh thức ai-worker. ai-worker claim bằng `SKIP LOCKED`, giữ lease bằng heartbeat, thử lại
+`NOTIFY biva_operations` để đánh thức ai-worker. ai-worker claim bằng `SKIP LOCKED`, giữ lease bằng heartbeat, thử lại
 có backoff. Worker chết → lease hết → scheduler (chỉ instance leader, advisory lock) gọi
 `operations_requeue_expired()` để trả job về hàng đợi. Cấu hình worker: `BIVA_WORKER_CONCURRENCY` (4),
 `BIVA_WORKER_LEASE_SECONDS` (60).

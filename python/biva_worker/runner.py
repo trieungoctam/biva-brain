@@ -6,7 +6,7 @@
 - Mất lease (heartbeat không gia hạn được) → huỷ handler, KHÔNG ghi kết quả: job đã thuộc worker khác.
 - Lỗi: ``RetryableError`` hoặc exception lạ → thử lại với backoff tới ``max_attempts``;
   ``PermanentError`` → ``failed`` ngay.
-- LISTEN 'operations' để thức dậy khi có job; vẫn poll định kỳ nên mất NOTIFY không làm sót job.
+- LISTEN 'biva_operations' để thức dậy khi có job; vẫn poll định kỳ nên mất NOTIFY không làm sót job.
 """
 
 from __future__ import annotations
@@ -27,6 +27,8 @@ import asyncpg
 from biva_worker.contracts import validate
 
 log = logging.getLogger(__name__)
+
+NOTIFY_CHANNEL = "biva_operations"  # phát bởi trigger ở migration 000002
 
 
 class RetryableError(Exception):
@@ -154,14 +156,14 @@ class Runner:
         """Chạy tới khi ``stop`` được set; job dở dang được chờ rồi trả về hàng đợi."""
         listener = await self.pool.acquire()
         try:
-            await listener.add_listener("operations", self._on_notify)
+            await listener.add_listener(NOTIFY_CHANNEL, self._on_notify)
             slots = [asyncio.create_task(self._slot(stop)) for _ in range(self.concurrency)]
             await stop.wait()
             self._wake.set()
             await asyncio.gather(*slots)
         finally:
             with contextlib.suppress(Exception):
-                await listener.remove_listener("operations", self._on_notify)
+                await listener.remove_listener(NOTIFY_CHANNEL, self._on_notify)
             await self.pool.release(listener)
 
     def _on_notify(self, _conn: Any, _pid: int, _channel: str, kind: str) -> None:

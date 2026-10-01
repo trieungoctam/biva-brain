@@ -1,7 +1,7 @@
 // Package queue ghi job vào bảng operations cho ai-worker (Python) xử lý.
 //
 // Go chỉ enqueue và đọc trạng thái; claim/lease/retry nằm ở runner Python.
-// Trigger trong migration 000002 phát NOTIFY 'operations' để đánh thức worker.
+// Trigger trong migration 000002 phát NOTIFY 'biva_operations' để đánh thức worker.
 package queue
 
 import (

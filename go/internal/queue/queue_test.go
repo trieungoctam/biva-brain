@@ -84,7 +84,7 @@ func TestEnqueueNotifies(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer conn.Close(ctx)
-	if _, err := conn.Exec(ctx, "LISTEN operations"); err != nil {
+	if _, err := conn.Exec(ctx, "LISTEN biva_operations"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -100,7 +100,7 @@ func TestEnqueueNotifies(t *testing.T) {
 	if err != nil {
 		t.Fatalf("không nhận NOTIFY: %v", err)
 	}
-	if n.Channel != "operations" || n.Payload != "test.notify" {
+	if n.Channel != "biva_operations" || n.Payload != "test.notify" {
 		t.Fatalf("NOTIFY = %s/%s", n.Channel, n.Payload)
 	}
 }

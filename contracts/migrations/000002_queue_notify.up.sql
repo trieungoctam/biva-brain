@@ -1,11 +1,11 @@
 -- Queue Go ⇄ Python (M0, S0.2.1 + S0.2.3).
--- NOTIFY đánh thức ai-worker khi có job mới hoặc job được trả lại hàng đợi; worker vẫn poll định kỳ
+-- NOTIFY 'biva_operations' đánh thức ai-worker khi có job mới hoặc job được trả lại hàng đợi; worker vẫn poll định kỳ
 -- nên NOTIFY bị mất (mất kết nối LISTEN) chỉ làm chậm, không làm sót job.
 
 CREATE FUNCTION operations_notify() RETURNS trigger
 LANGUAGE plpgsql AS $$
 BEGIN
-    PERFORM pg_notify('operations', NEW.kind);
+    PERFORM pg_notify('biva_operations', NEW.kind);
     RETURN NULL;
 END;
 $$;
