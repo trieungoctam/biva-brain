@@ -130,7 +130,9 @@ Cột **Mốc** = mốc dự kiến (xem lộ trình trong [architecture.md](arc
 ### 5.2 Ghi tri thức (qua review)
 | Tool | Mốc | Cờ | Mô tả |
 |---|---|---|---|
-| `ingest` | M1 | | nhận nội dung nhà xe gửi (text Zalo; Excel ở S1.1.3) → `operation_id`; gửi lại cùng nội dung → cùng job |
+| `submit_knowledge` | M1 | | **đường chính**: AI phía builder (ChatGPT, coding agent) đã đọc nguồn (tin Zalo, Excel, ảnh, cuộc gọi) và gửi item có cấu trúc + trích đoạn nguồn → cùng diff/review, **không gọi LLM ở Brain**; lỗi đầu vào trả ngay theo vị trí |
+| `list_knowledge` | M1 | RO | tri thức đang dùng (key, topic, nội dung, facts, hiệu lực) — để AI dùng lại key khi gửi cập nhật |
+| `ingest` | M1 | | nội dung **thô** (tin Zalo, ghi chú, bảng dán từ Excel) → ai-worker trích bằng LLM (Gemini) → `operation_id`; gửi lại cùng nội dung → cùng job |
 | `get_operation` | M0 | RO | trạng thái job async |
 | `list_review_queue` | M1 | RO | diff, conflict, override, đề xuất promote (tri thức và logic) |
 | `get_review_item` | M1 | RO | trước/sau, nguồn, artifact/hồ sơ logic bị ảnh hưởng |

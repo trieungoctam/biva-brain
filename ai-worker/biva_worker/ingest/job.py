@@ -1,9 +1,14 @@
-"""Job ``ingest``: tin nhắn nhà xe → item ứng viên → diff → review_items → tự apply phần rủi ro thấp.
+"""Job ``ingest``: nội dung nhà xe → item ứng viên → diff → review_items → tự apply phần rủi ro thấp.
+
+Hai đầu vào, chung một pipeline từ bước 4:
+- ``content`` (raw: tin Zalo, ghi chú, bảng dán từ Excel…) → ai-worker trích item bằng LLM.
+- ``items`` (AI phía builder — ChatGPT, coding agent — đã đọc file/tin và trích sẵn) → không gọi LLM;
+  ``content`` khi đó (nếu có) chỉ là trích đoạn nguồn làm bằng chứng.
 
 Luồng (docs/architecture.md §3.1):
-1. Kiểm payload (contracts jobs.ingest); tin trùng (content_hash) → bỏ qua.
+1. Kiểm payload (contracts jobs.ingest); cùng nội dung đã ingest (content_hash) → bỏ qua.
 2. Đọc item active của nhà xe (key, text, facts) làm ngữ cảnh để LLM dùng lại key.
-3. LLM trích item ứng viên (purpose ingest, structured output).
+3. Item ứng viên: từ ``items`` của payload, hoặc LLM trích (purpose ingest, structured output).
 4. Diff theo key → NEW / CHANGE / REMOVE / DUPLICATE / CONFLICT.
 5. MỘT transaction: lưu document, item pending, review_items. Gọi LLM xong mới ghi → job retry không để lại
    document "đã thấy" mà chưa có item.
@@ -26,7 +31,7 @@ import asyncpg
 from biva_worker import kbtemplate
 from biva_worker.contracts import validate
 from biva_worker.ingest.diff import Decision, diff
-from biva_worker.ingest.extract import Candidate, ExistingItem, extract
+from biva_worker.ingest.extract import OTHER_TOPIC, Candidate, ExistingItem, extract, normalize_key
 from biva_worker.llm import LLMClient
 from biva_worker.runner import Job, PermanentError
 
@@ -42,6 +47,39 @@ def auto_apply_enabled() -> bool:
 
 def content_hash(content: str) -> str:
     return hashlib.sha256(content.strip().encode()).hexdigest()
+
+
+def payload_hash(payload: dict[str, Any]) -> str:
+    """Raw: hash nội dung. Có items: hash cả items lẫn trích đoạn (trích khác → lần ingest khác)."""
+    if "items" not in payload:
+        return content_hash(payload["content"])
+    blob = json.dumps(
+        {"content": payload.get("content", ""), "items": payload["items"]}, sort_keys=True, ensure_ascii=False
+    )
+    return hashlib.sha256(blob.encode()).hexdigest()
+
+
+def candidates_from_items(items: list[dict[str, Any]], topics: list[str]) -> list[Candidate]:
+    """Item do AI client gửi → Candidate (cùng chuẩn hoá key như đường LLM)."""
+    unknown = sorted({i["topic"] for i in items if i["topic"] not in topics and i["topic"] != OTHER_TOPIC})
+    if unknown:
+        raise PermanentError(
+            f"topic không có trong template: {', '.join(unknown)} (dùng: {', '.join(topics)}, other)",
+            code="INVALID_TOPIC",
+        )
+    return [
+        Candidate(
+            action=i.get("action", "upsert"),
+            kind=i["kind"],
+            topic=i["topic"],
+            key=normalize_key(i["topic"], i["key"]),
+            text=i["text"].strip(),
+            facts={k.strip(): v.strip() for k, v in (i.get("facts") or {}).items() if k.strip()},
+            valid_from=date.fromisoformat(i["valid_from"]) if i.get("valid_from") else None,
+            valid_to=date.fromisoformat(i["valid_to"]) if i.get("valid_to") else None,
+        )
+        for i in items
+    ]
 
 
 def _day_start(d: date | None) -> datetime | None:
@@ -121,7 +159,7 @@ async def _write(
                RETURNING id::text""",
             payload["operator_id"],
             payload["source"],
-            payload["content"],
+            payload.get("content") or json.dumps(payload["items"], ensure_ascii=False, indent=1),
             h,
             payload.get("submitted_by"),
             received,
@@ -150,7 +188,7 @@ async def _write(
                     _day_end(c.valid_to),
                     received,
                     doc_id,
-                    {"source": payload["source"]},
+                    {"source": payload["source"], "extracted_by": "client" if "items" in payload else "llm"},
                 )
             review_id = await conn.fetchval(
                 """INSERT INTO review_items (operator_id, key, topic, change_kind, risk, item_id,
@@ -183,10 +221,13 @@ async def ingest(pool: asyncpg.Pool, llm: LLMClient, job: Job) -> dict[str, Any]
     errors = validate("jobs.ingest", payload)
     if errors:
         raise PermanentError("; ".join(errors), code="INVALID_PAYLOAD")
-    if "content" not in payload:
-        raise PermanentError("ingest file (Excel…) chưa hỗ trợ — S1.1.3", code="UNSUPPORTED")
+    if "file_ref" in payload:
+        raise PermanentError(
+            "ingest file chưa hỗ trợ: AI phía builder đọc file rồi gửi items (submit_knowledge) hoặc text",
+            code="UNSUPPORTED",
+        )
     operator_id = payload["operator_id"]
-    h = content_hash(payload["content"])
+    h = payload_hash(payload)
 
     async with pool.acquire() as conn:
         if not await conn.fetchval("SELECT EXISTS (SELECT 1 FROM operators WHERE id = $1)", operator_id):
@@ -206,15 +247,20 @@ async def ingest(pool: asyncpg.Pool, llm: LLMClient, job: Job) -> dict[str, Any]
         existing = await load_existing(conn, operator_id)
 
     received = datetime.fromisoformat(payload["received_at"]).astimezone(VN).date()
-    candidates, llm_result = await extract(
-        llm,
-        content=payload["content"],
-        received=received,
-        existing=list(existing.values()),
-        topics=kbtemplate.topics(),
-        operator_id=operator_id,
-        operation_id=job.id,
-    )
+    if "items" in payload:
+        candidates = candidates_from_items(payload["items"], kbtemplate.topics())
+        extracted_by = "client"
+    else:
+        candidates, llm_result = await extract(
+            llm,
+            content=payload["content"],
+            received=received,
+            existing=list(existing.values()),
+            topics=kbtemplate.topics(),
+            operator_id=operator_id,
+            operation_id=job.id,
+        )
+        extracted_by = llm_result.served_model
     decisions = diff(candidates, existing, today=received)
 
     async with pool.acquire() as conn:
@@ -245,8 +291,7 @@ async def ingest(pool: asyncpg.Pool, llm: LLMClient, job: Job) -> dict[str, Any]
         counts[d.change_kind.lower()] = counts.get(d.change_kind.lower(), 0) + 1
     waiting = len(reviews) - applied - stale
     counts["waiting_review"] = waiting
-    model = llm_result.served_model
-    summary = f"{len(candidates)} item ứng viên ({model}): tự áp dụng {applied}, chờ duyệt {waiting}"
+    summary = f"{len(candidates)} item ứng viên ({extracted_by}): tự áp dụng {applied}, chờ duyệt {waiting}"
     next_actions = ["list_review_queue"] if waiting else []
     return {
         "status": "done",

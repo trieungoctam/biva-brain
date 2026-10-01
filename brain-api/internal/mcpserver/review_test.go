@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
 func call(t *testing.T, s *mcp.ClientSession, tool string, args map[string]any) (bool, map[string]any, string) {
@@ -52,8 +53,8 @@ func TestIngestTool(t *testing.T) {
 	if _, again, _ := call(t, s, "ingest", map[string]any{"content": "  Giá vé SG-ĐL giường nằm 300k  "}); again["operation_id"] != opID || again["duplicate"] != true {
 		t.Fatalf("gửi lại: %v", again)
 	}
-	if isErr, _, _ := call(t, s, "ingest", map[string]any{"content": "x", "source": "excel"}); !isErr {
-		t.Fatal("source excel lẽ ra bị từ chối ở tool này")
+	if isErr, _, _ := call(t, s, "ingest", map[string]any{"content": "x", "source": "fax"}); !isErr {
+		t.Fatal("source lạ lẽ ra bị từ chối")
 	}
 }
 
@@ -168,4 +169,17 @@ func TestReviewIsScopedToOperator(t *testing.T) {
 	if isErr, _, _ := call(t, sa, "apply_review", map[string]any{"review_id": idB, "decision": "approve"}); !isErr {
 		t.Fatal("không được duyệt review của nhà xe khác")
 	}
+}
+
+func roundTrip(t *testing.T, v any) any {
+	t.Helper()
+	b, err := json.Marshal(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := jsonschema.UnmarshalJSON(strings.NewReader(string(b)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
 }

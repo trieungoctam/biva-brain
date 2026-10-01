@@ -1,0 +1,17 @@
+{
+  "operator_id": "phuongnam",
+  "source": "zalo",
+  "received_at": "2026-10-01T09:00:00+07:00",
+  "file_ref": {
+    "bucket": "b",
+    "key": "k"
+  },
+  "items": [
+    {
+      "kind": "policy",
+      "topic": "pets",
+      "key": "p",
+      "text": "Thú cưng ok"
+    }
+  ]
+}

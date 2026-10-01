@@ -123,9 +123,9 @@ func serve(cfg config.Config) error {
 	if err != nil {
 		return fmt.Errorf("đọc kb/: %w", err)
 	}
-	var topics []string
+	var topics []mcpserver.Topic
 	for _, sec := range bundle.Templates["xe-khach"].Sections {
-		topics = append(topics, sec.Topic)
+		topics = append(topics, mcpserver.Topic{ID: sec.Topic, Title: sec.Title})
 	}
 
 	mux := httpapi.NewRouter(db)

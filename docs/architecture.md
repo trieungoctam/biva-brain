@@ -67,8 +67,12 @@ Mỗi tầng chứa 5 loại tri thức:
 
 ### 3.1 ingest()
 
+Hai đầu vào, chung một pipeline: **AI phía builder** (ChatGPT, coding agent) tự đọc nguồn — tin Zalo, file Excel,
+ảnh bảng giá, ghi chú cuộc gọi — rồi gửi item có cấu trúc (`submit_knowledge`, không gọi LLM ở Brain); nội dung
+**thô** chưa trích thì gửi `ingest` để ai-worker trích bằng LLM. Brain không tự parse file Excel/ảnh.
+
 1. Lưu document gốc (ai gửi, kênh, thời điểm), `content_hash` để chống trùng.
-2. LLM tách **item** có cấu trúc: `{kind, topic, key, value, text, valid_from, valid_to}`.
+2. Item có cấu trúc `{kind, topic, key, value, text, valid_from, valid_to}`: từ AI client, hoặc LLM tách từ nội dung thô.
 3. Entity resolution: alias L1 → trigram trên `name_norm` → co-occurrence.
 4. Diff với trạng thái hiện tại của scope: `NEW | CHANGE | REMOVE | DUPLICATE | CONFLICT`.
 5. Classify tầng so với L1: giống thông lệ / override / ứng viên chung.

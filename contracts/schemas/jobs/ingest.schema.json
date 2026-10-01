@@ -2,30 +2,171 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://biva.local/schemas/jobs/ingest.schema.json",
   "title": "Payload job ingest",
-  "description": "Payload của operations.kind = 'ingest'. brain-api ghi, ai-worker đọc.",
+  "description": "Payload của operations.kind = 'ingest'. brain-api ghi, ai-worker đọc. Hai đường: content (raw, ai-worker trích item bằng LLM) hoặc items (AI phía builder đã trích sẵn — không gọi LLM; content khi đó là trích đoạn nguồn làm bằng chứng).",
   "type": "object",
   "additionalProperties": false,
-  "required": ["operator_id", "source", "received_at"],
+  "required": [
+    "operator_id",
+    "source",
+    "received_at"
+  ],
   "properties": {
-    "operator_id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{1,62}$" },
-    "source": { "enum": ["zalo", "excel", "form", "console"] },
-    "content": { "type": "string", "minLength": 1, "maxLength": 200000 },
+    "operator_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]{1,62}$"
+    },
+    "source": {
+      "enum": [
+        "zalo",
+        "excel",
+        "image",
+        "call",
+        "chat",
+        "form",
+        "console",
+        "other"
+      ],
+      "description": "kênh của thông tin gốc (không phải công cụ đã trích)"
+    },
+    "content": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200000
+    },
     "file_ref": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["bucket", "key"],
+      "required": [
+        "bucket",
+        "key"
+      ],
       "properties": {
-        "bucket": { "type": "string", "minLength": 1 },
-        "key": { "type": "string", "minLength": 1 },
-        "content_type": { "type": "string" }
+        "bucket": {
+          "type": "string",
+          "minLength": 1
+        },
+        "key": {
+          "type": "string",
+          "minLength": 1
+        },
+        "content_type": {
+          "type": "string"
+        }
       }
     },
-    "received_at": { "type": "string", "format": "date-time" },
-    "submitted_by": { "type": "string" },
-    "metadata": { "type": "object" }
+    "received_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "submitted_by": {
+      "type": "string"
+    },
+    "metadata": {
+      "type": "object"
+    },
+    "items": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 200,
+      "items": {
+        "$ref": "#/$defs/item"
+      }
+    }
   },
-  "oneOf": [
-    { "required": ["content"], "not": { "required": ["file_ref"] } },
-    { "required": ["file_ref"], "not": { "required": ["content"] } }
-  ]
+  "$defs": {
+    "item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "topic",
+        "key",
+        "text"
+      ],
+      "properties": {
+        "action": {
+          "enum": [
+            "upsert",
+            "remove"
+          ],
+          "default": "upsert"
+        },
+        "kind": {
+          "enum": [
+            "data",
+            "policy",
+            "lesson",
+            "persona"
+          ]
+        },
+        "topic": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "text": {
+          "type": "string",
+          "minLength": 5,
+          "maxLength": 2000
+        },
+        "facts": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "valid_from": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date"
+        },
+        "valid_to": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date"
+        }
+      }
+    }
+  },
+  "anyOf": [
+    {
+      "required": [
+        "content"
+      ]
+    },
+    {
+      "required": [
+        "file_ref"
+      ]
+    },
+    {
+      "required": [
+        "items"
+      ]
+    }
+  ],
+  "not": {
+    "anyOf": [
+      {
+        "required": [
+          "content",
+          "file_ref"
+        ]
+      },
+      {
+        "required": [
+          "items",
+          "file_ref"
+        ]
+      }
+    ]
+  }
 }

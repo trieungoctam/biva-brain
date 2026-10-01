@@ -1,0 +1,20 @@
+{
+  "operator_id": "phuongnam",
+  "source": "chat",
+  "received_at": "2026-10-01T09:00:00+07:00",
+  "content": "Nhà xe: từ 1/11 giường nằm 320k",
+  "submitted_by": "user:tam",
+  "items": [
+    {
+      "action": "upsert",
+      "kind": "data",
+      "topic": "fare",
+      "key": "fare.sai_gon_da_lat.giuong_nam",
+      "text": "Từ 1/11 giá giường nằm SG–ĐL 320.000đ",
+      "facts": {
+        "gia_ve": "320000"
+      },
+      "valid_from": "2026-11-01"
+    }
+  ]
+}

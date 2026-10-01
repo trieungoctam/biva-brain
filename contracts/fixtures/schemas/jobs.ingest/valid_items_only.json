@@ -1,0 +1,13 @@
+{
+  "operator_id": "phuongnam",
+  "source": "image",
+  "received_at": "2026-10-01T09:00:00+07:00",
+  "items": [
+    {
+      "kind": "policy",
+      "topic": "pets",
+      "key": "pets.dieu_kien",
+      "text": "Thú cưng để trong lồng"
+    }
+  ]
+}

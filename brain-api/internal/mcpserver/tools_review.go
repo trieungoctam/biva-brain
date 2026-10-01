@@ -4,8 +4,10 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
@@ -22,7 +24,7 @@ import (
 
 type ingestIn struct {
 	Content    string `json:"content" jsonschema:"nội dung nhà xe gửi (tin Zalo, ghi chú...), nguyên văn"`
-	Source     string `json:"source,omitempty" jsonschema:"kênh: zalo | form | console (mặc định zalo)"`
+	Source     string `json:"source,omitempty" jsonschema:"kênh: zalo (mặc định) | excel | image | call | chat | form | other"`
 	ReceivedAt string `json:"received_at,omitempty" jsonschema:"thời điểm nhà xe gửi, RFC 3339; mặc định là bây giờ"`
 }
 
@@ -30,6 +32,22 @@ type ingestOut struct {
 	OperationID string   `json:"operation_id"`
 	Duplicate   bool     `json:"duplicate" jsonschema:"true nếu nội dung này đã được gửi trước đó"`
 	NextActions []string `json:"next_actions"`
+}
+
+type submitIn struct {
+	Items         []review.SubmittedItem `json:"items" jsonschema:"các item đã trích (1–200)"`
+	Source        string                 `json:"source" jsonschema:"kênh của thông tin gốc: zalo | excel | image | call | chat | form | other"`
+	SourceExcerpt string                 `json:"source_excerpt,omitempty" jsonschema:"trích đoạn/tóm tắt nguồn gốc làm bằng chứng (nên có)"`
+	ReceivedAt    string                 `json:"received_at,omitempty" jsonschema:"thời điểm nhà xe gửi, RFC 3339; mặc định bây giờ"`
+}
+
+type knowledgeIn struct {
+	Topic string `json:"topic,omitempty" jsonschema:"lọc theo topic"`
+	Limit int    `json:"limit,omitempty" jsonschema:"tối đa (mặc định 300)"`
+}
+
+type knowledgeOut struct {
+	Items []review.Item `json:"items"`
 }
 
 type listIn struct {
@@ -71,7 +89,15 @@ type proposeOut struct {
 }
 
 const (
-	ingestDesc = "Gửi nội dung nhà xe cung cấp (tin Zalo, ghi chú) để Brain trích tri thức. Chạy nền: trả operation_id, " +
+	submitDesc = "Gửi tri thức của nhà xe mà BẠN đã đọc và trích từ nguồn (tin Zalo, file Excel, ảnh bảng giá, cuộc gọi…). " +
+		"Trước khi gửi: gọi list_knowledge và DÙNG LẠI key đã có khi nói cùng chủ thể (để thành sửa đổi, không thành " +
+		"bản trùng). Mỗi item một ý; text tiếng Việt đầy đủ; facts là giá trị chính; valid_from/valid_to chỉ khi nguồn " +
+		"nêu rõ ngày; action remove khi nhà xe báo bỏ/ngưng. KHÔNG gửi thông tin cá nhân của hành khách. Chạy nền, " +
+		"cùng luật duyệt với ingest. Nếu chưa tự trích được (nội dung thô), dùng ingest."
+	knowledgeDesc = "Tri thức đang dùng của nhà xe: key, topic, nội dung, facts, hiệu lực. Dùng để lấy key trước khi " +
+		"submit_knowledge và để trả lời builder về những gì Brain đang biết."
+	ingestDesc = "Gửi nội dung THÔ của nhà xe (tin Zalo, ghi chú, bảng dán từ Excel) để Brain tự trích tri thức bằng LLM. " +
+		"Nếu bạn đã đọc và trích được item, ưu tiên submit_knowledge. Chạy nền: trả operation_id, " +
 		"theo dõi bằng get_operation; xong thì xem đề xuất bằng list_review_queue. Thay đổi rủi ro thấp được tự áp " +
 		"dụng; giá, giờ, huỷ vé và mọi sửa/bỏ điều đang đúng phải được builder duyệt."
 	listDesc = "Danh sách đề xuất thay đổi tri thức của nhà xe đang chờ duyệt (rủi ro cao trước): key, loại thay đổi " +
@@ -96,6 +122,25 @@ func ptr[T any](v T) *T { return &v }
 // ─────────────────────────────── đăng ký ───────────────────────────────
 
 func (s *Server) addReviewTools(srv *mcp.Server, operatorID string) {
+	topicLine := " Topic hợp lệ: " + s.topicGuide() + "."
+	mcp.AddTool(srv, &mcp.Tool{Name: "submit_knowledge", Description: submitDesc + topicLine, Annotations: writeTool},
+		func(ctx context.Context, req *mcp.CallToolRequest, in submitIn) (*mcp.CallToolResult, ingestOut, error) {
+			p, err := callerOf(req)
+			if err != nil {
+				return nil, ingestOut{}, err
+			}
+			return s.submit(ctx, p, operatorID, in)
+		})
+
+	mcp.AddTool(srv, &mcp.Tool{Name: "list_knowledge", Description: knowledgeDesc, Annotations: readOnly},
+		func(ctx context.Context, _ *mcp.CallToolRequest, in knowledgeIn) (*mcp.CallToolResult, knowledgeOut, error) {
+			items, err := review.ListActive(ctx, s.db, operatorID, in.Topic, in.Limit)
+			if err != nil {
+				return nil, knowledgeOut{}, internal("list_knowledge", err)
+			}
+			return nil, knowledgeOut{Items: items}, nil
+		})
+
 	mcp.AddTool(srv, &mcp.Tool{Name: "ingest", Description: ingestDesc, Annotations: writeTool},
 		func(ctx context.Context, req *mcp.CallToolRequest, in ingestIn) (*mcp.CallToolResult, ingestOut, error) {
 			p, err := callerOf(req)
@@ -133,13 +178,13 @@ func (s *Server) addReviewTools(srv *mcp.Server, operatorID string) {
 			return nil, d, nil
 		})
 
-	mcp.AddTool(srv, &mcp.Tool{Name: "propose_item", Description: proposeDesc, Annotations: writeTool},
+	mcp.AddTool(srv, &mcp.Tool{Name: "propose_item", Description: proposeDesc + topicLine, Annotations: writeTool},
 		func(ctx context.Context, req *mcp.CallToolRequest, in review.Proposal) (*mcp.CallToolResult, proposeOut, error) {
 			p, err := callerOf(req)
 			if err != nil {
 				return nil, proposeOut{}, err
 			}
-			sum, err := review.Propose(ctx, s.db, operatorID, in, s.topics, p.Actor())
+			sum, err := review.Propose(ctx, s.db, operatorID, in, s.topicIDs(), p.Actor())
 			if err != nil {
 				var pgErr *pgconn.PgError
 				if errors.As(err, &pgErr) {
@@ -163,6 +208,50 @@ func (s *Server) addReviewTools(srv *mcp.Server, operatorID string) {
 
 // ─────────────────────────────── xử lý ───────────────────────────────
 
+func parseReceived(v string) (time.Time, error) {
+	if v == "" {
+		return time.Now(), nil
+	}
+	t, err := time.Parse(time.RFC3339, v)
+	if err != nil {
+		return t, errors.New("received_at phải dạng RFC 3339, vd 2026-10-01T09:00:00+07:00")
+	}
+	return t, nil
+}
+
+func (s *Server) submit(ctx context.Context, p authz.Principal, operatorID string, in submitIn) (*mcp.CallToolResult, ingestOut, error) {
+	if !slices.Contains(review.Sources, in.Source) {
+		return nil, ingestOut{}, errors.New("source phải là một trong: " + strings.Join(review.Sources, ", "))
+	}
+	items, err := review.CheckSubmitted(in.Items, s.topicIDs())
+	if err != nil {
+		return nil, ingestOut{}, err // lỗi theo vị trí: trả nguyên văn để AI sửa
+	}
+	received, err := parseReceived(in.ReceivedAt)
+	if err != nil {
+		return nil, ingestOut{}, err
+	}
+	payload := map[string]any{
+		"operator_id":  operatorID,
+		"source":       in.Source,
+		"received_at":  received.Format(time.RFC3339),
+		"submitted_by": p.Actor(),
+		"items":        items,
+	}
+	if ex := strings.TrimSpace(in.SourceExcerpt); ex != "" {
+		payload["content"] = ex
+	}
+	blob, _ := json.Marshal(map[string]any{"items": items, "excerpt": strings.TrimSpace(in.SourceExcerpt)})
+	sum := sha256.Sum256(blob)
+	id, created, err := queue.Enqueue(ctx, s.db, queue.Job{Kind: "ingest", OperatorID: operatorID, Payload: payload,
+		IdempotencyKey: "submit:" + operatorID + ":" + hex.EncodeToString(sum[:])})
+	if err != nil {
+		return nil, ingestOut{}, internal("submit_knowledge", err)
+	}
+	return nil, ingestOut{OperationID: id, Duplicate: !created,
+		NextActions: []string{"get_operation(" + id + ") tới khi status=done", "list_review_queue"}}, nil
+}
+
 func (s *Server) ingest(ctx context.Context, p authz.Principal, operatorID string, in ingestIn) (*mcp.CallToolResult, ingestOut, error) {
 	content := strings.TrimSpace(in.Content)
 	if content == "" || len(content) > 200000 {
@@ -172,16 +261,12 @@ func (s *Server) ingest(ctx context.Context, p authz.Principal, operatorID strin
 	if source == "" {
 		source = "zalo"
 	}
-	if source != "zalo" && source != "form" && source != "console" {
-		return nil, ingestOut{}, errors.New("source phải là zalo | form | console (Excel: dùng tool upload ở S1.1.3)")
+	if !slices.Contains(review.Sources, source) {
+		return nil, ingestOut{}, errors.New("source phải là một trong: " + strings.Join(review.Sources, ", "))
 	}
-	received := time.Now()
-	if in.ReceivedAt != "" {
-		t, err := time.Parse(time.RFC3339, in.ReceivedAt)
-		if err != nil {
-			return nil, ingestOut{}, errors.New("received_at phải dạng RFC 3339, vd 2026-10-01T09:00:00+07:00")
-		}
-		received = t
+	received, err := parseReceived(in.ReceivedAt)
+	if err != nil {
+		return nil, ingestOut{}, err
 	}
 	sum := sha256.Sum256([]byte(content))
 	id, created, err := queue.Enqueue(ctx, s.db, queue.Job{

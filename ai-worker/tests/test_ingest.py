@@ -448,3 +448,76 @@ def test_auto_apply_can_be_disabled(monkeypatch):
             await pool.close()
 
     asyncio.run(t())
+
+
+@needs_db
+def test_structured_items_skip_llm():
+    """AI phía builder (ChatGPT, coding agent) gửi items đã trích: không gọi LLM, cùng diff/review."""
+
+    class NoLLM:
+        async def complete(self, *a):
+            raise AssertionError("đường items không được gọi LLM")
+
+    async def t() -> None:
+        pool = await asyncpg.create_pool(DB_URL, init=init_connection)
+        op = f"str{uuid.uuid4().hex[:8]}"
+        run = ingest_job.handler(pool, LLMClient(load(), providers={"gemini": NoLLM()}))
+
+        def job(items, content=None, source="image"):
+            payload = {
+                "operator_id": op,
+                "source": source,
+                "received_at": "2026-10-01T09:00:00+07:00",
+                "items": items,
+            }
+            if content:
+                payload["content"] = content
+            return Job(str(uuid.uuid4()), "ingest", op, payload, 1, 5, {})
+
+        try:
+            await pool.execute("INSERT INTO operators (id, name) VALUES ($1, 'Structured')", op)
+            r = await run(job(
+                [
+                    {"kind": "data", "topic": "fare", "key": "Fare.Sài Gòn - Vũng Tàu.16 chỗ", "text": "Xe 16 chỗ SG–VT 180.000đ",
+                     "facts": {"gia_ve": "180000"}},
+                    {"kind": "policy", "topic": "pets", "key": "pets.dieu_kien", "text": "Không nhận thú cưng"},
+                ],
+                content="[ảnh bảng giá] 16 chỗ 180k; không nhận thú cưng",
+            ))  # fmt: skip
+            assert validate("operation_result", r) == []
+            assert "(client)" in r["summary"] and r["counts"]["new"] == 2 and r["counts"]["auto_applied"] == 1
+            keys = {x["key"] for x in await pool.fetch("SELECT key FROM items WHERE operator_id=$1", op)}
+            assert keys == {"fare.sai_gon_vung_tau.16_cho", "pets.dieu_kien"}  # key chuẩn hoá như đường LLM
+            doc = await pool.fetchrow("SELECT source, content FROM documents WHERE operator_id=$1", op)
+            assert (doc["source"], doc["content"]) == (
+                "image",
+                "[ảnh bảng giá] 16 chỗ 180k; không nhận thú cưng",
+            )
+
+            # Mọi kênh nguồn trong contract đều ghi được vào documents.
+            for src in ["call", "chat", "other", "excel"]:
+                await run(job([{"kind": "lesson", "topic": "contact", "key": f"contact.{src}", "text": f"Ghi chú kênh {src}"}],
+                              source=src))  # fmt: skip
+
+            # Gửi lại đúng như cũ → trùng; topic lạ → lỗi rõ ràng để AI sửa.
+            again = await run(
+                job(
+                    [
+                        {
+                            "kind": "policy",
+                            "topic": "pets",
+                            "key": "pets.dieu_kien",
+                            "text": "Không nhận thú cưng",
+                        }
+                    ]
+                )
+            )
+            assert again["counts"].get("duplicate") == 1
+            with pytest.raises(PermanentError, match="karaoke"):
+                await run(job([{"kind": "data", "topic": "karaoke", "key": "k", "text": "Có karaoke"}]))
+        finally:
+            await pool.execute("DELETE FROM audit_log WHERE payload->>'operator_id' = $1", op)
+            await pool.execute("DELETE FROM operators WHERE id = $1", op)
+            await pool.close()
+
+    asyncio.run(t())

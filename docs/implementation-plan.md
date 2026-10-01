@@ -119,7 +119,7 @@ Song song từ M0: E-X1 tri thức L0/L1 + golden set (Ops) · E-X2 quan sát ·
 |---|---|---|---|
 | **E1.1 Ingest** | S1.1.1 Thư viện `llm/` (Py): llm.yaml, fallback, quota Redis, đo chi phí | Py | provider chính lỗi → tự chuyển; metrics có `operator_id` |
 | | S1.1.2 Parser Zalo text → item (LLM, structured output, giữ tiếng Việt) | Py | ≥ 90% item đúng trên bộ 50 tin Zalo của pilot (golden set) |
-| | S1.1.3 Parser Excel giá/lịch → data vận hành + item | Py | file Excel của 3 pilot parse đúng 100% dòng hợp lệ; dòng lỗi được báo |
+| | ~~S1.1.3 Parser Excel giá/lịch~~ → **thay bằng** `submit_knowledge` + `list_knowledge`: AI phía builder (ChatGPT, coding agent) đọc Excel/ảnh/tin và gửi item có cấu trúc | Go + Py | item từ AI client đi qua cùng diff/review; key cũ được dùng lại (thành CHANGE) |
 | | S1.1.4 Index: `search_text` + embedding qua TEI (batch) | Py | item mới tìm được bằng cả có dấu và không dấu |
 | **E1.2 Diff & review** | S1.2.1 Diff theo `key`: NEW/CHANGE/REMOVE/DUPLICATE/CONFLICT | Py | đổi giá trong Excel → 1 CHANGE đúng trước/sau |
 | | S1.2.2 Review queue + rủi ro (giá/giờ/huỷ = high) | Go | item high không bao giờ tự apply |

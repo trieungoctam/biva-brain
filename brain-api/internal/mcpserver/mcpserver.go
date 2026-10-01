@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"sync"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -29,14 +30,37 @@ const principalKey = "principal"
 type Server struct {
 	db      *pgxpool.Pool
 	version string
-	topics  []string // bộ topic của template L1 (kb/) — kiểm propose_item
+	topics  []Topic // bộ topic của template L1 (kb/): kiểm đầu vào và hướng dẫn AI chọn topic
 
 	mu        sync.Mutex
 	operators map[string]*mcp.Server // MCP server theo nhà xe, dựng một lần
 	platform  *mcp.Server
 }
 
-func New(db *pgxpool.Pool, version string, topics []string) *Server {
+// Topic của template ngành (id + tên hiển thị), lấy từ kb/L1/<ngành>/template.yaml.
+type Topic struct {
+	ID    string
+	Title string
+}
+
+func (s *Server) topicIDs() []string {
+	ids := make([]string, len(s.topics))
+	for i, t := range s.topics {
+		ids[i] = t.ID
+	}
+	return ids
+}
+
+// topicGuide: "route (Tuyến & điểm dừng), fare (Giá vé), …" — đưa vào mô tả tool để AI chọn đúng topic.
+func (s *Server) topicGuide() string {
+	parts := make([]string, len(s.topics))
+	for i, t := range s.topics {
+		parts[i] = t.ID + " (" + t.Title + ")"
+	}
+	return strings.Join(parts, ", ") + ", other (không khớp mục nào)"
+}
+
+func New(db *pgxpool.Pool, version string, topics []Topic) *Server {
 	s := &Server{db: db, version: version, topics: topics, operators: map[string]*mcp.Server{}}
 	s.platform = s.newPlatformServer()
 	return s
