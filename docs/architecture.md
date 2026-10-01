@@ -246,6 +246,7 @@ Chưa bắt đầu code. Thứ tự dự kiến:
 
 ## Tài liệu liên quan
 
+- [system-architecture.md](system-architecture.md) — kiến trúc hệ thống (triển khai, độ tin cậy, bảo mật, observability)
 - [build-flow.md](build-flow.md) — luồng build bot chi tiết
 - [mcp.md](mcp.md) — giao diện MCP cho builder
 - [data-model.md](data-model.md) — data model

@@ -10,6 +10,7 @@ Trạng thái: **đang chốt thiết kế**, chưa có code.
 | Tài liệu | Nội dung |
 |---|---|
 | [docs/architecture.md](docs/architecture.md) | bài toán, phân tầng L0–L3, luồng Brain, kiến trúc Go + Python, lộ trình, điểm cần chốt |
+| [docs/system-architecture.md](docs/system-architecture.md) | kiến trúc hệ thống: containers, components, luồng chạy, triển khai, độ tin cậy, bảo mật, observability, CI/CD |
 | [docs/build-flow.md](docs/build-flow.md) | luồng build bot: onboarding → thu thập → duyệt → cấu hình → compile/test → deploy; vòng vận hành |
 | [docs/mcp.md](docs/mcp.md) | giao diện MCP cho builder: endpoint, quy tắc an toàn, danh mục tool, prompts |
 | [docs/data-model.md](docs/data-model.md) | data model trên PostgreSQL |
