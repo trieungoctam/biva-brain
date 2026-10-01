@@ -48,7 +48,7 @@ func TestGuideResourcesPromptsAndValidate(t *testing.T) {
 	}
 
 	pr, err := s.ListPrompts(ctx, nil)
-	if err != nil || len(pr.Prompts) != 2 {
+	if err != nil || len(pr.Prompts) != 3 {
 		t.Fatalf("prompts = %v %v", pr, err)
 	}
 	gp, err := s.GetPrompt(ctx, &mcp.GetPromptParams{Name: "process_update",
@@ -83,5 +83,24 @@ func TestGuideResourcesPromptsAndValidate(t *testing.T) {
 	_, lst, _ := call(t, s, "list_artifacts", map[string]any{})
 	if lst["artifacts"].([]any)[0].(map[string]any)["status"] != "invalid" {
 		t.Fatalf("status phải invalid: %v", lst)
+	}
+
+	// Nhà xe bỏ chính sách → faq stale ngay khi commit; list_stale chỉ đúng dòng.
+	if _, st, _ := call(t, s, "list_stale", map[string]any{}); len(st["artifacts"].([]any)) != 0 {
+		t.Fatalf("chưa có gì stale: %v", st)
+	}
+	f.pool.Exec(ctx, `UPDATE items SET status = 'retracted' WHERE id = $1`, pets)
+	_, st, _ := call(t, s, "list_stale", map[string]any{})
+	arts := st["artifacts"].([]any)
+	if len(arts) != 1 {
+		t.Fatalf("list_stale = %v", st)
+	}
+	reason := arts[0].(map[string]any)["reasons"].([]any)[0].(map[string]any)
+	if reason["line"].(float64) != 2 || reason["reason"] != "retracted" || reason["instruction"] == "" {
+		t.Fatalf("reason = %v", reason)
+	}
+	if gp, err := s.GetPrompt(ctx, &mcp.GetPromptParams{Name: "refresh_bot"}); err != nil ||
+		!strings.Contains(gp.Messages[0].Content.(*mcp.TextContent).Text, "list_stale") {
+		t.Fatalf("refresh_bot: %v", err)
 	}
 }

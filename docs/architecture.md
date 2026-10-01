@@ -91,8 +91,8 @@ Hai đầu vào, chung một pipeline: **AI phía builder** (ChatGPT, coding age
 |---|---|
 | **consolidate** | item active chưa consolidate → observation *trong cùng scope*. Quy tắc (từ Hindsight): ưu tiên update, 1 facet / observation, khớp theo entity, state change giữ lịch sử, không tự tính toán, xoá hạn chế. Near-duplicate cosine ≥ 0.97 → LLM quyết định merge/keep |
 | **promote** | so observation cùng facet giữa các nhà xe (và hồ sơ logic cùng capability) → đề xuất promote / tăng `proof_count` L1 / ghi nhận override; đa số đã lệch → đề xuất sửa L1. Mọi thay đổi L1 qua review |
-| **mark_stale** | item rời `active` → mọi artifact trích dẫn nó và hồ sơ logic lấy tham số từ nó → `stale` (kèm vị trí) |
-| **expire** | `valid_to < now` → `expired` → `mark_stale` + re-consolidate đúng scope |
+| **mark_stale** | item rời `active` → mọi artifact trích dẫn nó và hồ sơ logic lấy tham số từ nó → `stale` (kèm vị trí); item L2 mới ở topic có thông lệ L1 đang được trích → `overridden_default`; rule locked mới → system_prompt chưa trích nó. **Bản M2**: constraint trigger trong Postgres (migration 000011), hoãn tới cuối transaction → stale ngay khi thay đổi commit, cả khi apply từ Go hay Python |
+| **expire** | `valid_to < now` → `expired` → `mark_stale` + re-consolidate đúng scope (bản M2: task `expire_items` mỗi phút của scheduler leader) |
 | **refresh_pages** | trang Tổng quan / Chính sách / Khác thông lệ / Còn thiếu / Logic cho mỗi nhà xe |
 | **validate** (phần LLM) | kiểm tra mâu thuẫn giữa artifact và tri thức (phần tĩnh chạy đồng bộ ở brain-api) |
 | **run_tests** | chạy test bằng reference executor (M3) |

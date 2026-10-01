@@ -175,7 +175,7 @@ Cột **Mốc** = mốc dự kiến (xem lộ trình trong [architecture.md](arc
 | `get_artifact` / `list_artifacts` | M1 | RO | nội dung + trích dẫn theo dòng + lịch sử version; danh sách bản mới nhất + artifact bắt buộc còn thiếu |
 | `save_artifact` | M1 | | lưu bản nháp (version mới, không ghi đè; y hệt bản hiện tại thì không tạo version); bot theo kênh (`zalo` mặc định), tự tạo; `[[id]]` phải là item của nhà xe/tri thức nền (sai → lỗi theo dòng), item hết hiệu lực → `warnings`; `base_version` chống ghi đè |
 | `validate_artifact` | M1 | RO | kiểm tĩnh theo §4 (UNCITED, STALE_CITATION — kể cả thông lệ L1 nay đã có tri thức nhà xe thay, MISSING_LOCKED, UNLABELED_DEFAULT, HARDCODED_DATA, COVERAGE); lỗi có dòng + item + cách sửa; ghi `valid`/`invalid` vào artifact |
-| `list_stale` | M2 | RO | artifact + hồ sơ logic bị stale, kèm đoạn/tham số và item liên quan |
+| `list_stale` | M2 | RO | bản mới nhất của artifact bị stale, mỗi chỗ có dòng, nội dung dòng, tri thức cũ/mới, lý do (`superseded` · `expired` · `retracted` · `overridden_default` · `new_locked_rule`) và cách sửa; hồ sơ logic: khi có E2.5 |
 | `export_bot` | M2 | RO | `json` · `markdown` · `faq_csv` từ bản đã validate |
 | `run_tests` | M3 | | regression L0/L1 + test sinh từ L2 bằng reference executor |
 | `sandbox_chat` | M3 | | chat thử bot đang build (reference executor) |
@@ -208,7 +208,7 @@ Cột **Mốc** = mốc dự kiến (xem lộ trình trong [architecture.md](arc
 | `/process_update` | (M1, tham số `content`, `source`) `list_knowledge` → `submit_knowledge` (hoặc `ingest` nếu thô) → `get_operation` → review + preview → builder đồng ý mới `apply_review` → `validate_artifact` → sửa đúng dòng STALE_CITATION |
 | `/implement_operator_logic` | `get_logic_spec` → `find_similar_operators` → `run_examples_against` → `plan_logic_implementation` → viết profile/hook trong repo (PR, custom kèm ADR) → test |
 | `/build_bot` | (M1, tham số `channel`) `get_bot_spec` → `get_knowledge_pack` → viết từng artifact có trích dẫn → `save_artifact` → `validate_artifact` → sửa đến khi sạch → (M2) `export_bot` |
-| `/refresh_bot` | `list_stale` → sửa đúng đoạn/tham số bị ảnh hưởng → validate → export |
+| `/refresh_bot` | (M2) `list_stale` → sửa đúng dòng bị ảnh hưởng → `save_artifact(base_version)` → validate; artifact không stale giữ nguyên version → export |
 | `/review_quality` | đọc artifact + coverage + lessons → chỉ ra chỗ yếu, đề xuất lesson/test |
 
 ## 8. Quy tắc an toàn

@@ -194,7 +194,7 @@ func TestGetOperationScopedToOperator(t *testing.T) {
 	readOnlyWant := map[string]bool{"get_operation": true, "list_review_queue": true, "get_review_item": true,
 		"list_knowledge": true, "recall_knowledge": true, "query_data": true, "get_source": true, "get_operator_overview": true,
 		"get_bot_spec": true, "get_knowledge_pack": true, "get_artifact": true, "list_artifacts": true, "save_artifact": false,
-		"validate_artifact": true,
+		"validate_artifact": true, "list_stale": true,
 		"ingest":            false, "submit_knowledge": false, "propose_item": false, "apply_review": false}
 	if len(tools.Tools) != len(readOnlyWant) {
 		t.Fatalf("có %d tool, muốn %d", len(tools.Tools), len(readOnlyWant))

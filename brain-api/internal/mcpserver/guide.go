@@ -21,7 +21,8 @@ func operatorInstructions(operatorID string) string {
 	return "BIVA Brain — tri thức của nhà xe " + operatorID + " để build bot. Mọi tool đã cố định trong phạm vi " +
 		"nhà xe này.\n" +
 		"- Đầu phiên: get_operator_overview. Build bot: prompt build_bot (get_bot_spec → get_knowledge_pack → viết → " +
-		"save_artifact → validate_artifact tới khi valid). Nhà xe gửi cập nhật: prompt process_update.\n" +
+		"save_artifact → validate_artifact tới khi valid). Nhà xe gửi cập nhật: prompt process_update. Tri thức đã " +
+		"đổi: prompt refresh_bot (list_stale → chỉ sửa dòng bị ảnh hưởng).\n" +
 		"- Không đoán giá/giờ/tuyến: dùng query_data; trong artifact thì hướng bot gọi tool, không ghi cứng con số.\n" +
 		"- Mọi câu mang thông tin trong artifact phải có [[item_id]]; item nhãn 'thông lệ chung' phải nói rõ là " +
 		"thông lệ; quy tắc bắt buộc (locked) phải có trong system_prompt. Chi tiết: resource biva://guides/citation.\n" +
@@ -77,8 +78,8 @@ const workflowGuideMD = `# Quy trình làm việc với Brain
    Không tự trích được → ingest(content).
 3. get_operation tới khi done → list_review_queue → get_review_item từng đề xuất rủi ro cao.
 4. Trình bày cho builder (trước/sau, nguồn); apply_review lần 1 lấy confirm_token; chỉ khi builder đồng ý mới gọi lần 2.
-5. list_artifacts → validate_artifact các artifact của bot: STALE_CITATION chỉ ra đoạn cần sửa → sửa đúng đoạn đó,
-   save_artifact, validate lại.
+5. list_stale → với từng artifact stale: sửa đúng các dòng trong reasons, save_artifact(base_version), validate lại
+   (prompt refresh_bot). Artifact không stale giữ nguyên.
 `
 
 func (s *Server) templateMD() string {
@@ -210,6 +211,12 @@ func (s *Server) addGuide(srv *mcp.Server, operatorID string) {
 			return userPrompt("Build bot kênh "+channel+" cho nhà xe "+operatorID, buildBotPrompt(channel)), nil
 		})
 
+	srv.AddPrompt(&mcp.Prompt{Name: "refresh_bot", Title: "Cập nhật bot sau khi tri thức đổi",
+		Description: "Sửa đúng các đoạn artifact bị tri thức mới làm lỗi thời (list_stale), artifact khác giữ nguyên"},
+		func(context.Context, *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+			return userPrompt("Refresh bot của nhà xe "+operatorID, refreshBotPrompt), nil
+		})
+
 	srv.AddPrompt(&mcp.Prompt{Name: "process_update", Title: "Xử lý cập nhật của nhà xe",
 		Description: "Đưa thông tin nhà xe vừa gửi vào Brain (trích → đề xuất → duyệt), rồi sửa đúng phần bot bị ảnh hưởng",
 		Arguments: []*mcp.PromptArgument{
@@ -220,6 +227,17 @@ func (s *Server) addGuide(srv *mcp.Server, operatorID string) {
 				processUpdatePrompt(req.Params.Arguments["content"], req.Params.Arguments["source"])), nil
 		})
 }
+
+const refreshBotPrompt = `Tri thức của nhà xe vừa thay đổi. Hãy cập nhật bot bằng các tool của Brain, CHỈ sửa phần bị ảnh hưởng:
+
+1. list_stale: danh sách artifact lỗi thời, mỗi chỗ có line, line_text, item_text (cũ), new_text (mới), instruction.
+2. Với từng artifact trong danh sách: get_artifact(kind, channel) → sửa ĐÚNG các dòng được nêu theo instruction
+   (thay nội dung theo tri thức mới, đổi trích dẫn sang [[superseded_by]]; quy tắc bắt buộc mới thì thêm vào
+   system_prompt). Không viết lại phần khác.
+3. save_artifact(kind, channel, content, base_version=version đang sửa, note="refresh: …") → validate_artifact;
+   còn lỗi thì sửa tiếp tới khi valid.
+4. Artifact không có trong list_stale: KHÔNG lưu version mới.
+5. Báo lại: artifact nào lên version mấy, đã đổi những câu nào (trước → sau).`
 
 func userPrompt(desc, text string) *mcp.GetPromptResult {
 	return &mcp.GetPromptResult{Description: desc,
@@ -257,8 +275,8 @@ func processUpdatePrompt(content, source string) string {
 3. get_operation tới khi done → list_review_queue → get_review_item cho từng đề xuất rủi ro cao.
 4. Trình bày cho builder: trước/sau, nguồn, hiệu lực. apply_review lần 1 (lấy preview + confirm_token); CHỈ khi builder
    đồng ý mới gọi lại với confirm_token. Không tự duyệt thay builder.
-5. Sau khi áp dụng: list_artifacts → validate_artifact từng artifact của bot. Lỗi STALE_CITATION chỉ đúng dòng cần
-   sửa: get_artifact, sửa đúng đoạn đó theo tri thức mới, save_artifact(base_version), validate lại tới khi valid.
+5. Sau khi áp dụng: list_stale cho biết artifact và đúng dòng bị tri thức mới làm lỗi thời → làm như prompt
+   refresh_bot: get_artifact, sửa đúng các dòng đó, save_artifact(base_version), validate_artifact tới khi valid.
 6. Báo lại ngắn: đã áp dụng gì, đang chờ duyệt gì, artifact nào đã sửa.`)
 	if strings.TrimSpace(content) != "" {
 		b.WriteString("\n\n<noi_dung_nha_xe>\n" + content + "\n</noi_dung_nha_xe>")

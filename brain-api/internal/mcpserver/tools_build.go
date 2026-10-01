@@ -83,6 +83,11 @@ type getArtifactIn struct {
 	Version int    `json:"version,omitempty" jsonschema:"bỏ trống = bản mới nhất"`
 }
 
+type listStaleOut struct {
+	Artifacts   []artifact.StaleArtifact `json:"artifacts"`
+	NextActions []string                 `json:"next_actions"`
+}
+
 type listArtifactsIn struct {
 	Channel string `json:"channel,omitempty" jsonschema:"lọc theo kênh"`
 }
@@ -103,7 +108,10 @@ const (
 	saveDesc = "Lưu một artifact của bot (version mới, không ghi đè; nội dung y hệt bản hiện tại thì không tạo " +
 		"version). Trích dẫn dạng [[item_id]] được kiểm ngay: id phải là item của nhà xe này hoặc tri thức nền; " +
 		"item đã hết hiệu lực trả về warnings. Khi sửa bản có sẵn, gửi base_version."
-	getArtifactDesc   = "Nội dung một artifact (bản mới nhất hoặc version chỉ định), trích dẫn theo dòng, lịch sử version."
+	getArtifactDesc = "Nội dung một artifact (bản mới nhất hoặc version chỉ định), trích dẫn theo dòng, lịch sử version."
+	listStaleDesc   = "Artifact bị tri thức mới làm lỗi thời (nhà xe đổi chính sách, giá hết hiệu lực, quy tắc bắt buộc " +
+		"mới…): từng chỗ cần sửa với dòng, nội dung dòng, tri thức cũ/mới và cách sửa. Chỉ sửa các dòng này " +
+		"(prompt refresh_bot), artifact khác giữ nguyên version."
 	listArtifactsDesc = "Các artifact hiện có của bot (version mới nhất, trạng thái, số trích dẫn) và artifact bắt buộc còn thiếu."
 )
 
@@ -195,6 +203,20 @@ func (s *Server) addBuildTools(srv *mcp.Server, operatorID string) {
 				return nil, a, internal("get_artifact", err)
 			}
 			return nil, a, nil
+		})
+
+	mcp.AddTool(srv, &mcp.Tool{Name: "list_stale", Description: listStaleDesc, Annotations: readOnly},
+		func(ctx context.Context, _ *mcp.CallToolRequest, in listArtifactsIn) (*mcp.CallToolResult, listStaleOut, error) {
+			list, err := artifact.ListStale(ctx, s.db, operatorID, in.Channel)
+			if err != nil {
+				return nil, listStaleOut{}, internal("list_stale", err)
+			}
+			next := []string{}
+			if len(list) > 0 {
+				next = []string{"với từng artifact: get_artifact → sửa đúng các dòng trong reasons → " +
+					"save_artifact(base_version=version) → validate_artifact"}
+			}
+			return nil, listStaleOut{Artifacts: list, NextActions: next}, nil
 		})
 
 	mcp.AddTool(srv, &mcp.Tool{Name: "list_artifacts", Description: listArtifactsDesc, Annotations: readOnly},

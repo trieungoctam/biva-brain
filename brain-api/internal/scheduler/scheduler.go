@@ -32,7 +32,24 @@ type Scheduler struct {
 
 // DefaultTasks là việc định kỳ của M0.
 func DefaultTasks() []Task {
-	return []Task{{Name: "requeue_expired", Every: 15 * time.Second, Run: RequeueExpired}}
+	return []Task{
+		{Name: "requeue_expired", Every: 15 * time.Second, Run: RequeueExpired},
+		{Name: "expire_items", Every: time.Minute, Run: ExpireItems},
+	}
+}
+
+// ExpireItems (S2.3.2): item active đã quá valid_to → expired. Trigger của migration 000011 đánh dấu artifact trích
+// dẫn chúng là stale; trigger 000010 tăng version tri thức (knowledge pack dựng lại).
+func ExpireItems(ctx context.Context, db *pgxpool.Pool) error {
+	tag, err := db.Exec(ctx, `UPDATE items SET status = 'expired', updated_at = now()
+		WHERE status = 'active' AND valid_to IS NOT NULL AND valid_to < now()`)
+	if err != nil {
+		return err
+	}
+	if n := tag.RowsAffected(); n > 0 {
+		slog.Info("item hết hiệu lực → expired", "count", n)
+	}
+	return nil
 }
 
 // RequeueExpired trả job hết lease về hàng đợi (logic nằm trong SQL, migration 000002).
