@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
 	"strings"
 	"time"
@@ -16,6 +17,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/trieungoctam/biva-brain/brain-api/internal/queue"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/textnorm"
 )
 
@@ -167,6 +169,13 @@ func Decide(ctx context.Context, db *pgxpool.Pool, operatorID, id, decision, rea
 		}
 		if err := json.Unmarshal(raw, &out); err != nil {
 			return Outcome{}, err
+		}
+		if out.Status == "applied" {
+			// E3.2: tri thức đổi → gom lại observation của scope này (job tự no-op khi không có gì mới).
+			if _, _, err := queue.Enqueue(ctx, db, queue.Job{Kind: "consolidate",
+				OperatorID: operatorID, IdempotencyKey: "consolidate:" + operatorID + ":" + id}); err != nil {
+				slog.Warn("enqueue consolidate lỗi", "err", err)
+			}
 		}
 		return Outcome{Status: out.Status, ItemID: deref(out.ItemID), Reason: out.Reason}, nil
 	case "reject":

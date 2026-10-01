@@ -174,6 +174,18 @@ func serve(cfg config.Config) error {
 				return err
 			},
 		})
+		// promote (E3.2): 5 phút/lần tìm cụm observation >= 3 nhà xe để đề xuất lên L1.
+		tasks = append(tasks, scheduler.Task{
+			Name: "promote", Every: 5 * time.Minute,
+			Run: func(taskCtx context.Context, taskDB *pgxpool.Pool) error {
+				key := fmt.Sprintf("promote:%d", time.Now().Unix()/300)
+				_, created, err := queue.Enqueue(taskCtx, taskDB, queue.Job{Kind: "promote", IdempotencyKey: key})
+				if err == nil && created {
+					slog.Info("promote: enqueue quét ứng viên promote")
+				}
+				return err
+			},
+		})
 		// index_code (S2.5.2): mỗi phút enqueue job đồng bộ repo logic; job tự no-op khi HEAD không đổi
 		// → merge PR được Brain cập nhật trong ≤ 1 phút.
 		if cfg.IntegrationsRepo != "" {

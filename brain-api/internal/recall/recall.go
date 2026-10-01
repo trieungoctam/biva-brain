@@ -108,6 +108,7 @@ type armHit struct {
 // filter chung của mọi nhánh: $1 operator, $2 đầu khoảng, $3 topics, $4 kinds, $5 cuối khoảng.
 // L1 hiện chỉ có một ngành (xe-khach); khi có nhiều ngành thì lọc theo ngành của nhà xe.
 const scopeFilter = `status = 'active'
+	AND kind <> 'observation' -- observation chỉ dùng nội bộ cho consolidate/promote
 	AND (layer <= 1 OR operator_id = $1)
 	AND (valid_from IS NULL OR valid_from <= $5) AND (valid_to IS NULL OR valid_to >= $2)
 	AND (cardinality($3::text[]) = 0 OR topic = ANY($3))
@@ -378,6 +379,7 @@ func (r *Recaller) temporal(ctx context.Context, q Query, tsq string) ([]armHit,
 
 // graphScopeFilter: scopeFilter với prefix i. (join cùng entities có cột trùng tên).
 const graphScopeFilter = `i.status = 'active'
+	AND i.kind <> 'observation'
 	AND (i.layer <= 1 OR i.operator_id = $1)
 	AND (i.valid_from IS NULL OR i.valid_from <= $5) AND (i.valid_to IS NULL OR i.valid_to >= $2)
 	AND (cardinality($3::text[]) = 0 OR i.topic = ANY($3))
