@@ -102,13 +102,18 @@ func ListStale(ctx context.Context, db *pgxpool.Pool, operatorID, channel string
 	out := []StaleArtifact{}
 	for _, r := range list {
 		lines := strings.Split(r.content, "\n")
-		for i := range r.Reasons {
-			sr := &r.Reasons[i]
+		kept := []StaleReason{}
+		for _, sr := range r.Reasons {
+			if _, ok := texts[sr.Item]; !ok {
+				continue // item đã bị xoá hẳn (không phải luồng thường: tri thức chỉ đổi trạng thái)
+			}
 			if sr.Line > 0 && sr.Line <= len(lines) {
 				sr.LineText = strings.TrimSpace(lines[sr.Line-1])
 			}
 			sr.ItemText, sr.NewText, sr.Instruction = texts[sr.Item], texts[sr.SupersededBy], instructions[sr.Reason]
+			kept = append(kept, sr)
 		}
+		r.Reasons = kept
 		out = append(out, r.StaleArtifact)
 	}
 	return out, nil
