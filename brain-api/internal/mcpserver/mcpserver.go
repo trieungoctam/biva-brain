@@ -28,6 +28,7 @@ import (
 	"github.com/trieungoctam/biva-brain/brain-api/internal/oauth"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/pack"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/recall"
+	"github.com/trieungoctam/biva-brain/brain-api/internal/storage"
 )
 
 const principalKey = "principal"
@@ -41,6 +42,7 @@ type Server struct {
 	packs     *pack.Builder
 	publicURL string      // URL công khai (link form gửi nhà xe)
 	template  kb.Template // template ngành (kb/L1/<ngành>/template.yaml): get_bot_spec, artifact bắt buộc
+	storage   *storage.S3 // nil = export_bot trả nội dung, không lưu object storage (DYN-74)
 
 	mu        sync.Mutex
 	operators map[string]*mcp.Server // MCP server theo nhà xe, dựng một lần
@@ -265,4 +267,10 @@ func (s *Server) newPlatformServer() *mcp.Server {
 	})
 	addPlatformTools(srv, s.db)
 	return srv
+}
+
+// WithStorage: bật lưu bản export_bot lên object storage (BIVA_S3_*).
+func (s *Server) WithStorage(st *storage.S3) *Server {
+	s.storage = st
+	return s
 }

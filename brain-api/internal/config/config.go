@@ -8,14 +8,19 @@ import (
 )
 
 type Config struct {
-	DatabaseURL        string        // BIVA_DATABASE_URL (bắt buộc) — primary: ghi + queue
-	DatabaseReplicaURL string        // BIVA_DATABASE_REPLICA_URL — đọc; trống thì dùng primary
-	HTTPAddr           string        // BIVA_HTTP_ADDR, mặc định :8080
-	MigrationsDir      string        // BIVA_MIGRATIONS_DIR, mặc định ../contracts/migrations
-	PublicURL          string        // BIVA_PUBLIC_URL: URL công khai (issuer OAuth, resource MCP), mặc định http://localhost:8080
-	KBDir              string        // BIVA_KB_DIR, mặc định ../kb
-	SchemasDir         string        // BIVA_SCHEMAS_DIR, mặc định ../contracts/schemas
-	TEIURL             string        // BIVA_TEI_URL: TEI embedding cho recall; trống = recall chỉ dùng keyword
+	DatabaseURL        string // BIVA_DATABASE_URL (bắt buộc) — primary: ghi + queue
+	DatabaseReplicaURL string // BIVA_DATABASE_REPLICA_URL — đọc; trống thì dùng primary
+	HTTPAddr           string // BIVA_HTTP_ADDR, mặc định :8080
+	MigrationsDir      string // BIVA_MIGRATIONS_DIR, mặc định ../contracts/migrations
+	PublicURL          string // BIVA_PUBLIC_URL: URL công khai (issuer OAuth, resource MCP), mặc định http://localhost:8080
+	KBDir              string // BIVA_KB_DIR, mặc định ../kb
+	SchemasDir         string // BIVA_SCHEMAS_DIR, mặc định ../contracts/schemas
+	TEIURL             string // BIVA_TEI_URL: TEI embedding cho recall; trống = recall chỉ dùng keyword
+	S3Endpoint         string // BIVA_S3_ENDPOINT: object storage cho bản export (vd http://localhost:8333); trống = trả nội dung, không lưu
+	S3Bucket           string // BIVA_S3_BUCKET, mặc định biva-exports
+	S3PublicURL        string // BIVA_S3_PUBLIC_URL: cơ sở link tải (khác endpoint khi truy cập từ ngoài); trống = dùng endpoint
+	S3AccessKey        string // BIVA_S3_ACCESS_KEY / BIVA_S3_SECRET_KEY — trống = anonymous (SeaweedFS local)
+	S3SecretKey        string
 	ShutdownTimeout    time.Duration // thời gian chờ tắt êm
 }
 
@@ -32,6 +37,11 @@ func Load() (Config, error) {
 		MigrationsDir:      getenv("BIVA_MIGRATIONS_DIR", "../contracts/migrations"),
 		PublicURL:          getenv("BIVA_PUBLIC_URL", "http://localhost:8080"),
 		TEIURL:             os.Getenv("BIVA_TEI_URL"),
+		S3Endpoint:         os.Getenv("BIVA_S3_ENDPOINT"),
+		S3Bucket:           getenv("BIVA_S3_BUCKET", "biva-exports"),
+		S3AccessKey:        os.Getenv("BIVA_S3_ACCESS_KEY"),
+		S3PublicURL:        os.Getenv("BIVA_S3_PUBLIC_URL"),
+		S3SecretKey:        os.Getenv("BIVA_S3_SECRET_KEY"),
 		ShutdownTimeout:    10 * time.Second,
 	}
 	c.KBDir, c.SchemasDir = Paths()

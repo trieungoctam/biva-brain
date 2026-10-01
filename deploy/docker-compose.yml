@@ -66,6 +66,9 @@ services:
     build: { context: .., dockerfile: brain-api/Dockerfile }
     environment:
       BIVA_DATABASE_URL: *db_url
+      BIVA_S3_ENDPOINT: http://s3:8333      # lưu bản export_bot (download_url); trống = không lưu
+      BIVA_S3_BUCKET: biva-exports
+      BIVA_S3_PUBLIC_URL: ${BIVA_S3_PUBLIC_URL:-http://localhost:8333}   # cơ sở link tải nhìn từ client ngoài
       BIVA_PUBLIC_URL: ${BIVA_PUBLIC_URL:-http://localhost:8080}   # ChatGPT cần URL https công khai
       BIVA_TEI_URL: http://tei-embed:80   # recall_knowledge nhánh semantic; TEI chưa chạy → chỉ keyword
       OTEL_EXPORTER_OTLP_ENDPOINT: *otel

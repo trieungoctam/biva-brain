@@ -21,6 +21,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/trieungoctam/biva-brain/brain-api/internal/artifact"
+	"github.com/trieungoctam/biva-brain/brain-api/internal/storage"
 )
 
 var Formats = []string{"json", "markdown", "faq_csv"}
@@ -57,6 +58,7 @@ type Result struct {
 	Filename        string         `json:"filename"`
 	Bytes           int            `json:"bytes"`
 	Content         string         `json:"content"`
+	DownloadURL     string         `json:"download_url,omitempty"` // có Store: file đã lưu ở object storage
 }
 
 var citeRe = regexp.MustCompile(`[ \t]*\[\[[^\[\]]*\]\]`)
@@ -77,6 +79,12 @@ type Input struct {
 	Required         []string // artifact bắt buộc (template ngành)
 	Actor            string
 	KnowledgeVersion string
+	Store            Uploader // có thì upload bản xuất lên object storage (DYN-74)
+}
+
+// Uploader lưu một file và trả URL tải (thực thi bởi internal/storage).
+type Uploader interface {
+	Upload(ctx context.Context, key, contentType string, body []byte) (string, error)
 }
 
 func Export(ctx context.Context, db *pgxpool.Pool, in Input) (Result, error) {
@@ -218,6 +226,14 @@ func Export(ctx context.Context, db *pgxpool.Pool, in Input) (Result, error) {
 		res.Content, res.Filename = FAQCSV(def.Artifacts["faq"].Content), base+"-faq.csv"
 	}
 	res.Bytes = len(res.Content)
+	if in.Store != nil {
+		key := fmt.Sprintf("exports/%s/%s/v%d/%s", in.OperatorID, in.Channel, snapVersion, res.Filename)
+		url, err := in.Store.Upload(ctx, key, storage.ContentType(in.Format), []byte(res.Content))
+		if err != nil {
+			return res, fmt.Errorf("lưu bản xuất lên object storage: %w", err)
+		}
+		res.DownloadURL = url
+	}
 	return res, nil
 }
 

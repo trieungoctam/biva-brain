@@ -247,7 +247,8 @@ func (s *Server) addBuildTools(srv *mcp.Server, operatorID string) {
 				return nil, exportOut{}, internal("export_bot", err)
 			}
 			res, err := export.Export(ctx, s.db, export.Input{OperatorID: operatorID, Channel: in.Channel,
-				Format: in.Format, Required: s.template.Artifacts.Required, Actor: p.Actor(), KnowledgeVersion: kv})
+				Format: in.Format, Required: s.template.Artifacts.Required, Actor: p.Actor(), KnowledgeVersion: kv,
+				Store: s.storage})
 			var nr *export.NotReadyError
 			if errors.As(err, &nr) {
 				return nil, exportOut{}, err
@@ -255,8 +256,11 @@ func (s *Server) addBuildTools(srv *mcp.Server, operatorID string) {
 			if err != nil {
 				return nil, exportOut{}, internal("export_bot", err)
 			}
-			return nil, exportOut{Result: res, NextActions: []string{"lưu content thành file " + res.Filename +
-				" và nạp vào runtime của bot"}}, nil
+			next := []string{"lưu content thành file " + res.Filename + " và nạp vào runtime của bot"}
+			if res.DownloadURL != "" {
+				next = append([]string{"tải bản xuất: " + res.DownloadURL}, next...)
+			}
+			return nil, exportOut{Result: res, NextActions: next}, nil
 		})
 
 	mcp.AddTool(srv, &mcp.Tool{Name: "list_artifacts", Description: listArtifactsDesc, Annotations: readOnly},

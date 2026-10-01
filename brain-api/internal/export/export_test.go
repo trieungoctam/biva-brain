@@ -85,6 +85,16 @@ func TestExport(t *testing.T) {
 		t.Fatalf("csv = %q", csv.Content)
 	}
 
+	// Có Store → upload đúng key/content-type, trả download_url (DYN-74).
+	up := &fakeUploader{}
+	st, err := Export(ctx, pool, Input{OperatorID: op, Format: "faq_csv", Required: in.Required, Actor: "ai:t", Store: up})
+	if err != nil || st.DownloadURL != "http://s3.test/biva-exports/exports/"+op+"/zalo/v1/"+op+"-zalo-v1-faq.csv" {
+		t.Fatalf("store = %+v %v", st, err)
+	}
+	if up.contentType != "text/csv; charset=utf-8" || up.body != st.Content || up.key == "" {
+		t.Fatalf("upload = %+v", up)
+	}
+
 	// Tri thức đổi → faq stale → không xuất; sửa + valid → snapshot v2.
 	pool.Exec(ctx, `UPDATE items SET status = 'retracted' WHERE id = $1`, pets)
 	if _, err := Export(ctx, pool, in); !errors.As(err, &nr) || !strings.Contains(err.Error(), "refresh_bot") {
@@ -99,4 +109,13 @@ func TestExport(t *testing.T) {
 	if _, err := Export(ctx, pool, Input{OperatorID: op, Format: "pdf", Required: in.Required}); !errors.As(err, &nr) {
 		t.Fatal("format sai phải lỗi")
 	}
+}
+
+type fakeUploader struct {
+	key, contentType, body string
+}
+
+func (f *fakeUploader) Upload(_ context.Context, key, contentType string, body []byte) (string, error) {
+	f.key, f.contentType, f.body = key, contentType, string(body)
+	return "http://s3.test/biva-exports/" + key, nil
 }

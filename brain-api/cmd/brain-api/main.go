@@ -34,6 +34,7 @@ import (
 	"github.com/trieungoctam/biva-brain/brain-api/internal/pages"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/recall"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/scheduler"
+	"github.com/trieungoctam/biva-brain/brain-api/internal/storage"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/store"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/telemetry"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
@@ -143,6 +144,18 @@ func serve(cfg config.Config) error {
 	mcpSrv := mcpserver.New(db.Primary, version, topics).WithOAuth(authServer).WithEntities(resolver).
 		WithTemplate(tpl).WithPacks(packs).WithPublicURL(cfg.PublicURL)
 	(&form.Handler{DB: db.Primary}).Mount(mux)
+
+	// Object storage cho bản export_bot (DYN-74); trống = export trả nội dung, không lưu.
+	if cfg.S3Endpoint != "" {
+		st, err := storage.New(cfg.S3Endpoint, cfg.S3PublicURL, cfg.S3Bucket, cfg.S3AccessKey, cfg.S3SecretKey)
+		if err != nil {
+			return err
+		}
+		if err := st.EnsureBucket(context.Background()); err != nil {
+			return fmt.Errorf("tạo bucket %s trên %s: %w", cfg.S3Bucket, cfg.S3Endpoint, err)
+		}
+		mcpSrv.WithStorage(st)
+	}
 
 	// Scheduler chạy ở mọi instance nhưng chỉ leader (advisory lock) thực thi task.
 	// refresh_pages (S2.1.4): dựng lại Operator Profile pages cho nhà xe có version tri thức đổi.
