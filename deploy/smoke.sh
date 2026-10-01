@@ -75,5 +75,17 @@ if [[ "${SMOKE_SKIP_TEI:-}" != 1 ]]; then
     "$C exec -T postgres psql -U biva -d biva -Atc \"SELECT embedding IS NOT NULL FROM items WHERE id='$item'\" | grep -qx t"
   hit=$(psql_q "SELECT count(*) FROM items WHERE id='$item' AND tsv @@ plainto_tsquery('simple', 'hanh ly mien phi')")
   [[ "$hit" == 1 ]] && echo "✓ tìm được item bằng query không dấu" || { echo "✗ không tìm thấy item"; exit 1; }
+
+  # recall_knowledge qua MCP: brain-api nhúng query bằng TEI thật → item phải được nhánh semantic tìm ra.
+  out=$(mcp '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"recall_knowledge","arguments":{"query":"khách mang theo bao nhiêu ký đồ"}}}')
+  ITEM=$item python3 -c '
+import json, os, sys
+raw = sys.stdin.read()
+msg = json.loads(next((l[5:] for l in raw.splitlines() if l.startswith("data:")), raw))
+res = msg["result"]["structuredContent"]
+hit = next((h for h in res["items"] if h["id"] == os.environ["ITEM"]), None)
+assert hit and "semantic" in hit["arms"] and not res.get("degraded"), res
+print("✓ recall_knowledge: nhánh semantic (TEI) tìm ra item, %d ms" % res["took_ms"])
+' <<<"$out" || { echo "✗ recall_knowledge: $out"; exit 1; }
 fi
 echo "smoke OK"

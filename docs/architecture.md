@@ -130,6 +130,13 @@ rerank sâu (top 300) cho `reflect` và khi dựng knowledge pack.
 Boost: `recency ±10%`, `temporal ±10%`, `proof_count ±5%`, **`layer`** (L3 > L2 > L1 > L0) `±10%`.
 Kết quả luôn mang nhãn tầng + nguồn.
 
+**Bản M1** (`brain-api/internal/recall`): semantic + keyword song song → RRF → boost `layer ±10%`, `proof_count +5%`,
+độ mới `±5%` → cắt theo `max_tokens` (luôn ≥ 1 kết quả). Lọc `active` + còn hiệu lực trong **cả ngày** `valid_at`
+(giá mới từ 01/11 khớp ngày 01/11, bản cũ hết hạn 31/10 thì không). Nhánh semantic: query nhúng bằng TEI (cùng
+bge-m3 với job `index.items`), ngưỡng cosine 0.45, `hnsw.ef_search` 200 + iterative scan (pgvector ≥ 0.8) để lọc theo
+nhà xe không bị thiếu ứng viên; TEI lỗi/chậm (> 800 ms) → chỉ keyword, kết quả báo `degraded`. Đo trên 3 × 300 item:
+p95 ≈ 12 ms (chưa tính TEI). Graph/temporal arm, rerank: M3.
+
 ## 4. Luồng build bot
 
 ```

@@ -15,6 +15,7 @@ import asyncpg
 import pytest
 
 from biva_worker import textnorm
+from biva_worker.contracts import contracts_root
 from biva_worker.embed import DIM, TEIEmbedder
 from biva_worker.index import index_items, item_search_text, to_pgvector
 from biva_worker.llm.client import Usage, UsageRecord
@@ -46,6 +47,15 @@ def test_item_search_text_no_cross_field_bigram():
     s = item_search_text("gia_ve", "sgn-dl", "Giường nằm 300.000đ")
     assert s == "gia ve gia_ve sgn dl sgn_dl giuong nam 300000d giuong_nam nam_300000d"
     assert "ve_sgn" not in s and "dl_giuong" not in s
+
+
+def test_item_search_text_shared_fixture():
+    # Cùng fixture với Go (textnorm.ItemSearchText): kb sync / propose_item (Go) và ingest (Python) ghi cùng search_text.
+    path = contracts_root() / "textnorm" / "item_search.jsonl"
+    cases = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
+    assert cases
+    for c in cases:
+        assert item_search_text(c["topic"], c["key"], c["text"]) == c["expected"], c
 
 
 def test_to_pgvector():

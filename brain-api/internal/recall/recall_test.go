@@ -1,0 +1,341 @@
+package recall
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/trieungoctam/biva-brain/brain-api/internal/testdb"
+	"github.com/trieungoctam/biva-brain/brain-api/internal/textnorm"
+)
+
+// fakeEmbedder: vector one-hot theo từ khoá đầu tiên khớp trong câu — đủ để kiểm nhánh semantic không cần TEI.
+type fakeEmbedder struct {
+	axes map[string]int
+	err  error
+}
+
+func (f fakeEmbedder) Embed(_ context.Context, text string) ([]float32, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	v := make([]float32, Dim)
+	folded := textnorm.Fold(text)
+	for word, axis := range f.axes {
+		if strings.Contains(folded, word) {
+			v[axis] = 1
+			return v, nil
+		}
+	}
+	v[Dim-1] = 1
+	return v, nil
+}
+
+func axis(i int) string {
+	v := make([]float32, Dim)
+	v[i] = 1
+	return pgvector(v)
+}
+
+type env struct {
+	pool     *pgxpool.Pool
+	op, opB  string
+	tag      string // từ riêng của test để lọc khỏi dữ liệu L0/L1 có sẵn trong DB test
+	day      func(s string) time.Time
+	insertIt func(layer int, op any, kind, topic, key, text string, extra map[string]any) string
+}
+
+func setup(t *testing.T) *env {
+	t.Helper()
+	ctx := context.Background()
+	pool := testdb.Pool(t)
+	sfx := fmt.Sprintf("%d", time.Now().UnixNano())
+	e := &env{pool: pool, op: "rc" + sfx, opB: "rcb" + sfx, tag: "zq" + sfx}
+	if _, err := pool.Exec(ctx, `INSERT INTO operators (id, name) VALUES ($1, 'Phương Nam'), ($2, 'B')`, e.op, e.opB); err != nil {
+		t.Fatal(err)
+	}
+	var global []string
+	e.day = func(s string) time.Time {
+		d, _ := time.ParseInLocation("2006-01-02", s, time.FixedZone("ICT", 7*3600))
+		return d
+	}
+	e.insertIt = func(layer int, op any, kind, topic, key, text string, extra map[string]any) string {
+		t.Helper()
+		text = text + " " + e.tag
+		var keyArg any
+		if key != "" {
+			keyArg = key
+		}
+		var id string
+		err := pool.QueryRow(ctx, `INSERT INTO items (layer, operator_id, kind, topic, key, text, value, status, locked,
+				valid_from, valid_to, search_text, embedding, proof_count, metadata)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, 'active', $8, $9, $10, $11, $12::vector, $13, $14) RETURNING id::text`,
+			layer, op, kind, topic, keyArg, text, extra["value"], extra["locked"] == true, extra["valid_from"],
+			extra["valid_to"], textnorm.SearchText(topic+" "+key+" "+text), extra["embedding"],
+			orInt(extra["proof"], 1), orMap(extra["metadata"])).Scan(&id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if layer <= 1 {
+			global = append(global, id)
+		}
+		return id
+	}
+	t.Cleanup(func() {
+		pool.Exec(ctx, `DELETE FROM items WHERE id = ANY($1::uuid[])`, global)
+		pool.Exec(ctx, `DELETE FROM operators WHERE id IN ($1, $2)`, e.op, e.opB)
+	})
+	return e
+}
+
+func orInt(v any, def int) int {
+	if i, ok := v.(int); ok {
+		return i
+	}
+	return def
+}
+
+func orMap(v any) map[string]any {
+	if m, ok := v.(map[string]any); ok {
+		return m
+	}
+	return map[string]any{}
+}
+
+func ids(hits []Hit) []string {
+	var out []string
+	for _, h := range hits {
+		out = append(out, h.ID)
+	}
+	return out
+}
+
+func byID(hits []Hit, id string) *Hit {
+	for i := range hits {
+		if hits[i].ID == id {
+			return &hits[i]
+		}
+	}
+	return nil
+}
+
+func TestRecallKeywordScopeAndLabels(t *testing.T) {
+	e := setup(t)
+	ctx := context.Background()
+	luggage := e.insertIt(2, e.op, "policy", "luggage", "luggage.mien_phi", "Mỗi khách được mang 20kg hành lý miễn phí", nil)
+	other := e.insertIt(2, e.opB, "policy", "luggage", "luggage.mien_phi", "Nhà xe B: 30kg hành lý miễn phí", nil)
+	l1 := e.insertIt(1, nil, "policy", "luggage", "", "Thông thường hành lý quá 20kg tính thêm phí",
+		map[string]any{"metadata": map[string]any{"label": "thông lệ chung", "source": "L1/xe-khach/rules.yaml"}})
+	l0 := e.insertIt(0, nil, "policy", "other", "", "Không bịa thông tin hành lý khi chưa có dữ liệu",
+		map[string]any{"locked": true})
+	pets := e.insertIt(2, e.op, "policy", "pets", "pets.cho_meo", "Không nhận chó mèo", nil)
+
+	r := &Recaller{DB: e.pool}
+	res, err := r.Recall(ctx, Query{OperatorID: e.op, Text: "hanh ly mien phi " + e.tag})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if byID(res.Hits, other) != nil {
+		t.Fatal("lộ item của nhà xe khác")
+	}
+	if len(res.Degraded) == 0 || !strings.Contains(res.Degraded[0], "semantic") {
+		t.Fatalf("thiếu TEI phải báo degraded: %v", res.Degraded)
+	}
+	h := byID(res.Hits, luggage)
+	if h == nil || res.Hits[0].ID != luggage {
+		t.Fatalf("item nhà xe khớp nhất phải đứng đầu: %v", ids(res.Hits))
+	}
+	if h.Layer != "L2" || h.Label != "nhà xe" || h.Facts != nil || h.Arms[0] != "keyword" {
+		t.Fatalf("hit L2 = %+v", h)
+	}
+	if g := byID(res.Hits, l1); g == nil || g.Layer != "L1" || g.Label != "thông lệ chung" ||
+		g.Source == nil || g.Source.KBFile != "L1/xe-khach/rules.yaml" {
+		t.Fatalf("hit L1 = %+v", g)
+	}
+	if g := byID(res.Hits, l0); g == nil || g.Label != "quy tắc nền tảng (bắt buộc)" || !g.Locked {
+		t.Fatalf("hit L0 = %+v", g)
+	}
+
+	// Lọc topic / kind.
+	res, _ = r.Recall(ctx, Query{OperatorID: e.op, Text: "hanh ly " + e.tag, Topics: []string{"pets"}})
+	if byID(res.Hits, luggage) != nil || byID(res.Hits, pets) == nil {
+		t.Fatalf("lọc topic pets: %v", ids(res.Hits))
+	}
+	// Chỉ có topics → liệt kê theo topic.
+	res, _ = r.Recall(ctx, Query{OperatorID: e.op, Topics: []string{"pets"}})
+	if byID(res.Hits, pets) == nil || res.Hits[0].Arms[0] != "browse" {
+		t.Fatalf("browse pets: %v", ids(res.Hits))
+	}
+	if _, err := r.Recall(ctx, Query{OperatorID: e.op}); !errors.Is(err, ErrEmptyQuery) {
+		t.Fatalf("query rỗng: %v", err)
+	}
+}
+
+func TestRecallValidity(t *testing.T) {
+	e := setup(t)
+	ctx := context.Background()
+	endOct := e.day("2026-11-01").Add(-time.Microsecond)
+	old := e.insertIt(2, e.op, "data", "fare", "fare.sg_dl", "Giá vé Sài Gòn Đà Lạt 300.000đ",
+		map[string]any{"valid_to": endOct})
+	neu := e.insertIt(2, e.op, "data", "fare", "fare.sg_dl", "Giá vé Sài Gòn Đà Lạt 320.000đ",
+		map[string]any{"valid_from": e.day("2026-11-01")})
+	gone := e.insertIt(2, e.op, "data", "fare", "fare.tet", "Giá vé Tết 450.000đ",
+		map[string]any{"valid_from": e.day("2026-01-20"), "valid_to": e.day("2026-02-10")})
+
+	r := &Recaller{DB: e.pool}
+	q := func(day string) []string {
+		start := e.day(day)
+		res, err := r.Recall(ctx, Query{OperatorID: e.op, Text: "gia ve " + e.tag, ValidAt: start,
+			ValidUntil: start.Add(24*time.Hour - time.Microsecond)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return only(ids(res.Hits), old, neu, gone) // DB test có thể có L0/L1 nói về giá vé (kb sync)
+	}
+	if got := q("2026-10-31"); len(got) != 1 || got[0] != old {
+		t.Fatalf("31/10 phải ra giá cũ: %v", got)
+	}
+	if got := q("2026-11-01"); len(got) != 1 || got[0] != neu {
+		t.Fatalf("01/11 phải ra giá mới: %v", got)
+	}
+	if got := q("2026-02-01"); len(got) != 2 || !contains(got, gone) || !contains(got, old) {
+		t.Fatalf("01/02 phải có giá Tết + giá cũ: %v", got)
+	}
+}
+
+func only(xs []string, keep ...string) []string {
+	var out []string
+	for _, x := range xs {
+		if contains(keep, x) {
+			out = append(out, x)
+		}
+	}
+	return out
+}
+
+func contains(xs []string, x string) bool {
+	for _, v := range xs {
+		if v == x {
+			return true
+		}
+	}
+	return false
+}
+
+func TestRecallSemanticRRFAndDegrade(t *testing.T) {
+	e := setup(t)
+	ctx := context.Background()
+	// Item không chung từ nào với query nhưng gần nghĩa (cùng trục vector) → chỉ nhánh semantic tìm ra.
+	pets := e.insertIt(2, e.op, "policy", "pets", "pets.cho_meo", "Không nhận chó mèo lên xe",
+		map[string]any{"embedding": axis(1)})
+	// Cả hai nhánh khớp → RRF cộng điểm, đứng trên.
+	both := e.insertIt(2, e.op, "policy", "pets", "pets.thu_cung", "Thú cưng nhỏ để trong lồng được mang theo",
+		map[string]any{"embedding": axis(1)})
+	// Vector trực giao (cosine 0) → dưới ngưỡng, nhánh semantic bỏ.
+	far := e.insertIt(2, e.op, "policy", "luggage", "luggage.cong_kenh", "Hàng cồng kềnh báo trước",
+		map[string]any{"embedding": axis(2)})
+
+	emb := fakeEmbedder{axes: map[string]int{"thu cung": 1}}
+	r := &Recaller{DB: e.pool, Embedder: emb}
+	res, err := r.Recall(ctx, Query{OperatorID: e.op, Text: "thú cưng"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := only(ids(res.Hits), pets, both, far)
+	if len(got) < 2 || got[0] != both || !contains(got, pets) || contains(got, far) {
+		t.Fatalf("semantic + RRF: %v", got)
+	}
+	if h := byID(res.Hits, both); len(h.Arms) != 2 {
+		t.Fatalf("hit khớp 2 nhánh: %v", h.Arms)
+	}
+	if len(res.Degraded) != 0 {
+		t.Fatalf("degraded: %v", res.Degraded)
+	}
+
+	// TEI lỗi → vẫn có kết quả keyword, báo degraded.
+	r.Embedder = fakeEmbedder{err: errors.New("TEI down")}
+	res, err = r.Recall(ctx, Query{OperatorID: e.op, Text: "thú cưng"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Lọc theo item của test: DB test có thể có sẵn L1 nói về thú cưng (kb sync).
+	if got := only(ids(res.Hits), pets, both, far); len(got) != 1 || got[0] != both || len(res.Degraded) != 1 {
+		t.Fatalf("degrade: %v %v", got, res.Degraded)
+	}
+}
+
+func TestRecallBudgetAndBoost(t *testing.T) {
+	e := setup(t)
+	ctx := context.Background()
+	for i := 0; i < 30; i++ {
+		e.insertIt(2, e.op, "policy", "other", fmt.Sprintf("other.quy_dinh_%d", i),
+			strings.Repeat("Quy định chung về đón trả khách dọc đường. ", 10), nil)
+	}
+	r := &Recaller{DB: e.pool}
+	res, err := r.Recall(ctx, Query{OperatorID: e.op, Text: "don tra khach " + e.tag, MaxTokens: 500})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Truncated || res.Total < 30 || len(res.Hits) == 0 || len(res.Hits) >= 30 {
+		t.Fatalf("cắt theo token: hits=%d total=%d truncated=%v", len(res.Hits), res.Total, res.Truncated)
+	}
+	// Một hit vượt ngân sách vẫn được trả (ít nhất 1).
+	res, _ = r.Recall(ctx, Query{OperatorID: e.op, Text: "don tra khach " + e.tag, MaxTokens: 1})
+	if len(res.Hits) != 1 {
+		t.Fatalf("tối thiểu 1 hit: %d", len(res.Hits))
+	}
+
+	// Boost: cùng thứ hạng, tầng nhà xe (L2) xếp trên thông lệ (L1).
+	now := time.Now()
+	l2 := boost(Hit{Layer: "L2", proof: 1, createdAt: now}, now)
+	l1 := boost(Hit{Layer: "L1", proof: 1, createdAt: now}, now)
+	proven := boost(Hit{Layer: "L2", proof: 5, createdAt: now}, now)
+	oldOne := boost(Hit{Layer: "L2", proof: 1, createdAt: now.AddDate(-2, 0, 0)}, now)
+	if !(proven > l2 && l2 > l1 && l2 > oldOne) {
+		t.Fatalf("boost: proven=%v l2=%v l1=%v old=%v", proven, l2, l1, oldOne)
+	}
+}
+
+func TestQueryData(t *testing.T) {
+	e := setup(t)
+	ctx := context.Background()
+	val := func(f string) map[string]any { return map[string]any{"value": []byte(f)} }
+	dl := e.insertIt(2, e.op, "data", "fare", "fare.sai_gon_da_lat.giuong_nam", "Sài Gòn → Đà Lạt giường nằm 320.000đ",
+		val(`{"facts": {"diem_di": "Sài Gòn", "diem_den": "Đà Lạt", "gia_ve": "320000"}}`))
+	nt := e.insertIt(2, e.op, "data", "fare", "fare.sai_gon_nha_trang", "Sài Gòn → Nha Trang 280.000đ",
+		val(`{"facts": {"diem_di": "Sài Gòn", "diem_den": "Nha Trang", "gia_ve": 280000}}`))
+	tet := e.insertIt(2, e.op, "data", "fare", "fare.sai_gon_da_lat.tet", "Giá Tết Sài Gòn → Đà Lạt 450.000đ",
+		map[string]any{"value": []byte(`{"facts": {"diem_den": "Đà Lạt", "gia_ve": "450000"}}`),
+			"valid_from": time.Now().AddDate(0, 2, 0)})
+	e.insertIt(2, e.op, "policy", "fare", "fare.tre_em", "Trẻ em dưới 5 tuổi miễn phí", nil)
+	e.insertIt(2, e.opB, "data", "fare", "fare.sai_gon_da_lat", "Nhà xe B Sài Gòn Đà Lạt 999.000đ", nil)
+
+	res, err := QueryData(ctx, e.pool, DataQuery{OperatorID: e.op, Topics: []string{"fare"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Rows) != 2 || len(res.Upcoming) != 0 {
+		t.Fatalf("chỉ data đang hiệu lực của nhà xe: %+v", res)
+	}
+	if r := res.Rows[1]; r.ID != nt || r.Facts["gia_ve"] != "280000" {
+		t.Fatalf("fact số giữ dạng JSON: %+v", r)
+	}
+	res, _ = QueryData(ctx, e.pool, DataQuery{OperatorID: e.op, Match: "da lat giường", IncludeUpcoming: true})
+	if len(res.Rows) != 1 || res.Rows[0].ID != dl || len(res.Upcoming) != 0 {
+		t.Fatalf("match: %+v", res)
+	}
+	res, _ = QueryData(ctx, e.pool, DataQuery{OperatorID: e.op, Facts: map[string]string{"diem den": "da lat"},
+		IncludeUpcoming: true})
+	if len(res.Rows) != 1 || len(res.Upcoming) != 1 || res.Upcoming[0].ID != tet {
+		t.Fatalf("facts + upcoming: %+v", res)
+	}
+	res, _ = QueryData(ctx, e.pool, DataQuery{OperatorID: e.op, Facts: map[string]string{"diem_den": "da la"}})
+	if len(res.Rows) != 0 {
+		t.Fatalf("facts khớp trọn từ, không khớp nửa cụm: %+v", res)
+	}
+}

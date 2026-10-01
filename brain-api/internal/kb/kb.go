@@ -26,6 +26,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/trieungoctam/biva-brain/brain-api/internal/queue"
+	"github.com/trieungoctam/biva-brain/brain-api/internal/textnorm"
 )
 
 type Rule struct {
@@ -363,10 +364,10 @@ func insertRule(ctx context.Context, tx pgx.Tx, r Rule) (string, error) {
 	}
 	var id string
 	err := tx.QueryRow(ctx, `
-		INSERT INTO items (layer, kind, topic, key, text, value, status, locked, valid_from, metadata)
-		VALUES ($1, $2, $3, $4, $5, $6, 'active', $7, now(), $8)
+		INSERT INTO items (layer, kind, topic, key, text, value, status, locked, valid_from, metadata, search_text)
+		VALUES ($1, $2, $3, $4, $5, $6, 'active', $7, now(), $8, $9)
 		RETURNING id::text`,
-		r.Layer, r.Kind, r.Topic, r.Key, r.Text, value, r.Locked, meta,
+		r.Layer, r.Kind, r.Topic, r.Key, r.Text, value, r.Locked, meta, textnorm.ItemSearchText(r.Topic, r.Key, r.Text),
 	).Scan(&id)
 	return id, err
 }

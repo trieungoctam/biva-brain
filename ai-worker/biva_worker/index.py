@@ -60,14 +60,16 @@ async def index_items(pool: asyncpg.Pool, embedder: Embedder, payload: dict[str,
         )
         if not rows:
             break
+        # search_text trước, không cần TEI: TEI lỗi (job retry) thì nhánh keyword vẫn tìm được item.
+        await pool.executemany(
+            """UPDATE items SET search_text = $2, updated_at = now()
+               WHERE id = $1::uuid AND search_text <> $2""",
+            [(r["id"], item_search_text(r["topic"], r["key"], r["text"])) for r in rows],
+        )
         vectors = await embedder.embed([r["text"] for r in rows])
         await pool.executemany(
-            """UPDATE items SET search_text = $2, embedding = $3::vector, updated_at = now()
-               WHERE id = $1::uuid""",
-            [
-                (r["id"], item_search_text(r["topic"], r["key"], r["text"]), to_pgvector(v))
-                for r, v in zip(rows, vectors, strict=True)
-            ],
+            "UPDATE items SET embedding = $2::vector, updated_at = now() WHERE id = $1::uuid",
+            [(r["id"], to_pgvector(v)) for r, v in zip(rows, vectors, strict=True)],
         )
         done += len(rows)
         last_id = rows[-1]["id"]

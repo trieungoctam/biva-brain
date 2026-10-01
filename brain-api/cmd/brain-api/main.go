@@ -26,6 +26,7 @@ import (
 	"github.com/trieungoctam/biva-brain/brain-api/internal/mcpserver"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/migrate"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/oauth"
+	"github.com/trieungoctam/biva-brain/brain-api/internal/recall"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/scheduler"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/store"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/telemetry"
@@ -126,13 +127,19 @@ func serve(cfg config.Config) error {
 	}
 	var topics []mcpserver.Topic
 	for _, sec := range bundle.Templates["xe-khach"].Sections {
-		topics = append(topics, mcpserver.Topic{ID: sec.Topic, Title: sec.Title})
+		topics = append(topics, mcpserver.Topic{ID: sec.Topic, Title: sec.Title, Required: sec.Level == "required"})
 	}
 
 	mux := httpapi.NewRouter(db)
 	authServer := oauth.New(db.Primary, cfg.PublicURL)
 	authServer.Mount(mux)
-	mcpserver.New(db.Primary, version, topics).WithOAuth(authServer).Mount(mux)
+	mcpSrv := mcpserver.New(db.Primary, version, topics).WithOAuth(authServer)
+	if cfg.TEIURL != "" {
+		mcpSrv.WithEmbedder(recall.NewTEI(cfg.TEIURL))
+	} else {
+		slog.Warn("chưa đặt BIVA_TEI_URL: recall_knowledge chỉ dùng keyword")
+	}
+	mcpSrv.Mount(mux)
 	// otelhttp: mỗi request (MCP call...) là một span gốc; health không cần trace.
 	handler := otelhttp.NewHandler(mux, "brain-api", otelhttp.WithFilter(func(r *http.Request) bool {
 		return !strings.HasPrefix(r.URL.Path, "/health/")

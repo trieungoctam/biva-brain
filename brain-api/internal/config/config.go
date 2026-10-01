@@ -15,6 +15,7 @@ type Config struct {
 	PublicURL          string        // BIVA_PUBLIC_URL: URL công khai (issuer OAuth, resource MCP), mặc định http://localhost:8080
 	KBDir              string        // BIVA_KB_DIR, mặc định ../kb
 	SchemasDir         string        // BIVA_SCHEMAS_DIR, mặc định ../contracts/schemas
+	TEIURL             string        // BIVA_TEI_URL: TEI embedding cho recall; trống = recall chỉ dùng keyword
 	ShutdownTimeout    time.Duration // thời gian chờ tắt êm
 }
 
@@ -30,6 +31,7 @@ func Load() (Config, error) {
 		HTTPAddr:           getenv("BIVA_HTTP_ADDR", ":8080"),
 		MigrationsDir:      getenv("BIVA_MIGRATIONS_DIR", "../contracts/migrations"),
 		PublicURL:          getenv("BIVA_PUBLIC_URL", "http://localhost:8080"),
+		TEIURL:             os.Getenv("BIVA_TEI_URL"),
 		ShutdownTimeout:    10 * time.Second,
 	}
 	c.KBDir, c.SchemasDir = Paths()

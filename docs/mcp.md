@@ -127,11 +127,11 @@ Cột **Mốc** = mốc dự kiến (xem lộ trình trong [architecture.md](arc
 ### 5.1 Đọc tri thức nhà xe
 | Tool | Mốc | Cờ | Mô tả |
 |---|---|---|---|
-| `get_operator_overview` | M1 | RO | thông tin nhà xe, coverage tóm tắt, số item theo trạng thái, artifact/logic stale, job đang chạy |
+| `get_operator_overview` | M1 | RO | thông tin nhà xe, coverage theo template (mục bắt buộc còn thiếu), số item theo trạng thái, đề xuất chờ duyệt, job đang chạy/lỗi 24h; artifact/logic stale khi có (M2) |
 | `get_knowledge_pack` | M1 | RO | gói tri thức cho build (§3); tham số `purpose` (build · faq · logic · review), `budget_tokens`, `as_of` |
-| `recall_knowledge` | M1 | RO | tìm item/observation theo tầng, `valid_at`, `kinds`, `topics`; có nhãn tầng + nguồn |
-| `query_data` | M1 | RO | tuyến, chuyến, giá, điểm đón (hiệu lực theo ngày) |
-| `get_source` | M1 | RO | document gốc của một item (tin Zalo, dòng Excel) |
+| `recall_knowledge` | M1 | RO | tìm item L0/L1/L2 theo `query` (semantic + keyword, có dấu hay không đều được), `valid_at` (ngày), `kinds`, `topics`, `max_tokens`; mỗi kết quả có `id` để trích dẫn, tầng, **nhãn** (vd "thông lệ chung"), nguồn; TEI lỗi → chỉ keyword, báo `degraded` |
+| `query_data` | M1 | RO | data vận hành (tuyến, giá, lịch, điểm đón) hiệu lực vào `date`: lọc chính xác theo `topics`, `match` (đủ từ, không dấu), `facts`; `include_upcoming` → bản sẽ có hiệu lực (giá mới đã chốt) |
+| `get_source` | M1 | RO | nguồn của một item (nhận cả `[[id]]`): tin/tài liệu gốc, kênh, ai gửi, ai duyệt, các lần nhà xe nhắc lại; L0/L1 → file `kb/` |
 | `get_coverage` | M2 | RO | mục đã có / thiếu / mơ hồ / đang dùng thông lệ L1 |
 | `compare_with_industry` | M3 | RO | chỗ nhà xe khác thông lệ, bao nhiêu nhà xe khác cũng vậy |
 | `reflect` | M3 | RO | câu hỏi phân tích, trả lời có trích dẫn |

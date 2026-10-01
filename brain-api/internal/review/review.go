@@ -269,11 +269,12 @@ func Propose(ctx context.Context, db *pgxpool.Pool, operatorID string, p Proposa
 		var id string
 		err := tx.QueryRow(ctx, `
 			INSERT INTO items (layer, operator_id, kind, topic, key, text, value, status, valid_from, valid_to,
-			                   mentioned_at, metadata)
-			VALUES (2, $1, $2, $3, $4, $5, $6, 'pending', $7, $8, now(), $9)
+			                   mentioned_at, metadata, search_text)
+			VALUES (2, $1, $2, $3, $4, $5, $6, 'pending', $7, $8, now(), $9, $10)
 			RETURNING id::text`,
 			operatorID, p.Kind, p.Topic, key, strings.TrimSpace(p.Text), value, from, to,
-			map[string]any{"source": "propose_item", "proposed_by": actor}).Scan(&id)
+			map[string]any{"source": "propose_item", "proposed_by": actor},
+			textnorm.ItemSearchText(p.Topic, key, strings.TrimSpace(p.Text))).Scan(&id)
 		if err != nil {
 			return s, err
 		}
@@ -306,6 +307,13 @@ func Propose(ctx context.Context, db *pgxpool.Pool, operatorID string, p Proposa
 	if _, err := tx.Exec(ctx, `INSERT INTO audit_log (actor, action, target, payload) VALUES ($1, 'review.propose', $2, $3)`,
 		actor, "review:"+s.ID, map[string]any{"operator_id": operatorID, "key": key, "change_kind": kind}); err != nil {
 		return s, err
+	}
+	if itemID != nil {
+		// Embedding cho nhánh semantic của recall (search_text đã ghi ở trên); cùng transaction với item.
+		if _, err := tx.Exec(ctx, `INSERT INTO operations (kind, operator_id, payload) VALUES ('index.items', $1, $2)`,
+			operatorID, map[string]any{"item_ids": []string{*itemID}}); err != nil {
+			return s, err
+		}
 	}
 	return s, tx.Commit(ctx)
 }

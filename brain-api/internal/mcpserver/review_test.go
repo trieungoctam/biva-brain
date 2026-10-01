@@ -83,6 +83,15 @@ func TestProposeAndApplyWithConfirmToken(t *testing.T) {
 	if rv["key"] != "fare.sai_gon_da_lat.giuong_nam" || rv["change_kind"] != "NEW" || rv["risk"] != "high" {
 		t.Fatalf("review = %v", rv)
 	}
+	// Item đề xuất đã có search_text (keyword tìm được ngay) và job index.items cho embedding.
+	var st string
+	var idx int
+	f.pool.QueryRow(context.Background(), `SELECT i.search_text, (SELECT count(*) FROM operations o
+			WHERE o.kind = 'index.items' AND o.payload->'item_ids' ? i.id::text)
+		FROM review_items r JOIN items i ON i.id = r.item_id WHERE r.id = $1`, reviewID).Scan(&st, &idx)
+	if !strings.Contains(st, "giuong_nam") || idx != 1 {
+		t.Fatalf("search_text = %q, index jobs = %d", st, idx)
+	}
 
 	// Hàng đợi + chi tiết.
 	_, lst, _ := call(t, s, "list_review_queue", map[string]any{})

@@ -57,7 +57,7 @@ func setup(t *testing.T) *fixture {
 	must(err)
 
 	mux := http.NewServeMux()
-	New(pool, "test", []Topic{{"fare", "Giá vé"}, {"pets", "Thú cưng"}, {"luggage", "Hành lý"}, {"children", "Trẻ em"}}).Mount(mux)
+	New(pool, "test", []Topic{{"fare", "Giá vé", true}, {"pets", "Thú cưng", false}, {"luggage", "Hành lý", false}, {"children", "Trẻ em", false}}).Mount(mux)
 	srv := httptest.NewServer(mux)
 	f.url = srv.URL
 
@@ -184,7 +184,8 @@ func TestGetOperationScopedToOperator(t *testing.T) {
 		t.Fatal(err)
 	}
 	readOnlyWant := map[string]bool{"get_operation": true, "list_review_queue": true, "get_review_item": true,
-		"list_knowledge": true, "ingest": false, "submit_knowledge": false, "propose_item": false, "apply_review": false}
+		"list_knowledge": true, "recall_knowledge": true, "query_data": true, "get_source": true, "get_operator_overview": true,
+		"ingest": false, "submit_knowledge": false, "propose_item": false, "apply_review": false}
 	if len(tools.Tools) != len(readOnlyWant) {
 		t.Fatalf("có %d tool, muốn %d", len(tools.Tools), len(readOnlyWant))
 	}

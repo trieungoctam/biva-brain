@@ -30,6 +30,7 @@ import asyncpg
 
 from biva_worker import kbtemplate
 from biva_worker.contracts import validate
+from biva_worker.index import item_search_text
 from biva_worker.ingest.diff import Decision, diff
 from biva_worker.ingest.extract import OTHER_TOPIC, Candidate, ExistingItem, extract, normalize_key
 from biva_worker.llm import LLMClient
@@ -175,8 +176,9 @@ async def _write(
                 assert c is not None
                 item_id = await conn.fetchval(
                     """INSERT INTO items (layer, operator_id, kind, topic, key, text, value, status,
-                                          valid_from, valid_to, mentioned_at, document_id, metadata)
-                       VALUES (2, $1, $2, $3, $4, $5, $6, 'pending', $7, $8, $9, $10::uuid, $11)
+                                          valid_from, valid_to, mentioned_at, document_id, metadata,
+                                          search_text)
+                       VALUES (2, $1, $2, $3, $4, $5, $6, 'pending', $7, $8, $9, $10::uuid, $11, $12)
                        RETURNING id::text""",
                     payload["operator_id"],
                     c.kind,
@@ -189,6 +191,7 @@ async def _write(
                     received,
                     doc_id,
                     {"source": payload["source"], "extracted_by": "client" if "items" in payload else "llm"},
+                    item_search_text(c.topic, c.key, c.text),
                 )
             review_id = await conn.fetchval(
                 """INSERT INTO review_items (operator_id, key, topic, change_kind, risk, item_id,

@@ -28,7 +28,7 @@ func oauthServer(t *testing.T, f *fixture) string {
 	t.Cleanup(srv.Close)
 	o := oauth.New(f.pool, srv.URL)
 	o.Mount(mux)
-	New(f.pool, "test", []Topic{{"fare", "Giá vé"}}).WithOAuth(o).Mount(mux)
+	New(f.pool, "test", []Topic{{"fare", "Giá vé", true}}).WithOAuth(o).Mount(mux)
 	t.Cleanup(func() {
 		ctx := context.Background()
 		f.pool.Exec(ctx, `DELETE FROM oauth_clients WHERE client_id IN (

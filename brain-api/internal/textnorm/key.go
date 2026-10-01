@@ -16,3 +16,15 @@ func NormalizeKey(topic, key string) string {
 	}
 	return strings.Join(parts, ".")
 }
+
+// ItemSearchText: search_text của một item (cột tsv, nhánh keyword của recall). Từng phần riêng rẽ để không tạo bigram
+// nối giữa topic/key/text. Phải giống hệt biva_worker.index.item_search_text (fixture item_search.jsonl).
+func ItemSearchText(topic, key, text string) string {
+	var parts []string
+	for _, p := range []string{strings.ReplaceAll(topic, "_", " "), key, text} {
+		if s := SearchText(p); s != "" {
+			parts = append(parts, s)
+		}
+	}
+	return strings.Join(parts, " ")
+}
