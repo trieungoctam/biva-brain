@@ -86,6 +86,16 @@ các bản `active` cùng (operator, bot, tầng, key) không chồng khoảng `
 
 Snapshot là đầu vào cho `export_bot` và `releases`. Artifact chỉ được lắp vào snapshot khi `valid` và không `stale`.
 
+### Operator Profile pages (refresh_pages, M2)
+
+| Bảng | Vai trò | Cột chính |
+|---|---|---|
+| `operator_pages` | 5 trang dựng sẵn cho mỗi nhà xe — Tổng quan · Chính sách · Khác thông lệ · Còn thiếu · Logic — lắp từ knowledge pack | `operator_id`, `slug`, `title`, `markdown`, `knowledge_version`, `refreshed_at` |
+
+Job `refresh_pages` (scheduler leader, mỗi phút) dựng lại trang của nhà xe có `knowledge_version` đổi
+(trigger 000010 tăng version khi item active đổi). Resource MCP `biva://operator/{id}/pages/<slug>.md` đọc
+từ đây; thiếu hoặc cũ version thì dựng tại chỗ.
+
 ### Tri thức logic (xem [logic-knowledge.md](logic-knowledge.md))
 
 Code nằm ở git; các bảng dưới **đồng bộ từ repo** (`module.yaml`, `profile.yaml`, `tests/cases.yaml`) hoặc do Brain dựng.

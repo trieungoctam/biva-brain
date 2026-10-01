@@ -63,7 +63,8 @@ cd ai-worker && uv run pytest -q
   `kb/` (DYN-111) và `kb/L1/xe-khach/entities.yaml` (DYN-113), URL https để thử ChatGPT connector (DYN-115).
   DYN-65 (prompt build_bot/process_update) In Progress tới khi chạy trên pilot #1 thật.
 - M2 đã làm: stale/expire/list_stale/refresh_bot (E2.3), export_bot (E2.4 — thiếu link tải từ object storage,
-  DYN-74), coverage/generate_questions/form/onboard_operator (E2.1 — thiếu `refresh_pages`, DYN-69),
+  DYN-74), coverage/generate_questions/form/onboard_operator + `refresh_pages` (E2.1 — 5 trang Operator Profile
+  `biva://operator/{id}/pages/<slug>.md`, job scheduler mỗi phút theo version tri thức),
   entity alias (E2.2 — thiếu trigram/co-occurrence + đo ≥95%, DYN-70).
 - Việc tiếp theo theo kế hoạch: **E2.5 tri thức logic v1** (repo `biva-integrations`, module.yaml/profile.yaml,
   index_code, feature catalog, find_similar_operators, plan/propose logic, NO_CAPABILITY,

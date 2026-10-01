@@ -189,7 +189,7 @@ Cột **Mốc** = mốc dự kiến (xem lộ trình trong [architecture.md](arc
 
 | URI | Nội dung |
 |---|---|
-| `biva://operator/{id}/pages/{Tổng quan, Chính sách, Khác thông lệ, Còn thiếu, Logic}.md` | Operator Profile pages |
+| `biva://operator/{id}/pages/{tong-quan, chinh-sach, khac-thong-le, con-thieu, logic}.md` | Operator Profile pages (Tổng quan · Chính sách · Khác thông lệ · Còn thiếu · Logic) — dựng sẵn bởi job `refresh_pages`, đọc resource tự dựng nếu chưa có |
 | `biva://operator/{id}/bots/{bot}/artifacts/{kind}` | artifact hiện tại |
 | `biva://industry/template` | template onboarding L1 (mục + capability bắt buộc/khuyến nghị) |
 | `biva://industry/lessons` | bài học đúng chung / sai chung (gồm bài học về code) |
@@ -199,7 +199,9 @@ Cột **Mốc** = mốc dự kiến (xem lộ trình trong [architecture.md](arc
 | `biva://guides/workflow` | quy trình build bot / xử lý cập nhật |
 
 Đã có ở M1: `biva://guides/citation`, `biva://guides/workflow`, `biva://industry/template`, và
-`biva://operator/{id}/profile` (hồ sơ tri thức dựng trực tiếp từ knowledge pack; các trang tách riêng + `refresh_pages`: M2).
+`biva://operator/{id}/profile` (bản đọc nhanh, dựng trực tiếp từ knowledge pack). M2: 5 trang `pages/<slug>.md`
+dựng sẵn bởi job `refresh_pages` (scheduler leader, mỗi phút theo version tri thức; bảng `operator_pages`);
+đọc resource khi chưa có hoặc đã cũ version thì Brain dựng tại chỗ — nội dung luôn đúng version hiện tại.
 
 ## 7. Prompts (workflow chuẩn)
 

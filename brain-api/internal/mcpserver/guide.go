@@ -11,6 +11,7 @@ import (
 
 	"github.com/trieungoctam/biva-brain/brain-api/internal/artifact"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/pack"
+	"github.com/trieungoctam/biva-brain/brain-api/internal/pages"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/validate"
 )
 
@@ -102,7 +103,8 @@ func (s *Server) templateMD() string {
 	return b.String()
 }
 
-// profileMD: Operator Profile page — bản đọc nhanh của knowledge pack (M2 sẽ có refresh_pages dựng sẵn).
+// profileMD: Operator Profile page — bản đọc nhanh của knowledge pack (dựng tại chỗ khi đọc; các trang tách
+// riêng do job refresh_pages dựng sẵn: biva://operator/{id}/pages/<slug>.md).
 func profileMD(p pack.Pack) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# Nhà xe %s — hồ sơ tri thức (ngày %s, version %s)\n", p.Operator, p.AsOf, p.KnowledgeVersion)
@@ -199,6 +201,20 @@ func (s *Server) addGuide(srv *mcp.Server, operatorID string) {
 			}
 			return textResource(profileURI, profileMD(p)), nil
 		})
+	for _, slug := range pages.Slugs() {
+		slug := slug
+		uri := "biva://operator/" + operatorID + "/pages/" + slug + ".md"
+		title, _ := pages.Title(slug)
+		srv.AddResource(&mcp.Resource{URI: uri, Name: "pages/" + slug, MIMEType: "text/markdown",
+			Description: title + " — trang Operator Profile dựng sẵn (refresh_pages)"},
+			func(ctx context.Context, _ *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
+				md, err := pages.Read(ctx, s.db, s.packs, s.template, operatorID, slug)
+				if err != nil {
+					return nil, internal("resource pages/"+slug, err)
+				}
+				return textResource(uri, md), nil
+			})
+	}
 
 	srv.AddPrompt(&mcp.Prompt{Name: "build_bot", Title: "Build bot cho nhà xe",
 		Description: "AI tự đi trọn quy trình: spec → knowledge pack → viết artifact → lưu → validate tới khi valid",

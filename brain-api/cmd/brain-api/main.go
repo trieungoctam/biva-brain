@@ -20,6 +20,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/trieungoctam/biva-brain/brain-api/internal/config"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/entity"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/form"
@@ -28,6 +30,8 @@ import (
 	"github.com/trieungoctam/biva-brain/brain-api/internal/mcpserver"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/migrate"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/oauth"
+	"github.com/trieungoctam/biva-brain/brain-api/internal/pack"
+	"github.com/trieungoctam/biva-brain/brain-api/internal/pages"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/recall"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/scheduler"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/store"
@@ -114,15 +118,6 @@ func serve(cfg config.Config) error {
 	}
 	defer db.Close()
 
-	// Scheduler chạy ở mọi instance nhưng chỉ leader (advisory lock) thực thi task.
-	schedCtx, stopSched := context.WithCancel(ctx)
-	schedDone := make(chan struct{})
-	go func() {
-		defer close(schedDone)
-		(&scheduler.Scheduler{DB: db.Primary, Tasks: scheduler.DefaultTasks()}).Run(schedCtx)
-	}()
-	defer func() { stopSched(); <-schedDone }()
-
 	bundle, err := kb.Load(cfg.KBDir, cfg.SchemasDir)
 	if err != nil {
 		return fmt.Errorf("đọc kb/: %w", err)
@@ -139,9 +134,36 @@ func serve(cfg config.Config) error {
 	if err != nil {
 		return err
 	}
+	specs := make([]pack.TopicSpec, len(topics))
+	for i, t := range topics {
+		specs[i] = pack.TopicSpec{ID: t.ID, Title: t.Title, Required: t.Required}
+	}
+	packs := &pack.Builder{DB: db.Primary, Topics: specs}
+	tpl := bundle.Templates["xe-khach"]
 	mcpSrv := mcpserver.New(db.Primary, version, topics).WithOAuth(authServer).WithEntities(resolver).
-		WithTemplate(bundle.Templates["xe-khach"]).WithPublicURL(cfg.PublicURL)
+		WithTemplate(tpl).WithPacks(packs).WithPublicURL(cfg.PublicURL)
 	(&form.Handler{DB: db.Primary}).Mount(mux)
+
+	// Scheduler chạy ở mọi instance nhưng chỉ leader (advisory lock) thực thi task.
+	// refresh_pages (S2.1.4): dựng lại Operator Profile pages cho nhà xe có version tri thức đổi.
+	schedCtx, stopSched := context.WithCancel(ctx)
+	schedDone := make(chan struct{})
+	go func() {
+		defer close(schedDone)
+		tasks := append(scheduler.DefaultTasks(), scheduler.Task{
+			Name: "refresh_pages", Every: time.Minute,
+			Run: func(taskCtx context.Context, taskDB *pgxpool.Pool) error {
+				n, err := pages.Refresh(taskCtx, taskDB, packs, tpl)
+				if err == nil && n > 0 {
+					slog.Info("refresh_pages: dựng lại trang nhà xe", "count", n)
+				}
+				return err
+			},
+		})
+		(&scheduler.Scheduler{DB: db.Primary, Tasks: tasks}).Run(schedCtx)
+	}()
+	defer func() { stopSched(); <-schedDone }()
+
 	if cfg.TEIURL != "" {
 		mcpSrv.WithEmbedder(recall.NewTEI(cfg.TEIURL))
 	} else {

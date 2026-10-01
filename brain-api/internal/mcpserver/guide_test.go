@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/trieungoctam/biva-brain/brain-api/internal/pages"
 )
 
 func TestGuideResourcesPromptsAndValidate(t *testing.T) {
@@ -29,7 +31,11 @@ func TestGuideResourcesPromptsAndValidate(t *testing.T) {
 		uris[r.URI] = true
 	}
 	profile := "biva://operator/" + f.opA + "/profile"
-	for _, u := range []string{"biva://guides/citation", "biva://guides/workflow", "biva://industry/template", profile} {
+	want := []string{"biva://guides/citation", "biva://guides/workflow", "biva://industry/template", profile}
+	for _, slug := range pages.Slugs() {
+		want = append(want, "biva://operator/"+f.opA+"/pages/"+slug+".md")
+	}
+	for _, u := range want {
 		if !uris[u] {
 			t.Fatalf("thiếu resource %s: %v", u, uris)
 		}
@@ -45,6 +51,16 @@ func TestGuideResourcesPromptsAndValidate(t *testing.T) {
 		!strings.Contains(read("biva://industry/template"), "| fare | Giá vé | required |") ||
 		!strings.Contains(read(profile), "# Nhà xe "+f.opA) {
 		t.Fatal("nội dung resource sai")
+	}
+
+	// Trang pages/<slug>.md: dựng tại chỗ khi chưa có, lưu đủ 5 trang vào operator_pages.
+	tongquan := read("biva://operator/" + f.opA + "/pages/tong-quan.md")
+	if !strings.Contains(tongquan, "# "+f.opA+" — Tổng quan") {
+		t.Fatalf("tong-quan = %s", tongquan)
+	}
+	var got int
+	if err := f.pool.QueryRow(ctx, `SELECT count(*) FROM operator_pages WHERE operator_id = $1`, f.opA).Scan(&got); err != nil || got != 5 {
+		t.Fatalf("operator_pages = %d (err=%v), muốn 5", got, err)
 	}
 
 	pr, err := s.ListPrompts(ctx, nil)

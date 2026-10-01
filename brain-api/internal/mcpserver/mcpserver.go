@@ -101,6 +101,14 @@ func (s *Server) WithTemplate(t kb.Template) *Server {
 	return s
 }
 
+// WithPacks: dùng pack builder có sẵn (chia sẻ cache với job refresh_pages của scheduler).
+func (s *Server) WithPacks(b *pack.Builder) *Server {
+	if b != nil {
+		s.packs = b
+	}
+	return s
+}
+
 // WithEntities: từ điển thực thể + alias (kb/L1/<ngành>/entities.yaml) cho recall và query_data.
 func (s *Server) WithEntities(r *entity.Resolver) *Server {
 	s.recaller.Entities = r
