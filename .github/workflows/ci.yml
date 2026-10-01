@@ -64,7 +64,13 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           working-directory: ai-worker
-      # test-go chạy trước: migrate DB tới bản mới nhất cho test-py.
+      # Migrate DB test tường minh: test-go có thể ăn cache (không còn side-effect migrate) trong khi
+      # test-py luôn cần schema.
+      - name: migrate DB test
+        working-directory: brain-api
+        env:
+          BIVA_DATABASE_URL: postgres://biva:biva@localhost:5432/biva_test?sslmode=disable
+        run: go run ./cmd/brain-api migrate up
       - run: make test
 
   # make up thật trên runner (không GPU): build image, migrate, brain-api, ai-worker, TEI CPU;
