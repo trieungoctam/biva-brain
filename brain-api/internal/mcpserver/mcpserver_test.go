@@ -57,7 +57,7 @@ func setup(t *testing.T) *fixture {
 	must(err)
 
 	mux := http.NewServeMux()
-	New(pool, "test").Mount(mux)
+	New(pool, "test", []string{"fare", "pets", "luggage"}).Mount(mux)
 	srv := httptest.NewServer(mux)
 	f.url = srv.URL
 
@@ -183,8 +183,16 @@ func TestGetOperationScopedToOperator(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(tools.Tools) != 1 || tools.Tools[0].Name != "get_operation" || !tools.Tools[0].Annotations.ReadOnlyHint {
-		t.Fatalf("tools = %+v", tools.Tools)
+	readOnlyWant := map[string]bool{"get_operation": true, "list_review_queue": true, "get_review_item": true,
+		"ingest": false, "propose_item": false, "apply_review": false}
+	if len(tools.Tools) != len(readOnlyWant) {
+		t.Fatalf("có %d tool, muốn %d", len(tools.Tools), len(readOnlyWant))
+	}
+	for _, tool := range tools.Tools {
+		ro, ok := readOnlyWant[tool.Name]
+		if !ok || tool.Annotations == nil || tool.Annotations.ReadOnlyHint != ro {
+			t.Errorf("tool %s: readOnlyHint sai hoặc tool lạ", tool.Name)
+		}
 	}
 
 	res, out := callGetOperation(t, s, f.jobA)

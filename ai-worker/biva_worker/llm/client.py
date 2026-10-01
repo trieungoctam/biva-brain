@@ -165,14 +165,22 @@ class GeminiProvider:
     }
 
     def __init__(self, cfg: Provider, client: genai.Client | None = None) -> None:
-        if client is None:
+        self.cfg = cfg
+        self._client = client
+
+    @property
+    def client(self) -> genai.Client:
+        """Tạo lười: thiếu API key không được làm worker chết lúc khởi động (job không dùng LLM vẫn chạy)."""
+        if self._client is None:
+            if not self.cfg.api_key:
+                raise _AttemptFailed("AUTH", False, f"thiếu {self.cfg.api_key_env}")
             http = genai_types.HttpOptions(
-                timeout=int(cfg.timeout_s * 1000),  # mili giây
-                retry_options=genai_types.HttpRetryOptions(attempts=cfg.max_retries + 1),
-                base_url=cfg.base_url,
+                timeout=int(self.cfg.timeout_s * 1000),  # mili giây
+                retry_options=genai_types.HttpRetryOptions(attempts=self.cfg.max_retries + 1),
+                base_url=self.cfg.base_url,
             )
-            client = genai.Client(api_key=cfg.api_key, http_options=http)
-        self.client = client
+            self._client = genai.Client(api_key=self.cfg.api_key, http_options=http)
+        return self._client
 
     async def complete(self, step: Step, req: Request, schema: dict[str, Any] | None) -> RawResponse:
         thinking = None

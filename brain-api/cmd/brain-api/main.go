@@ -22,6 +22,7 @@ import (
 
 	"github.com/trieungoctam/biva-brain/brain-api/internal/config"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/httpapi"
+	"github.com/trieungoctam/biva-brain/brain-api/internal/kb"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/mcpserver"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/migrate"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/scheduler"
@@ -118,8 +119,17 @@ func serve(cfg config.Config) error {
 	}()
 	defer func() { stopSched(); <-schedDone }()
 
+	bundle, err := kb.Load(cfg.KBDir, cfg.SchemasDir)
+	if err != nil {
+		return fmt.Errorf("đọc kb/: %w", err)
+	}
+	var topics []string
+	for _, sec := range bundle.Templates["xe-khach"].Sections {
+		topics = append(topics, sec.Topic)
+	}
+
 	mux := httpapi.NewRouter(db)
-	mcpserver.New(db.Primary, version).Mount(mux)
+	mcpserver.New(db.Primary, version, topics).Mount(mux)
 	// otelhttp: mỗi request (MCP call...) là một span gốc; health không cần trace.
 	handler := otelhttp.NewHandler(mux, "brain-api", otelhttp.WithFilter(func(r *http.Request) bool {
 		return !strings.HasPrefix(r.URL.Path, "/health/")

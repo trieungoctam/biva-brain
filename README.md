@@ -65,7 +65,12 @@ claude mcp add --transport http biva-phuongnam http://localhost:8080/mcp/operato
 ```
 
 Với compose: `docker compose -f deploy/docker-compose.yml exec brain-api brain-api token issue tam`.
-Tool hiện có (M0): `get_operation`. Danh mục đầy đủ: [docs/mcp.md](docs/mcp.md).
+Tool hiện có: `get_operation`, `ingest`, `list_review_queue`, `get_review_item`, `propose_item`, `apply_review`
+(preview → `confirm_token` → thực thi). Danh mục đầy đủ: [docs/mcp.md](docs/mcp.md).
+
+Luồng một cập nhật của nhà xe: `ingest` (tin Zalo) → ai-worker trích item bằng Gemini → diff với tri thức hiện có →
+tự áp dụng phần vô hại (thêm mới không đụng tiền/giờ, nhắc lại) → phần còn lại (giá, giờ, huỷ, mọi sửa/bỏ) chờ
+builder duyệt qua `apply_review`.
 
 ## LLM và index
 

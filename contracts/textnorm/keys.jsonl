@@ -1,0 +1,8 @@
+{"topic": "fare", "key": "fare.Sài Gòn - Đà Lạt.Giường nằm", "expected": "fare.sai_gon_da_lat.giuong_nam"}
+{"topic": "fare", "key": "sai_gon-da_lat.giuong_nam", "expected": "fare.sai_gon_da_lat.giuong_nam"}
+{"topic": "pets", "key": "Điều kiện", "expected": "pets.dieu_kien"}
+{"topic": "pets", "key": "..", "expected": "pets"}
+{"topic": "schedule", "key": "schedule.SG-ĐL.Chuyến 22h30", "expected": "schedule.sg_dl.chuyen_22h30"}
+{"topic": "contact", "key": "contact.HOTLINE 1900.6067", "expected": "contact.hotline_1900.6067"}
+{"topic": "luggage", "key": "LUGGAGE.miễn phí", "expected": "luggage.mien_phi"}
+{"topic": "route", "key": "route.Quận 1 → Đà Lạt (VIP)", "expected": "route.quan_1_da_lat_vip"}

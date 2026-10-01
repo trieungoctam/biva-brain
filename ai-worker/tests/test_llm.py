@@ -400,3 +400,14 @@ def test_redis_down_fails_open():
             await r.aclose()
 
     run(t())
+
+
+def test_missing_api_key_does_not_break_startup(monkeypatch):
+    """Worker phải khởi động được khi chưa có GEMINI_API_KEY; lời gọi LLM khi đó lỗi AUTH, không retry."""
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    c = LLMClient(CFG)  # không được ném lỗi
+    with pytest.raises(LLMRequestError) as e:
+        run(c.complete(req()))
+    assert [a.error_code for a in e.value.attempts] == ["AUTH", "AUTH"]
+    assert "GEMINI_API_KEY" in e.value.attempts[0].detail

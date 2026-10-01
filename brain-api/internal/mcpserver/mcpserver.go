@@ -29,14 +29,15 @@ const principalKey = "principal"
 type Server struct {
 	db      *pgxpool.Pool
 	version string
+	topics  []string // bộ topic của template L1 (kb/) — kiểm propose_item
 
 	mu        sync.Mutex
 	operators map[string]*mcp.Server // MCP server theo nhà xe, dựng một lần
 	platform  *mcp.Server
 }
 
-func New(db *pgxpool.Pool, version string) *Server {
-	s := &Server{db: db, version: version, operators: map[string]*mcp.Server{}}
+func New(db *pgxpool.Pool, version string, topics []string) *Server {
+	s := &Server{db: db, version: version, topics: topics, operators: map[string]*mcp.Server{}}
 	s.platform = s.newPlatformServer()
 	return s
 }
@@ -148,6 +149,7 @@ func (s *Server) operatorServer(operatorID string) *mcp.Server {
 			"Mọi tool đã cố định trong phạm vi nhà xe này.",
 	})
 	addOperatorTools(srv, s.db, operatorID)
+	s.addReviewTools(srv, operatorID)
 	s.operators[operatorID] = srv
 	return srv
 }

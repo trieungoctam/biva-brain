@@ -411,3 +411,12 @@ def test_diff_fewer_facts_with_same_values_is_duplicate():
         diff([cand("fare.l", "Thêm wifi", facts={"gia_ve": "450000", "wifi": "co"})], e)[0].change_kind
         == "CHANGE"
     )
+
+
+def test_normalize_key_shared_fixture():
+    """Cùng fixture với Go (textnorm.NormalizeKey): key do ingest và propose_item sinh ra phải trùng nhau."""
+    from biva_worker.contracts import contracts_root
+
+    for line in (contracts_root() / "textnorm" / "keys.jsonl").read_text(encoding="utf-8").splitlines():
+        c = json.loads(line)
+        assert normalize_key(c["topic"], c["key"]) == c["expected"], c

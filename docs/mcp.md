@@ -130,12 +130,12 @@ Cột **Mốc** = mốc dự kiến (xem lộ trình trong [architecture.md](arc
 ### 5.2 Ghi tri thức (qua review)
 | Tool | Mốc | Cờ | Mô tả |
 |---|---|---|---|
-| `ingest` | M1 | | nhận nội dung nhà xe gửi (text Zalo, Excel) → `operation_id` |
+| `ingest` | M1 | | nhận nội dung nhà xe gửi (text Zalo; Excel ở S1.1.3) → `operation_id`; gửi lại cùng nội dung → cùng job |
 | `get_operation` | M0 | RO | trạng thái job async |
 | `list_review_queue` | M1 | RO | diff, conflict, override, đề xuất promote (tri thức và logic) |
 | `get_review_item` | M1 | RO | trước/sau, nguồn, artifact/hồ sơ logic bị ảnh hưởng |
-| `propose_item` | M1 | | AI đề xuất item mới/sửa item → review queue |
-| `apply_review` | M1 | C | approve/reject |
+| `propose_item` | M1 | | AI đề xuất item mới/sửa/bỏ (topic thuộc template, `reason` = nguồn) → review queue; **không bao giờ tự áp dụng** |
+| `apply_review` | M1 | C | approve/reject; reject cần `reason`. Token gắn với (người gọi, review, quyết định), dùng một lần |
 | `add_lesson` | M2 | | bài học đúng/sai ở L2 (L1/L0 → tạo request) |
 | `generate_questions` | M2 | RO | bộ câu hỏi gửi nhà xe cho mục thiếu/mơ hồ |
 
