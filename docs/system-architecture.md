@@ -130,6 +130,21 @@ LLM được gọi trực tiếp từ service qua thư viện `llm/` — bản P
 | Đo chi phí | mỗi lời gọi ghi metrics `tokens_in/out`, `cost`, nhãn `operator_id`, `purpose`, `model` |
 | Kiểm thử | test hợp đồng chung: cùng cấu hình → cùng lựa chọn provider ở Go và Python |
 
+Hiện trạng (M1): bản Python ở `python/biva_worker/llm/`, cấu hình `contracts/llm/llm.yaml`
+(schema `contracts/schemas/llm_config.schema.json`, thứ tự thử theo purpose ở `contracts/llm/plan_cases.json`).
+
+| Tier | Thứ tự thử | Dùng cho |
+|---|---|---|
+| *nhỏ* | `claude-sonnet-5-5` (effort `low`) → `claude-haiku-4-5` | ingest, knowledge (consolidate, eval) |
+| *mạnh* | `claude-opus-5-5` (effort `medium`) → `claude-sonnet-5-5` | validate, test, interactive (effort `high`) |
+
+- Gọi qua SDK `anthropic`, structured output bằng `output_config.format` (JSON Schema; ràng buộc API chưa hỗ trợ được
+  gỡ khi gửi và kiểm lại phía client bằng jsonschema).
+- Hai lớp fallback: phía server (`fallbacks: "default"` khi model từ chối) và phía thư viện (model kế tiếp trong tier).
+  Provider hiện chỉ có Claude API; thêm provider khác = thêm adapter + khai báo trong `llm.yaml`.
+- Mỗi lượt gọi (kể cả lỗi) ghi một dòng `llm_usage` + metric OTel `biva.llm.tokens`/`biva.llm.cost` có `operator_id`.
+- Quota Redis fail-open: Redis lỗi thì vẫn cho gọi (ghi cảnh báo).
+
 Lưu ý: phần lớn LLM của quy trình build chạy **ở phía AI client của builder** (AI viết artifact). LLM của Brain chỉ dùng
 cho ingest, consolidate, validate phần mâu thuẫn, reflect và reference executor.
 

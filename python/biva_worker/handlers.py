@@ -1,11 +1,14 @@
-"""Handler theo ``kind``. M0 chỉ có ``system.ping`` để kiểm tra queue đầu-cuối;
-ingest, consolidate... được thêm từ M1."""
+"""Handler theo ``kind``. ``system.ping`` để kiểm tra queue đầu-cuối; ``index.items`` từ M1."""
 
 from __future__ import annotations
 
 import asyncio
 from typing import Any
 
+import asyncpg
+
+from biva_worker import index
+from biva_worker.embed import Embedder
 from biva_worker.runner import Handler, Job, PermanentError
 
 
@@ -17,4 +20,8 @@ async def ping(job: Job) -> dict[str, Any]:
     return {"status": "done", "summary": "pong"}
 
 
-HANDLERS: dict[str, Handler] = {"system.ping": ping}
+def build(pool: asyncpg.Pool, embedder: Embedder) -> dict[str, Handler]:
+    return {
+        "system.ping": ping,
+        "index.items": index.handler(pool, embedder),
+    }

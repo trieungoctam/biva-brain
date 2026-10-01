@@ -1,0 +1,40 @@
+# Cấu hình LLM dùng chung cho ai-worker (Python) và brain-api (Go, khi cần).
+# Spec: docs/system-architecture.md §3.4 · schema: contracts/schemas/llm_config.schema.json
+#
+# Thứ tự thử = danh sách model của tier; lỗi tạm thời / 429 / 5xx / timeout / từ chối / hết quota → model kế tiếp.
+# Giá: USD trên 1 triệu token (bảng giá Claude API, cập nhật 2026-09). Thiếu giá cache → tính bằng giá input.
+version: 1
+
+providers:
+  anthropic:
+    kind: anthropic            # Claude API qua SDK `anthropic`
+    api_key_env: ANTHROPIC_API_KEY
+    base_url_env: ANTHROPIC_BASE_URL
+    timeout_s: 120
+    max_retries: 1             # SDK tự retry 1 lần; sau đó chuyển model kế tiếp
+
+models:
+  claude-opus-5-5:
+    provider: anthropic
+    effort: medium
+    server_fallback: true      # fallback phía server khi model từ chối (beta server-side-fallback)
+    price: {input: 4.0, output: 20.0, cache_read: 0.20}
+  claude-sonnet-5-5:
+    provider: anthropic
+    effort: low
+    server_fallback: true
+    price: {input: 2.0, output: 10.0, cache_read: 0.20}
+  claude-haiku-4-5:
+    provider: anthropic        # không gửi effort / thinking cho Haiku 4.5
+    price: {input: 1.0, output: 5.0}
+
+tiers:
+  small: [claude-sonnet-5-5, claude-haiku-4-5]    # ingest, consolidate, eval
+  strong: [claude-opus-5-5, claude-sonnet-5-5]    # validate LLM, reflect, reference executor
+
+purposes:
+  ingest:      {tier: small,  tokens_per_minute: 400000, requests_per_minute: 120}
+  knowledge:   {tier: small,  tokens_per_minute: 400000, requests_per_minute: 120}
+  validate:    {tier: strong, tokens_per_minute: 200000, requests_per_minute: 60}
+  test:        {tier: strong, tokens_per_minute: 200000, requests_per_minute: 60}
+  interactive: {tier: strong, tokens_per_minute: 200000, requests_per_minute: 60, effort: high}

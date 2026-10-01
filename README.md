@@ -66,6 +66,13 @@ claude mcp add --transport http biva-phuongnam http://localhost:8080/mcp/operato
 Với compose: `docker compose -f deploy/docker-compose.yml exec brain-api brain-api token issue tam`.
 Tool hiện có (M0): `get_operation`. Danh mục đầy đủ: [docs/mcp.md](docs/mcp.md).
 
+## LLM và index
+
+- `contracts/llm/llm.yaml`: model theo tier (*nhỏ* Sonnet 5.5 → Haiku 4.5, *mạnh* Opus 5.5 → Sonnet 5.5), quota theo
+  purpose, bảng giá. Thư viện: `python/biva_worker/llm/` (fallback, quota Redis, structured output, ghi `llm_usage`).
+  Cần `ANTHROPIC_API_KEY` khi chạy job dùng LLM.
+- Job `index.items`: ghi `search_text` (tìm được cả có dấu và không dấu) + embedding qua TEI cho item còn thiếu.
+
 ## Queue Go ⇄ Python
 
 brain-api ghi job vào bảng `operations` (`queue.Enqueue`, chống trùng bằng `idempotency_key`); trigger phát

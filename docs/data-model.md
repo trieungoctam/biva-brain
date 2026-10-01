@@ -122,6 +122,15 @@ Bài học về code dùng chung bảng `items` (`kind=lesson`, `topic=code:<cap
 Queue: worker claim bằng `SELECT … FOR UPDATE SKIP LOCKED`, giữ lease; trigger `pg_notify('biva_operations')`
 khi insert để đánh thức worker ngay; scheduler (Go) requeue job hết lease.
 
+### Chi phí LLM
+
+| Bảng | Vai trò | Trường chính |
+|---|---|---|
+| `llm_usage` | mỗi lượt gọi model (kể cả lỗi) | `operator_id`, `operation_id`, `purpose`, `model`, `served_model`, `ok`, `error_code`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cost_usd`, `latency_ms` |
+
+`search_text` của item do job `index.items` ghi (textnorm theo `contracts/textnorm`, từng trường topic/key/text riêng
+để không sinh bigram nối giữa các trường); `embedding` là vector bge-m3 của `text` gốc (giữ dấu).
+
 ### Người dùng & quyền (người của BIVA, không phải khách hàng)
 
 | Bảng | Vai trò | Trường chính |

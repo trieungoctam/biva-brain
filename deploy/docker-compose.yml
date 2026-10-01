@@ -80,6 +80,9 @@ services:
     build: { context: .., dockerfile: python/Dockerfile }
     environment:
       BIVA_DATABASE_URL: *db_url
+      BIVA_TEI_URL: http://tei-embed:80
+      BIVA_REDIS_URL: redis://redis:6379/0
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}   # LLM (ingest...) — để trống nếu chưa dùng
       OTEL_EXPORTER_OTLP_ENDPOINT: *otel
     depends_on:
       migrate: { condition: service_completed_successfully }

@@ -54,5 +54,16 @@ if [[ "${SMOKE_SKIP_TEI:-}" != 1 ]]; then
   dim=$(curl -fsS 127.0.0.1:8081/embed -H 'Content-Type: application/json' -d '{"inputs":"xe"}' \
     | python3 -c 'import json,sys; print(len(json.load(sys.stdin)[0]))')
   [[ "$dim" == 1024 ]] && echo "✓ embedding 1024 chiều (khớp items.embedding)" || { echo "✗ dim=$dim"; exit 1; }
+
+  # Job index.items: ai-worker → TEI thật → search_text + embedding; tìm được bằng query không dấu.
+  psql_q() { $C exec -T postgres psql -U biva -d biva -Atc "$1"; }
+  item=$(psql_q "INSERT INTO items (layer, operator_id, kind, topic, text, status)
+    VALUES (2, 'smoke$sfx', 'policy', 'hanh_ly', 'Mỗi khách được mang 20kg hành lý miễn phí', 'active')
+    RETURNING id" | head -1)
+  psql_q "INSERT INTO operations (kind, operator_id) VALUES ('index.items', 'smoke$sfx')" >/dev/null
+  wait_for "index.items ghi embedding cho item $item" 120 bash -c \
+    "$C exec -T postgres psql -U biva -d biva -Atc \"SELECT embedding IS NOT NULL FROM items WHERE id='$item'\" | grep -qx t"
+  hit=$(psql_q "SELECT count(*) FROM items WHERE id='$item' AND tsv @@ plainto_tsquery('simple', 'hanh ly mien phi')")
+  [[ "$hit" == 1 ]] && echo "✓ tìm được item bằng query không dấu" || { echo "✗ không tìm thấy item"; exit 1; }
 fi
 echo "smoke OK"
