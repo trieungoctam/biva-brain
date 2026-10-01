@@ -2,28 +2,17 @@ package scheduler
 
 import (
 	"context"
-	"os"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/trieungoctam/biva-brain/go/internal/testdb"
 )
 
-func testPool(t *testing.T) *pgxpool.Pool {
-	t.Helper()
-	url := os.Getenv("BIVA_TEST_DATABASE_URL")
-	if url == "" {
-		t.Skip("đặt BIVA_TEST_DATABASE_URL để chạy test scheduler với Postgres thật")
-	}
-	pool, err := pgxpool.New(context.Background(), url)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(pool.Close)
-	return pool
-}
+func testPool(t *testing.T) *pgxpool.Pool { return testdb.Pool(t) }
 
 // Hai instance cùng chạy → đúng một leader; leader dừng → instance kia lên thay.
 func TestSingleLeader(t *testing.T) {

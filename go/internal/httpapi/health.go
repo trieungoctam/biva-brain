@@ -14,11 +14,11 @@ type Checker interface {
 	Check(ctx context.Context) map[string]error
 }
 
-// NewRouter dựng router với các endpoint health.
+// NewRouter dựng router với các endpoint health; MCP được gắn thêm vào mux trả về.
 //   - /health/live  : process còn sống, không chạm DB.
 //   - /health/ready : mọi phụ thuộc trả lời được trong 2 giây. Chi tiết lỗi chỉ ghi log,
 //     không trả ra ngoài (tránh lộ host/user/database).
-func NewRouter(checker Checker) http.Handler {
+func NewRouter(checker Checker) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health/live", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})

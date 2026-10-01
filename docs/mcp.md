@@ -25,6 +25,18 @@ claude mcp add --transport http biva-phuongnam http://localhost:8080/mcp/operato
   --header "Authorization: Bearer <token cá nhân>"
 ```
 
+**Xác thực & phạm vi** (đã có từ M0):
+
+- Token cá nhân dạng `biva_…`, luôn có hạn (mặc định 90 ngày), thu hồi có hiệu lực ngay request kế tiếp; DB chỉ lưu SHA-256.
+  Trước khi có console, cấp bằng CLI: `brain-api user add …`, `brain-api user grant <user> <operator>`,
+  `brain-api token issue <user> --name "claude-code laptop"`, `brain-api token revoke <token_id>`.
+- Mỗi request đều kiểm: token sai/hết hạn/thu hồi → **401**; đúng token nhưng vượt phạm vi → **403** và ghi
+  `audit_log` (`mcp.denied`, actor `user:<id>`); nhà xe không tồn tại → 404.
+- `builder` chỉ vào nhà xe được gán; `ops` mọi nhà xe; `lead` mọi nhà xe + `/mcp/platform/`.
+- Tool trong endpoint nhà xe chỉ thấy dữ liệu của nhà xe đó: job/item của nhà xe khác trả "không tìm thấy" (không lộ là có tồn tại).
+- Server chạy **stateless** (không giữ session MCP trong RAM) nên brain-api scale ngang sau load balancer.
+  Khi cần server → client (progress, elicitation) sẽ chuyển sang session lưu ngoài (Redis).
+
 ## 3. Knowledge pack — cách AI nhận tri thức
 
 AI không nên tự ghép hàng chục lần recall. Brain trả về **một gói tri thức đã xử lý sẵn** cho mục đích build:
@@ -119,7 +131,7 @@ Cột **Mốc** = mốc dự kiến (xem lộ trình trong [architecture.md](arc
 | Tool | Mốc | Cờ | Mô tả |
 |---|---|---|---|
 | `ingest` | M1 | | nhận nội dung nhà xe gửi (text Zalo, Excel) → `operation_id` |
-| `get_operation` | M1 | RO | trạng thái job async |
+| `get_operation` | M0 | RO | trạng thái job async |
 | `list_review_queue` | M1 | RO | diff, conflict, override, đề xuất promote (tri thức và logic) |
 | `get_review_item` | M1 | RO | trước/sau, nguồn, artifact/hồ sơ logic bị ảnh hưởng |
 | `propose_item` | M1 | | AI đề xuất item mới/sửa item → review queue |

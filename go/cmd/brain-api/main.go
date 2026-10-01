@@ -4,6 +4,7 @@
 //	brain-api migrate up     áp dụng mọi migration
 //	brain-api migrate down   lùi một migration
 //	brain-api migrate version
+//	brain-api operator|user|token ...   quản trị (xem adminUsage)
 package main
 
 import (
@@ -18,10 +19,14 @@ import (
 
 	"github.com/trieungoctam/biva-brain/go/internal/config"
 	"github.com/trieungoctam/biva-brain/go/internal/httpapi"
+	"github.com/trieungoctam/biva-brain/go/internal/mcpserver"
 	"github.com/trieungoctam/biva-brain/go/internal/migrate"
 	"github.com/trieungoctam/biva-brain/go/internal/scheduler"
 	"github.com/trieungoctam/biva-brain/go/internal/store"
 )
+
+// version được ghi đè lúc build: -ldflags "-X main.version=..."
+var version = "0.1.0-dev"
 
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
@@ -46,8 +51,10 @@ func run(args []string) error {
 		return serve(cfg)
 	case "migrate":
 		return runMigrate(cfg, args[1:])
+	case "operator", "user", "token":
+		return runAdmin(cfg, cmd, args[1:])
 	default:
-		return fmt.Errorf("lệnh không hợp lệ %q (dùng: serve | migrate up|down|version)", cmd)
+		return fmt.Errorf("lệnh không hợp lệ %q (dùng: serve | migrate up|down|version | operator | user | token)", cmd)
 	}
 }
 
@@ -91,7 +98,9 @@ func serve(cfg config.Config) error {
 	}()
 	defer func() { stopSched(); <-schedDone }()
 
-	srv := &http.Server{Addr: cfg.HTTPAddr, Handler: httpapi.NewRouter(db)}
+	mux := httpapi.NewRouter(db)
+	mcpserver.New(db.Primary, version).Mount(mux)
+	srv := &http.Server{Addr: cfg.HTTPAddr, Handler: mux}
 	errCh := make(chan error, 1)
 	go func() {
 		slog.Info("brain-api đang lắng nghe", "addr", cfg.HTTPAddr)

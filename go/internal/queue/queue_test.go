@@ -3,29 +3,17 @@ package queue
 import (
 	"context"
 	"errors"
-	"os"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/trieungoctam/biva-brain/go/internal/testdb"
 )
 
-// testPool cần DB đã migrate (BIVA_TEST_DATABASE_URL); thiếu thì skip.
-func testPool(t *testing.T) *pgxpool.Pool {
-	t.Helper()
-	url := os.Getenv("BIVA_TEST_DATABASE_URL")
-	if url == "" {
-		t.Skip("đặt BIVA_TEST_DATABASE_URL để chạy test queue với Postgres thật")
-	}
-	pool, err := pgxpool.New(context.Background(), url)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(pool.Close)
-	return pool
-}
+func testPool(t *testing.T) *pgxpool.Pool { return testdb.Pool(t) }
 
 func TestEnqueueIdempotent(t *testing.T) {
 	ctx := context.Background()
@@ -79,7 +67,7 @@ func TestEnqueueNotifies(t *testing.T) {
 	ctx := context.Background()
 	pool := testPool(t)
 
-	conn, err := pgx.Connect(ctx, os.Getenv("BIVA_TEST_DATABASE_URL"))
+	conn, err := pgx.Connect(ctx, testdb.URL(t))
 	if err != nil {
 		t.Fatal(err)
 	}

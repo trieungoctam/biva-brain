@@ -50,6 +50,22 @@ export BIVA_TEST_DATABASE_URL=postgres://user:pass@localhost:5432/biva_test?sslm
 make test      # test-go chạy migration trước (nên chạy trước test-py)
 ```
 
+## Kết nối AI qua MCP
+
+```bash
+# trong container brain-api (hoặc binary local với BIVA_DATABASE_URL)
+brain-api operator add phuongnam "Nhà xe Phương Nam"
+brain-api user add tam --email tam@biva.vn --name "Triệu Ngọc Tâm" --role builder
+brain-api user grant tam phuongnam
+brain-api token issue tam --name "claude-code laptop"     # token chỉ hiện một lần
+
+claude mcp add --transport http biva-phuongnam http://localhost:8080/mcp/operator/phuongnam/ \
+  --header "Authorization: Bearer <token>"
+```
+
+Với compose: `docker compose -f deploy/docker-compose.yml exec brain-api brain-api token issue tam`.
+Tool hiện có (M0): `get_operation`. Danh mục đầy đủ: [docs/mcp.md](docs/mcp.md).
+
 ## Queue Go ⇄ Python
 
 brain-api ghi job vào bảng `operations` (`queue.Enqueue`, chống trùng bằng `idempotency_key`); trigger phát

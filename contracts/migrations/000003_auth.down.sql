@@ -1,0 +1,3 @@
+DROP TABLE IF EXISTS api_tokens;
+DROP TABLE IF EXISTS user_operators;
+DROP TABLE IF EXISTS users;

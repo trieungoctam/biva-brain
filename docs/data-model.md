@@ -117,10 +117,18 @@ Bài học về code dùng chung bảng `items` (`kind=lesson`, `topic=code:<cap
 | Bảng | Vai trò | Cột chính |
 |---|---|---|
 | `operations` | queue job Go ⇄ Python | `kind`, `payload`, `status` (queued · running · done · failed · cancelled), `priority`, `attempts/max_attempts`, `idempotency_key`, `locked_by`, `lease_until`, `run_after`, `parent_id`, `trace_context` |
-| `audit_log` | mọi thao tác ghi | `actor` (user:… · ai:<session> · system:<job>), `approved_by`, `action`, `target`, `payload` |
+| `audit_log` | mọi thao tác ghi, mọi lần bị từ chối vì vượt quyền | `actor` (user:… · ai:<session> · system:<job> · cli:<os user>), `approved_by`, `action`, `target`, `payload` |
 
 Queue: worker claim bằng `SELECT … FOR UPDATE SKIP LOCKED`, giữ lease; trigger `pg_notify('biva_operations')`
 khi insert để đánh thức worker ngay; scheduler (Go) requeue job hết lease.
+
+### Người dùng & quyền (người của BIVA, không phải khách hàng)
+
+| Bảng | Vai trò | Trường chính |
+|---|---|---|
+| `users` | builder · lead · ops | `id`, `email`, `name`, `role`, `status` (active · disabled) |
+| `user_operators` | builder được gán nhà xe nào | `user_id`, `operator_id`, `granted_by` |
+| `api_tokens` | token cá nhân cho MCP | `token_hash` (SHA-256, không lưu token gốc), `prefix`, `expires_at` (bắt buộc), `revoked_at`, `last_used_at` |
 
 ## Luồng dữ liệu của một update
 
