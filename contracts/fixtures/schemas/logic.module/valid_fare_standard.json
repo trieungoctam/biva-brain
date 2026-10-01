@@ -1,0 +1,32 @@
+{
+  "id": "fare.standard",
+  "version": 1,
+  "capability": "fare",
+  "layer": "L1",
+  "summary": "Giá theo tuyến × loại xe × mùa, có phụ thu ngày lễ và chính sách trẻ em",
+  "entrypoint": "calculator.py:calculate",
+  "features": [
+    "fare.by_route_vehicle",
+    "fare.holiday_surcharge",
+    "fare.child_policy"
+  ],
+  "params_schema": {
+    "child_policy": {
+      "enum": [
+        "free_under_6",
+        "half_over_4",
+        "full"
+      ]
+    }
+  },
+  "hooks": [
+    {
+      "name": "adjust_price",
+      "when": "sau khi tính giá gốc, trước khi áp phụ thu"
+    }
+  ],
+  "required_tests": [
+    "tests/cases.yaml"
+  ],
+  "deprecated_by": null
+}

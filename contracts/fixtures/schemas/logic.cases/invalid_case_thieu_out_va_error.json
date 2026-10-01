@@ -1,0 +1,11 @@
+{
+  "capability": "fare",
+  "cases": [
+    {
+      "in": {
+        "a": 1
+      },
+      "note": "x"
+    }
+  ]
+}

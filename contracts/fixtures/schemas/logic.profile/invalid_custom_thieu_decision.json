@@ -1,0 +1,9 @@
+{
+  "operator": "phuongnam",
+  "capabilities": {
+    "transfer": {
+      "mode": "custom",
+      "entrypoint": "custom/transfer_q7.py:handle"
+    }
+  }
+}

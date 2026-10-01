@@ -1,0 +1,29 @@
+{
+  "capability": "fare",
+  "cases": [
+    {
+      "in": {
+        "seat": "sleeper",
+        "date": "2026-10-03",
+        "adults": 1
+      },
+      "out": 350000,
+      "note": "ngày thường"
+    },
+    {
+      "in": {
+        "seat": "sleeper",
+        "date": "2027-02-04"
+      },
+      "out": 420000,
+      "note": "28 Tết",
+      "source": "1c725bb6-cf77-4e81-bc66-dd29f32536d9"
+    },
+    {
+      "in": {
+        "seat": "VIP"
+      },
+      "error": "không có giá cho loại ghế 'VIP'"
+    }
+  ]
+}

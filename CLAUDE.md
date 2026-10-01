@@ -66,8 +66,11 @@ cd ai-worker && uv run pytest -q
   (E2.4), coverage/generate_questions/form/onboard_operator + `refresh_pages` (E2.1 — 5 trang Operator Profile
   `biva://operator/{id}/pages/<slug>.md`, job scheduler mỗi phút theo version tri thức),
   entity alias (E2.2 — thiếu trigram/co-occurrence + đo ≥95%, DYN-70).
-- Việc tiếp theo theo kế hoạch: **E2.5 tri thức logic v1** (repo `biva-integrations`, module.yaml/profile.yaml,
-  index_code, feature catalog, find_similar_operators, plan/propose logic, NO_CAPABILITY,
-  /implement_operator_logic) — cần chốt với chủ dự án repo logic nằm ở đâu trước khi làm.
+- E2.5 tri thức logic v1 **đã chốt: repo riêng `github.com/trieungoctam/biva-integrations`** (clone ở
+  `../biva-integrations`). S2.5.1 xong: schema hợp đồng `contracts/schemas/logic/{module,profile,cases}.schema.json`
+  (fixture test cả Go ⇄ Python) + 3 module chuẩn đầu tiên (`fare.standard`, `booking.hold`,
+  `schedule.sync_excel`, CI riêng chạy cases). Còn: S2.5.2 `index_code` (sync git → logic_modules/
+  logic_profiles/logic_tests/code_chunks), S2.5.3 feature catalog seed + `extract_logic_spec`,
+  S2.5.4–S2.5.6 (find_similar_operators, compare_logic, plan/propose, NO_CAPABILITY), S2.5.7 prompt.
 - Linear: workspace dpos, project "BIVA Brain"; mỗi story xong thì comment kết quả + link CI rồi chuyển Done
   (chưa đạt hết AC thì để In Progress và ghi rõ phần thiếu).

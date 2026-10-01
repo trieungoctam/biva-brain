@@ -1,0 +1,11 @@
+{
+  "operator": "phuongnam",
+  "capabilities": {
+    "fare": {
+      "mode": "hook",
+      "hooks": {
+        "adjust_price": "hooks/a.py:apply"
+      }
+    }
+  }
+}

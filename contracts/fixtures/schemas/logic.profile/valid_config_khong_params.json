@@ -1,0 +1,9 @@
+{
+  "operator": "hoanglong",
+  "capabilities": {
+    "booking": {
+      "mode": "config",
+      "module": "booking.hold@1"
+    }
+  }
+}

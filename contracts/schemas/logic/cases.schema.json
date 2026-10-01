@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://biva.vn/schemas/logic/cases.schema.json",
+  "title": "Ví dụ logic của nhà xe / module (tests/cases.yaml)",
+  "description": "Ví dụ thật input → output: vừa là logic test (CI repo chạy), vừa là dữ liệu so khớp hành vi (run_examples_against). Đồng bộ vào logic_tests.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["capability", "cases"],
+  "properties": {
+    "capability": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+    "cases": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["in"],
+        "properties": {
+          "in": {"type": "object", "minProperties": 1},
+          "out": {"description": "kết quả mong đợi — hoặc ghi error khi kỳ vọng bị từ chối"},
+          "error": {
+            "type": ["string", "null"],
+            "description": "thông điệp lỗi mong đợi (so theo nội dung, không cần nguyên văn)"
+          },
+          "note": {"type": "string", "description": "hoàn cảnh của case, vd '28 Tết'"},
+          "source": {"type": "string", "pattern": "^[0-9a-f-]{36}$", "description": "item tri thức nguồn"}
+        },
+        "oneOf": [
+          {"required": ["out"]},
+          {"required": ["error"]}
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://biva.vn/schemas/logic/module.schema.json",
+  "title": "Manifest module logic (biva-integrations: modules/**/module.yaml)",
+  "description": "Đồng bộ vào bảng logic_modules bởi job index_code. L1 = module chuẩn, L2 = custom của nhà xe.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "version", "capability", "layer", "summary", "entrypoint"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*$",
+      "description": "<capability>.<tên module>, vd fare.standard"
+    },
+    "version": {"type": "integer", "minimum": 1},
+    "capability": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+    "layer": {"enum": ["L1", "L2"]},
+    "summary": {"type": "string", "minLength": 1},
+    "entrypoint": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_][A-Za-z0-9_/.-]*\\.py:[a-zA-Z_][a-zA-Z0-9_]*$",
+      "description": "file Python : tên hàm, tính từ thư mục module"
+    },
+    "features": {
+      "type": "array",
+      "items": {"type": "string", "pattern": "^[a-z][a-z0-9_]*\\.[a-z0-9_.]+$"},
+      "description": "từ danh mục feature L1 (logic_features)"
+    },
+    "params_schema": {
+      "type": "object",
+      "description": "mô tả tham số khi chạy (JSON Schema con, tối giản)"
+    },
+    "hooks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "when"],
+        "properties": {
+          "name": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+          "when": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "required_tests": {"type": "array", "items": {"type": "string"}},
+    "deprecated_by": {
+      "oneOf": [{"type": "null"}, {"type": "string", "pattern": "^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*$"}]
+    }
+  }
+}

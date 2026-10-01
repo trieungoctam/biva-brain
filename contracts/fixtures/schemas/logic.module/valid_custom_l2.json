@@ -1,0 +1,8 @@
+{
+  "id": "phuongnam.transfer_q7",
+  "version": 1,
+  "capability": "transfer",
+  "layer": "L2",
+  "summary": "Trung chuyển Q7 bằng shuttle riêng",
+  "entrypoint": "custom/transfer_q7.py:handle"
+}

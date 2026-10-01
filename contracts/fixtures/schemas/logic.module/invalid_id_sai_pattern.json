@@ -1,0 +1,8 @@
+{
+  "id": "Fare Standard",
+  "version": 1,
+  "capability": "fare",
+  "layer": "L1",
+  "summary": "x",
+  "entrypoint": "calculator.py:calculate"
+}

@@ -85,23 +85,30 @@ deprecated_by: null
 
 ```yaml
 operator: phuongnam
-fare:
-  mode: hook
-  module: fare.standard@2
-  params:
-    holiday_surcharge: {tet: 0.20}     # source: it_118
-    child_policy: half_over_4          # source: it_311
-  hooks: {adjust_price: hooks/weekend_no_stack.py:apply}
-  derived_from: null
-pickup:
-  mode: hook
-  module: pickup.assign@1
-  hooks: {resolve_point: hooks/pickup_by_hour.py:resolve}
-  decision: adr_017
-transfer:
-  mode: custom
-  entrypoint: custom/transfer_q7.py:handle
-  decision: adr_021
+capabilities:
+  fare:
+    mode: hook
+    module: fare.standard@2
+    params:
+      holiday_surcharge: {value: {tet: 0.20}, source: "1c725bb6-cf77-4e81-bc66-dd29f32536d9"}
+      child_policy: {value: half_over_4, source: "0f9d2b31-8a44-4d2e-9c1f-5b6e7d80a112"}
+    hooks: {adjust_price: hooks/weekend_no_stack.py:apply}
+    derived_from: null
+  pickup:
+    mode: hook
+    module: pickup.assign@1
+    hooks: {resolve_point: hooks/pickup_by_hour.py:resolve}
+    decision: adr_017
+  transfer:
+    mode: custom
+    entrypoint: custom/transfer_q7.py:handle
+    decision: adr_021
+decisions:
+  adr_021:
+    title: Trung chuyển Q7 bằng shuttle riêng
+    date: 2026-09-12
+    context: module transfer chuẩn không cover cụm sau 20h ở Q7
+    decision: custom riêng, theo dõi để promote khi đủ 3 nhà xe
 ```
 
 **`tests/cases.yaml`** — ví dụ thật của nhà xe, vừa là logic test vừa là dữ liệu so khớp hành vi (§5.3):

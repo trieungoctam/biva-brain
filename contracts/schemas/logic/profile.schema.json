@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://biva.vn/schemas/logic/profile.schema.json",
+  "title": "Hồ sơ logic nhà xe (biva-integrations: operators/<id>/profile.yaml)",
+  "description": "Đồng bộ vào logic_profiles + logic_param_sources; tham số ghi item tri thức nguồn. Bậc: config → hook → custom (custom phải có ADR).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["operator", "capabilities"],
+  "properties": {
+    "operator": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]*$"},
+    "decisions": {
+      "type": "object",
+      "description": "ADR áp cho hồ sơ: id → {title, date, context, decision}",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["title", "decision"],
+        "properties": {
+          "title": {"type": "string", "minLength": 1},
+          "date": {"type": "string", "format": "date"},
+          "context": {"type": "string"},
+          "decision": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "capabilities": {
+      "type": "object",
+      "minProperties": 1,
+      "description": "khối theo capability: fare, booking, schedule, pickup, transfer…",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["mode"],
+        "properties": {
+          "mode": {"enum": ["config", "hook", "custom"]},
+          "module": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*@[0-9]+$",
+            "description": "module kèm version, vd fare.standard@2 — bắt buộc với config/hook"
+          },
+          "params": {
+            "type": "object",
+            "description": "mỗi tham số: value + item tri thức nguồn (Brain đánh dấu stale khi item đổi)",
+            "additionalProperties": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["value"],
+              "properties": {
+                "value": {},
+                "source": {"type": ["string", "null"], "pattern": "^[0-9a-fA-F-]{36}$"}
+              }
+            }
+          },
+          "hooks": {
+            "type": "object",
+            "description": "tên hook (theo manifest) → file.py:hàm trong thư mục nhà xe",
+            "additionalProperties": {"type": "string", "pattern": "^[A-Za-z0-9_/.-]+\\.py:[a-zA-Z_][a-zA-Z0-9_]*$"}
+          },
+          "entrypoint": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_/.-]+\\.py:[a-zA-Z_][a-zA-Z0-9_]*$",
+            "description": "chỉ custom: file.py:hàm trong operators/<id>/custom/"
+          },
+          "derived_from": {
+            "type": ["string", "null"],
+            "description": "module/nhà xe nguồn khi phải copy code (chấp nhận lần đầu, để sau này gộp)"
+          },
+          "decision": {
+            "type": ["string", "null"],
+            "description": "id ADR trong decisions — bắt buộc khi mode = custom"
+          }
+        },
+        "allOf": [
+          {
+            "if": {"properties": {"mode": {"const": "config"}}},
+            "then": {"required": ["module"]}
+          },
+          {
+            "if": {"properties": {"mode": {"const": "hook"}}},
+            "then": {"required": ["module", "hooks"]}
+          },
+          {
+            "if": {"properties": {"mode": {"const": "custom"}}},
+            "then": {"required": ["entrypoint", "decision"]}
+          }
+        ]
+      }
+    }
+  }
+}
