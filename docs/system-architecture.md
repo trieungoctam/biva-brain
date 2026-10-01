@@ -4,165 +4,164 @@ Tài liệu này mô tả kiến trúc **hệ thống** của BIVA Brain: thành
 bảo mật, quan sát và CI/CD. Thiết kế nghiệp vụ (tầng tri thức, luồng Brain, luồng build) ở
 [architecture.md](architecture.md) và [build-flow.md](build-flow.md).
 
+**Phạm vi**: Brain lo tri thức và quy trình build; **không chạy bot**. Các runtime chạy bot hiện có của BIVA
+(chưa thống nhất) nằm ngoài phạm vi và sẽ nối vào sau qua **Runtime Integration API** (§3.5).
+
 ## 1. Context — hệ thống và thế giới bên ngoài
 
 ```
-                    ┌──────────────────────┐
-   Hành khách ─────►│  Kênh chat           │  Zalo OA · Messenger · Web widget
-                    └──────────┬───────────┘
-                               │ webhook / websocket
-                               ▼
- Nhà xe ──update──►  ╔═══════════════════════╗  ──tool call──►  Hệ thống đặt vé của nhà xe (nếu có)
- (Zalo/Excel/form)   ║      BIVA PLATFORM    ║  ──LLM API────►  LLM providers (chính + dự phòng)
-                     ║                       ║  ──notify─────►  Nhóm Zalo / SĐT nhà xe (handoff, câu hỏi)
- Builder ──MCP────►  ║                       ║
- (Claude Code/       ║                       ║
-  Desktop/agent)     ║                       ║
- Lead/Ops ─web────►  ╚═══════════════════════╝
- (Console duyệt)
+                                   ╔════════════════════════╗
+ Nhà xe ──update (Zalo/Excel)───►  ║                        ║ ──LLM API──►  LLM providers (chính + dự phòng)
+ Builder ──MCP (AI client)──────►  ║       BIVA BRAIN       ║
+ Lead/Ops ──Console web─────────►  ║                        ║ ──notify───►  Nhà xe (câu hỏi bổ sung)
+                                   ╚═══════════╤════════════╝
+                                               │ Runtime Integration API
+                                               │ (snapshot · recall · data · feedback)
+                                   ┌───────────▼────────────┐
+                                   │ Runtime chạy bot        │  hiện có / sau này — NGOÀI PHẠM VI
+                                   │ (Zalo, Messenger, web)  │◄──── Hành khách
+                                   └─────────────────────────┘
 ```
 
-| Tác nhân | Tương tác | Kênh |
+| Tác nhân | Tương tác với Brain | Kênh |
 |---|---|---|
-| Hành khách | chat với bot | Zalo, Messenger, web (không có hotline/voice ở v1) |
-| Nhà xe | gửi cập nhật, trả lời câu hỏi, UAT, nhận handoff | Zalo, form, file |
-| Builder | build và vận hành bot bằng AI | MCP |
-| Lead / Ops | duyệt thay đổi L0/L1, deploy, giám sát | Console web |
+| Nhà xe | gửi cập nhật, trả lời câu hỏi, UAT | Zalo, file Excel (v1); form (M2) |
+| Builder | build bot bằng AI | MCP |
+| Lead / Ops | duyệt L0/L1, phát hành production, giám sát | Console web |
+| Runtime chạy bot | lấy snapshot, gọi recall/data, gửi feedback | Runtime Integration API |
 
 ## 2. Containers
 
 ```
-                        ┌──────────────────────── Edge ────────────────────────┐
- Kênh chat ────────────►│ Ingress (TLS, WAF, rate limit theo IP/kênh)          │
- Builder (MCP) ────────►│ /webhooks/*  → bot-runtime                           │
- Console ──────────────►│ /api/* /mcp/* → brain-api     /  → console (static)  │
-                        └──────────────┬──────────────────────────┬────────────┘
-                                       │                          │
-          ┌────────────────────────────▼───┐      ┌───────────────▼────────────────────┐
-          │ bot-runtime (Go)               │      │ brain-api (Go)                      │
-          │ channels · conversation ·      │      │ REST · MCP · authz · recall ·       │
-          │ snapshot cache · LLM stream ·  │      │ review · enqueue · scheduler(leader)│
-          │ tools · recall (in-process)    │      └───────┬───────────────┬────────────┘
-          └──┬────────┬────────┬───────────┘              │               │
-             │        │        │                          │               │
-             │   ┌────▼────┐   │      ┌───────────────────▼───┐   ┌───────▼────────┐
-             │   │ Redis   │◄──┼──────┤ PostgreSQL 16         │   │ Object storage │
-             │   │ session │   │      │ primary + read replica│   │ (S3/MinIO)     │
-             │   │ ratelim │   │      │ pgvector·trgm·unaccent│   │ file gốc,      │
-             │   │ cache   │   │      │ queue · NOTIFY        │   │ snapshot, export│
-             │   └─────────┘   │      └───────────▲───────────┘   └───────▲────────┘
-             │                 │                  │ claim / write         │
-             │                 │      ┌───────────┴───────────────────────┴───────────┐
-             │                 │      │ ai-worker (Python) ×N                          │
-             │                 │      │ ingest · consolidate · promote · compile ·     │
-             │                 │      │ testgen · eval · learn · refresh_pages         │
-             │                 │      └───────┬───────────────────────────┬───────────┘
-             ▼                 ▼              ▼                           ▼
-       ┌──────────────────────────────┐  ┌─────────────────────────────────────────┐
-       │ TEI (Rust) embed · rerank    │  │ LLM providers (gọi qua thư viện llm/:     │
-       │ CPU                          │  │ quota Redis, fallback, cost metering)     │
-       └──────────────────────────────┘  └─────────────────────────────────────────┘
+                     ┌────────────────────────── Edge (Ingress) ───────────────────────────┐
+ Builder (MCP) ─────►│ TLS · WAF · rate limit                                              │
+ Console ───────────►│ /mcp/* /api/* /runtime/* → brain-api        / → console (static)    │
+ Runtime (sau này) ─►│                                                                     │
+                     └───────────────────────────────┬─────────────────────────────────────┘
+                                                     │
+                          ┌──────────────────────────▼───────────────────────────┐
+                          │ brain-api (Go)                                        │
+                          │ REST · MCP · Runtime API · authz · recall · review ·  │
+                          │ enqueue · webhook dispatcher · scheduler (leader)     │
+                          └───┬──────────────┬───────────────┬───────────────────┘
+                              │              │               │
+                     ┌────────▼──────┐ ┌─────▼──────────────────────┐ ┌──────────────────┐
+                     │ Redis         │ │ PostgreSQL 16              │ │ Object storage   │
+                     │ cache recall/ │ │ primary + read replica     │ │ file gốc nhà xe, │
+                     │ embedding,    │ │ pgvector·pg_trgm·unaccent  │ │ artifact snapshot│
+                     │ quota LLM,    │ │ queue · NOTIFY             │ └────────▲─────────┘
+                     │ rate limit    │ └─────▲──────────────────────┘          │
+                     └───────▲───────┘       │ claim / write                   │
+                             │      ┌────────┴────────────────────────────────┴──────┐
+                             └──────┤ ai-worker (Python) ×N                           │
+                                    │ ingest · consolidate · promote · compile ·      │
+                                    │ testgen · eval · learn · refresh_pages ·        │
+                                    │ reference executor (test/sandbox)               │
+                                    └───────┬───────────────────────────┬────────────┘
+                                            ▼                           ▼
+                              ┌──────────────────────────┐  ┌──────────────────────────────┐
+                              │ TEI (Rust, CPU)           │  │ LLM providers (thư viện llm/: │
+                              │ embed bge-m3 · rerank     │  │ quota Redis, fallback, cost)  │
+                              └──────────────────────────┘  └──────────────────────────────┘
 
  Console (SPA tĩnh) ── gọi /api của brain-api
- Observability: OTel Collector → traces / metrics / logs backend
+ Observability: OTel Collector → Grafana stack (Prometheus · Tempo · Loki)
 ```
 
 | Container | Ngôn ngữ | Stateless | Scale theo | Ghi chú |
 |---|---|---|---|---|
-| `bot-runtime` | Go | ✅ (session ở Redis) | hội thoại đồng thời | hot path, không phụ thuộc Python |
-| `brain-api` | Go | ✅ | phiên MCP, request console | scheduler chạy trên **1 instance leader** (pg advisory lock) |
+| `brain-api` | Go | ✅ | phiên MCP, request console, Runtime API | scheduler chạy trên **1 instance leader** (pg advisory lock) |
 | `ai-worker` | Python | ✅ | độ dài queue | concurrency tách theo loại job |
-| `console` | TS (SPA) | ✅ | – | chủ yếu để **duyệt** và xem |
+| `console` | TypeScript (React + Vite) | ✅ | – | chủ yếu để **duyệt** và xem |
 | `tei-embed`, `tei-rerank` | Rust | ✅ | QPS | **chạy CPU** (không có GPU) |
-| PostgreSQL | – | ❌ | dữ liệu, QPS đọc | primary (ghi + queue) + replica (recall, đọc console) |
-| Redis | – | ❌ (dữ liệu tạm) | – | session, rate limit, cache recall/embedding, quota LLM |
+| PostgreSQL | – | ❌ | dữ liệu, QPS đọc | primary (ghi + queue) + replica (đọc) |
+| Redis | – | ❌ (dữ liệu tạm) | – | cache recall/embedding, quota LLM, rate limit |
 | Object storage | – | ❌ | – | file gốc, artifact snapshot, export |
 
 ## 3. Components bên trong
 
-### 3.1 bot-runtime (Go)
+### 3.1 brain-api (Go)
 
 ```
-channels/        adapter từng kênh: verify chữ ký webhook, chuẩn hoá message, gửi trả (stream/nút)
-conversation/    state hội thoại tạm (Redis, TTL), idempotency theo message_id, khoá theo conversation
-snapshot/        tải Bot Definition, validate schema, atomic swap; nghe NOTIFY snapshot_ready
-orchestrator/    vòng lặp lượt chat: prompt từ snapshot → LLM → tool calls song song → LLM → stream
-tools/           query_data (Postgres replica), check_seats (API nhà xe, circuit breaker), handoff
-recall/          package dùng chung với brain-api: 4 arm, RRF, rerank, boost, pack
-llm/             thư viện LLM (xem §3.4): provider chính + dự phòng, timeout, quota (Redis token bucket)
-telemetry/       log hội thoại ẩn danh (buffer → batch insert), metrics, traces
-```
-
-### 3.2 brain-api (Go)
-
-```
-httpapi/         REST cho console: operators, review, snapshots, deployments, feedback
-mcp/             2 endpoint (/mcp/operator/{id}/, /mcp/platform/), tools/resources/prompts, confirm_token
-authz/           xác thực (OIDC cho người, token cho MCP), role builder|lead|ops, scope theo operator
-services/        nghiệp vụ dùng chung cho REST và MCP (một lõi, hai giao diện)
-recall/          (dùng chung)
+httpapi/         REST cho console: operators, review, snapshots, releases, feedback
+mcp/             /mcp/operator/{id}/, /mcp/platform/ — tools, resources, prompts, confirm_token
+runtimeapi/      Runtime Integration API (§3.5): snapshot, recall, data, feedback, transcripts
+webhooks/        phát snapshot.published tới runtime đã đăng ký (HMAC, retry, backoff)
+authz/           OIDC cho người, token cho MCP, API key cho runtime; role builder|lead|ops; scope operator
+services/        nghiệp vụ dùng chung cho REST, MCP và Runtime API (một lõi, nhiều giao diện)
+recall/          4 arm, RRF, rerank (giới hạn), boost, pack; cache theo (snapshot_id, query)
 queue/           enqueue job (idempotency_key), theo dõi operation
-scheduler/       leader-only: expire (valid_to), requeue job hết lease, dọn chat_logs TTL, cron refresh
+scheduler/       leader-only: expire (valid_to), requeue job hết lease, dọn TTL, cron refresh
 store/           sqlc generated, pgxpool (primary + replica)
+textnorm/        chuẩn hoá tiếng Việt cho query (cùng thuật toán với worker, kiểm bằng fixture chung)
 ```
 
-### 3.3 ai-worker (Python)
+### 3.2 ai-worker (Python)
 
 ```
 runner/          claim job (SKIP LOCKED, lease, heartbeat), LISTEN để thức dậy, retry + backoff
 jobs/            ingest · consolidate · promote · compile · testgen · eval · learn · refresh_pages
+executor/        reference executor: chạy một snapshot như runtime thật (LLM + gọi Runtime API)
+                 — chỉ dùng cho test, eval, sandbox; không phục vụ khách
 prompts/         toàn bộ prompt (có version, có test)
-nlp/             chuẩn hoá tiếng Việt, tách từ, entity resolution, parse Excel/ảnh
-llm/             thư viện LLM (cùng quy ước với Go, xem §3.4), structured output
+nlp/             chuẩn hoá tiếng Việt, tách từ, entity resolution, parse Excel
+llm/             thư viện LLM (§3.4), structured output
 index/           ghi search_text (không dấu + bigram), gọi TEI embed theo batch
 ```
 
+### 3.3 console (React + Vite)
+
+Review queue, duyệt L0/L1, duyệt phát hành production, Operator Profile pages, báo cáo test, giám sát job.
+Không chứa nghiệp vụ — chỉ gọi REST của brain-api.
+
 ### 3.4 Thư viện LLM (không có gateway)
 
-LLM được gọi trực tiếp từ service qua thư viện `llm/` — một bản Go (bot-runtime, brain-api) và một bản Python
+LLM được gọi trực tiếp từ service qua thư viện `llm/` — một bản Go (brain-api, khi cần) và một bản Python
 (ai-worker), **cùng một quy ước**:
 
 | Quy ước | Cách làm |
 |---|---|
-| Cấu hình provider | một file `llm.yaml` dùng chung: provider, model theo hạng (*nhỏ* / *mạnh* / *bot*), thứ tự fallback, timeout |
-| Quota | token bucket trong Redis theo `(provider, purpose)`; purpose = `bot` · `build` · `eval` — job nền không ăn quota của bot |
-| Fallback | lỗi / timeout / 429 → provider kế tiếp; hết danh sách → lỗi rõ ràng (bot sẽ handoff) |
+| Cấu hình provider | một file `llm.yaml` dùng chung: provider, model theo hạng (*nhỏ* / *mạnh*), thứ tự fallback, timeout |
+| Quota | token bucket trong Redis theo `(provider, purpose)`; purpose = `build` · `eval` · `interactive` (MCP reflect) |
+| Fallback | lỗi / timeout / 429 → provider kế tiếp; hết danh sách → lỗi rõ ràng, job retry theo backoff |
 | Đo chi phí | mỗi lời gọi ghi metrics `tokens_in/out`, `cost`, nhãn `operator_id`, `purpose`, `model` |
-| Kiểm thử | bộ test hợp đồng chung: cùng input cấu hình → cùng lựa chọn provider ở Go và Python |
+| Kiểm thử | test hợp đồng chung: cùng cấu hình → cùng lựa chọn provider ở Go và Python |
 
-Lý do không dùng gateway riêng ở v1: ít thành phần vận hành hơn, không thêm một hop mạng trên hot path.
-Cân nhắc gateway khi số provider/tenant tăng hoặc cần quản lý key tập trung.
+Không dùng gateway riêng ở v1: ít thành phần vận hành hơn. Cân nhắc khi số provider tăng hoặc cần quản lý key tập trung.
+
+### 3.5 Runtime Integration API
+
+Hợp đồng duy nhất giữa Brain và mọi runtime chạy bot. Định nghĩa bằng JSON Schema trong `contracts/schemas/`.
+Xác thực bằng API key theo runtime, mỗi key chỉ được truy cập các bot được gán.
+
+| Endpoint | Mục đích | Ngân sách |
+|---|---|---|
+| `GET /runtime/v1/bots/{bot_id}/snapshot/active` | Bot Definition đang phát hành ở stage tương ứng; `ETag` → `304` nếu không đổi | p95 < 20 ms |
+| `POST /runtime/v1/bots/{bot_id}/recall` | `{query, valid_at, max_tokens}` → item có nhãn tầng + nguồn | p95 < 120 ms |
+| `POST /runtime/v1/bots/{bot_id}/data/{kind}` | `kind` = routes · trips · fares · pickup_points; lọc hiệu lực theo ngày đi | p95 < 15 ms |
+| `POST /runtime/v1/feedback` | 👎, handoff, sửa của nhân viên, câu không trả lời được (→ knowledge gap) | async |
+| `POST /runtime/v1/transcripts` | log hội thoại **đã ẩn danh** (tuỳ chọn) để `learn`; TTL 30 ngày | async |
+| Webhook `snapshot.published` | Brain → runtime khi có snapshot mới; ký HMAC, retry với backoff | < 5 s sau khi phát hành |
+
+Quy ước: mỗi câu trả lời runtime gửi về (feedback/transcript) nên kèm `snapshot_id` và id các item đã dùng,
+để `trace_answer` truy vết được.
 
 ## 4. Luồng chạy chính
 
-### 4.1 Một lượt chat của hành khách (hot path)
-
-```
-Kênh ──webhook──► Ingress ──► bot-runtime
-  1. verify chữ ký, dedupe message_id (Redis SETNX)                         ~2ms
-  2. khoá conversation (tránh 2 tin đến cùng lúc xử lý song song)
-  3. snapshot từ RAM                                                         ~0ms
-  4. LLM #1 (stream) ──► quyết định tool
-  5. tools song song: query_data(replica) ║ recall(in-proc → TEI, replica) ║ check_seats(API nhà xe)
-  6. LLM #2 (stream) ──► trả token dần về kênh
-  7. ghi chat_log ẩn danh (async batch), metrics, trace
-```
-Không có bước nào gọi ai-worker. Ngân sách: recall p95 < 120 ms, time-to-first-token < 1.2 s.
-
-### 4.2 Nhà xe gửi update → bot mới lên production
+### 4.1 Nhà xe gửi update → snapshot mới được phát hành
 
 ```
 Builder (MCP) ──ingest──► brain-api ──INSERT operations + NOTIFY──► ai-worker: ingest
                                                                      → items(pending) + review_items
 Builder (MCP) ──apply_review (preview → confirm_token)──► brain-api: apply trong 1 transaction
                                                           → enqueue consolidate → promote → compile
-ai-worker: compile → snapshot(draft) → testgen + eval → snapshot(passed)
-brain-api: check_release_gate → request_deploy
-  staging: tự động │ canary/prod: lead duyệt trên console
-brain-api: deployments.live + NOTIFY snapshot_ready ──► mọi bot-runtime: tải + atomic swap (< 1s)
+ai-worker: compile → snapshot(draft) → testgen + eval (reference executor) → snapshot(passed)
+brain-api: check_release_gate
+  staging: tự phát hành │ production: request → lead duyệt trên console
+brain-api: releases(published) + NOTIFY → webhook snapshot.published → runtime đã đăng ký
 ```
 
-### 4.3 Builder làm việc qua MCP
+### 4.2 Builder làm việc qua MCP
 
 ```
 AI client ──streamable HTTP──► Ingress ──► brain-api /mcp/operator/{id}/
@@ -172,15 +171,25 @@ AI client ──streamable HTTP──► Ingress ──► brain-api /mcp/operat
    tool nặng  → enqueue → trả operation_id → AI poll get_operation
 ```
 
+### 4.3 Runtime phục vụ một lượt chat (khi đã nối, ngoài phạm vi runtime)
+
+```
+Runtime ──GET snapshot/active (ETag, cache cục bộ)──► brain-api        (chỉ khi webhook báo / định kỳ)
+Runtime ──POST recall {query, valid_at}──► brain-api: textnorm → 4 arm song song (replica, TEI)
+                                                    → RRF → rerank top 30–50 (≤ 80 ms) → boost → pack
+Runtime ──POST data/fares {route, date}──► brain-api: replica, prepared statement
+Runtime ──POST feedback / transcripts (async)──► brain-api → enqueue learn
+```
+
 ### 4.4 Rollback
 
 ```
-Lead/Builder ──rollback(bot, snapshot)──► brain-api: deployments.rolled_back, bots.active_snapshot_id
-              ──NOTIFY snapshot_ready──► bot-runtime swap. Không cần build hay deploy lại code.
+Lead/Builder ──rollback(bot, snapshot)──► brain-api: phát hành lại snapshot trước
+              ──webhook snapshot.published──► runtime. Không cần build lại code.
 ```
 
-**Hai đường deploy tách biệt**: *deploy code* (container image qua CI/CD) và *deploy bot*
-(snapshot qua Brain). Thay đổi tri thức của nhà xe không bao giờ cần build lại code.
+**Hai đường thay đổi tách biệt**: *deploy code* của Brain (container image qua CI/CD) và *phát hành bot*
+(snapshot qua release gate). Thay đổi tri thức của nhà xe không bao giờ cần build lại code.
 
 ## 5. Lưu trữ dữ liệu
 
@@ -189,10 +198,9 @@ Lead/Builder ──rollback(bot, snapshot)──► brain-api: deployments.rolle
 | Tri thức (items, observations, entities, links) | Postgres | lâu dài; "quên" bằng status |
 | Data vận hành (tuyến, chuyến, giá, điểm đón) | Postgres | lâu dài, có version |
 | Queue `operations` | Postgres | job xong: 30 ngày rồi dọn |
-| Snapshot (definition) | Postgres + bản sao artifact ở object storage | giữ N bản gần nhất / bot + mọi bản từng `active` |
-| File gốc nhà xe gửi | Object storage (đường dẫn trong `documents.metadata`) | theo hợp đồng nhà xe |
-| Session hội thoại | Redis | TTL 30 phút không hoạt động |
-| Chat logs ẩn danh | Postgres | 30 ngày (`expires_at`) |
+| Snapshot (definition) | Postgres + artifact ở object storage | N bản gần nhất / bot + mọi bản từng được phát hành |
+| File gốc nhà xe gửi | Object storage | theo hợp đồng nhà xe |
+| Transcript ẩn danh từ runtime | Postgres | 30 ngày (`expires_at`) |
 | Cache recall / embedding | Redis | theo `snapshot_id`; tự vô hiệu khi đổi snapshot |
 | Audit log | Postgres (partition theo tháng) | ≥ 1 năm |
 
@@ -202,45 +210,40 @@ Backup: Postgres PITR (WAL archive) + snapshot hằng ngày; object storage bậ
 
 ### 6.1 Môi trường
 
-| Môi trường | Mục đích | Ghi chú |
-|---|---|---|
-| `local` | dev | docker-compose: Postgres, Redis, MinIO, TEI (CPU), 3 service |
-| `staging` | test tích hợp, sandbox chat, UAT nhà xe | dữ liệu nhà xe thật, kênh test |
-| `production` | bot thật | |
-
-Snapshot có `stage` riêng (staging · canary · production) **bên trong** môi trường production —
-sandbox/UAT của nhà xe chạy trên hạ tầng production nhưng bằng snapshot draft, kênh test.
+| Môi trường | Mục đích |
+|---|---|
+| `local` | dev — docker-compose: Postgres, Redis, MinIO, TEI (CPU), brain-api, ai-worker |
+| `staging` | test tích hợp, kiểm thử Runtime API với runtime giả lập |
+| `production` | Brain thật; snapshot có stage riêng (staging · production) bên trong |
 
 ### 6.2 Chạy không có GPU
 
 | Việc | Cách làm trên CPU |
 |---|---|
-| Embed query (hot path) | TEI CPU, câu ngắn → ~10–30 ms; **cache embedding theo query đã chuẩn hoá** (tỉ lệ trùng câu hỏi cao) |
-| Embed item (nền) | ai-worker gọi TEI theo batch; không ảnh hưởng hot path |
-| Rerank (hot path) | chỉ **top 30–50** sau RRF, ngân sách **80 ms**; quá hạn → dùng điểm RRF + boost |
+| Embed query (Runtime API recall) | TEI CPU, câu ngắn ~10–30 ms; **cache embedding theo query đã chuẩn hoá** |
+| Embed item (nền) | ai-worker gọi TEI theo batch; không ảnh hưởng đường đọc |
+| Rerank trên đường đọc | chỉ **top 30–50** sau RRF, ngân sách **80 ms**; quá hạn → dùng điểm RRF + boost |
 | Rerank sâu | top 300 chỉ ở đường nền: reflect, compile, testgen |
-| Cache recall | theo `(snapshot_id, query chuẩn hoá)` — với bot nhà xe, phần lớn lượt chat trúng cache |
+| Cache recall | theo `(snapshot_id, query chuẩn hoá)` — câu hỏi của khách nhà xe lặp lại nhiều |
 
-Phương án thay thế nếu CPU không đủ: gọi embedding/rerank qua API của provider bằng cùng thư viện `llm/`
-(đổi lại phụ thuộc mạng và chi phí theo lượt).
+Phương án thay thế nếu CPU không đủ: gọi embedding/rerank qua API của provider bằng thư viện `llm/`.
 
 ### 6.3 Topology production (Kubernetes)
 
 ```
-namespace biva
-├── deploy/bot-runtime     HPA theo CPU + số kết nối      min 3   (trải trên ≥ 2 zone)
-├── deploy/brain-api       HPA theo CPU                   min 2   (1 leader cho scheduler)
+namespace biva-brain
+├── deploy/brain-api       HPA theo CPU                       min 2   (1 leader cho scheduler)
 ├── deploy/ai-worker       KEDA theo COUNT(operations queued) min 1, max 20
-├── deploy/console         static                         2
-├── deploy/tei-embed       CPU (4 vCPU, 4 GB)             2
-├── deploy/tei-rerank      CPU (4 vCPU, 4 GB)             2
+├── deploy/console         static                             2
+├── deploy/tei-embed       CPU (4 vCPU, 4 GB)                 2
+├── deploy/tei-rerank      CPU (4 vCPU, 4 GB)                 2
 └── otel-collector         daemonset
 Managed: PostgreSQL (primary + 1 replica, HA), Redis (HA), Object storage
 ```
 
-Ước lượng ban đầu (≤ 50 nhà xe, ≤ 2k hội thoại đồng thời): 3 bot-runtime × (1 vCPU, 512 MB),
-2 brain-api × (1 vCPU, 512 MB), 2 ai-worker × (1 vCPU, 1 GB), TEI 2 × embed + 2 × rerank (4 vCPU, 4 GB, CPU),
-Postgres 4 vCPU / 16 GB. Điều chỉnh sau khi đo tải thật.
+Ước lượng ban đầu (≤ 50 nhà xe): 2 brain-api × (1 vCPU, 512 MB), 2 ai-worker × (1 vCPU, 1 GB),
+TEI 2 × embed + 2 × rerank (4 vCPU, 4 GB), Postgres 4 vCPU / 16 GB. Tải Runtime API phụ thuộc runtime nối vào sau;
+đo và điều chỉnh khi đó.
 
 ## 7. Độ tin cậy
 
@@ -248,97 +251,97 @@ Postgres 4 vCPU / 16 GB. Điều chỉnh sau khi đo tải thật.
 
 | Sự cố | Ảnh hưởng | Cách xử lý |
 |---|---|---|
-| ai-worker chết / chậm | build, ingest chậm | **bot vẫn chạy** bằng snapshot hiện tại; job requeue khi hết lease |
+| ai-worker chết / chậm | ingest, build chậm | Runtime API **vẫn phục vụ** snapshot/recall/data; job requeue khi hết lease |
 | TEI chết | recall mất semantic + rerank | recall chạy keyword + graph + temporal, điểm RRF thay rerank |
-| LLM provider chính lỗi / quá tải | bot không trả lời | chuyển provider dự phòng; quá ngưỡng → handoff kèm câu xin lỗi |
-| API đặt vé nhà xe lỗi | không tra được ghế | circuit breaker; bot nói "nhân viên sẽ xác nhận", tạo handoff |
-| Postgres replica chậm/lỗi | recall/data chậm | đọc chuyển về primary (có giới hạn); cảnh báo |
-| Postgres primary lỗi | không ghi được | failover managed; bot vẫn trả lời (snapshot trong RAM + replica) |
-| Redis lỗi | mất session tạm, cache | session fallback in-memory theo pod (sticky theo conversation); cache bỏ qua |
-| Snapshot lỗi lọt qua test | bot trả lời sai | canary + auto rollback theo tỉ lệ 👎/handoff |
-| Webhook kênh gửi lặp | trả lời 2 lần | dedupe theo `message_id` |
+| LLM provider chính lỗi | job nền chậm | thư viện chuyển provider dự phòng; job retry theo backoff |
+| Postgres replica lỗi | đọc chậm | đọc chuyển về primary (có giới hạn); cảnh báo |
+| Postgres primary lỗi | không ghi được | failover managed; Runtime API đọc từ replica vẫn chạy |
+| Redis lỗi | mất cache, quota | bỏ qua cache; quota fallback giới hạn cứng theo process |
+| Webhook tới runtime lỗi | runtime chậm nhận snapshot mới | retry + backoff; runtime luôn có thể poll `snapshot/active` |
+| Snapshot lỗi lọt qua test | bot trả lời sai | rollback bằng phát hành lại snapshot trước (< 1 phút) |
 
 ### 7.2 Nguyên tắc
 
-- **Hot path không phụ thuộc vào background**: Go không gọi đồng bộ sang Python.
-- **Mọi job idempotent** (`idempotency_key`), có `max_attempts`, backoff mũ, dead-letter = `failed` + cảnh báo.
-- **Timeout ở mọi lời gọi ra ngoài**, kèm context deadline của lượt chat.
-- **Degrade có kiểm soát**: mất một arm của recall không làm hỏng lượt chat.
+- **Đường đọc không phụ thuộc đường nền**: Go không gọi đồng bộ sang Python.
+- **Mọi job idempotent** (`idempotency_key`), có `max_attempts`, backoff mũ; `failed` → cảnh báo.
+- **Timeout ở mọi lời gọi ra ngoài.**
+- **Degrade có kiểm soát**: mất một arm của recall không làm hỏng request.
 
 ### 7.3 SLO đề xuất
 
 | SLO | Mục tiêu |
 |---|---|
-| Bot trả lời thành công (không lỗi hệ thống) | 99.5% / 30 ngày |
-| Time-to-first-token p95 | < 1.5 s |
-| Update rủi ro thấp → có trên bot | p95 < 5 phút |
-| Rollback snapshot | < 1 phút |
+| Runtime API khả dụng | 99.9% / 30 ngày |
+| `recall` p95 | < 120 ms |
+| Update rủi ro thấp → snapshot staging | p95 < 5 phút |
+| Phát hành / rollback → webhook tới runtime | < 5 s |
 
 ## 8. Bảo mật & multi-tenant
 
 | Mặt | Thiết kế |
 |---|---|
-| Xác thực người | OIDC (Google Workspace / SSO) cho console; token cá nhân cho MCP, có hạn, thu hồi được |
-| Phân quyền | role `builder` · `lead` · `ops`; builder được gán danh sách nhà xe; MCP ẩn tool vượt quyền |
-| Cách ly nhà xe | scope `operator_id` cố định theo URL MCP; service layer luôn lọc theo scope; bật **Postgres RLS** trên các bảng có `operator_id` như lớp bảo vệ thứ hai |
-| Webhook kênh | verify chữ ký từng kênh; secret riêng theo bot |
-| Secret | secret manager (API key LLM, token kênh, API nhà xe); không nằm trong snapshot |
-| Dữ liệu cá nhân | không lưu memory khách; chat log ẩn danh (bỏ SĐT, tên) trước khi ghi; TTL 30 ngày |
-| Prompt injection | nội dung nhà xe/khách luôn là *data*: bọc trong vùng dữ liệu của prompt, không cho phép tool ghi từ nội dung đó; MCP yêu cầu confirm cho thao tác ghi quan trọng |
-| Audit | mọi thao tác ghi: actor (người / `ai:<session>` / job), người duyệt, diff |
-| Thay đổi rủi ro cao | L0/L1, deploy canary/prod: quy tắc 2 người (người yêu cầu ≠ người duyệt) |
+| Xác thực | OIDC cho console; token cá nhân cho MCP (có hạn, thu hồi được); API key theo runtime |
+| Phân quyền | role `builder` · `lead` · `ops`; builder được gán danh sách nhà xe; MCP ẩn tool vượt quyền; API key runtime chỉ thấy bot được gán |
+| Cách ly nhà xe | scope `operator_id` cố định theo URL MCP; service layer luôn lọc theo scope; **Postgres RLS** là lớp bảo vệ thứ hai |
+| Webhook ra ngoài | ký HMAC theo runtime; không chứa secret |
+| Secret | secret manager (API key LLM, khoá webhook); không nằm trong snapshot |
+| Dữ liệu cá nhân | không lưu memory khách; transcript phải được ẩn danh **trước khi** gửi về Brain, Brain kiểm và redact lại; TTL 30 ngày |
+| Prompt injection | nội dung nhà xe/khách luôn là *data*, bọc trong vùng dữ liệu của prompt; MCP yêu cầu confirm cho thao tác ghi quan trọng |
+| Audit | mọi thao tác ghi: actor (người / `ai:<session>` / job / runtime), người duyệt, diff |
+| Thay đổi rủi ro cao | L0/L1, phát hành production: quy tắc 2 người |
 
 ## 9. Observability
 
-- **OpenTelemetry** cho Go và Python. Trace context đi qua `operations.trace_context`, nên một trace nối được
-  MCP call (Go) → job (Python) → compile → NOTIFY → hot-reload (Go).
-- **Mọi câu trả lời của bot** gắn `snapshot_id`, các item/observation được dùng, tool đã gọi → `trace_answer`.
+- **OpenTelemetry** cho Go và Python → Grafana stack (Prometheus, Tempo, Loki).
+  Trace context đi qua `operations.trace_context`: một trace nối MCP call (Go) → job (Python) → compile → webhook.
 
 | Nhóm metric | Ví dụ |
 |---|---|
-| Hot path | TTFT, thời gian từng phần (LLM / recall / tool), tỉ lệ cache hit, lỗi theo kênh |
-| Chất lượng bot | tỉ lệ 👎, handoff, câu hỏi lặp, knowledge gap mới theo nhà xe |
+| Runtime API | latency recall/data/snapshot, tỉ lệ cache hit, lỗi theo runtime |
 | Build | độ dài queue theo `kind`, thời gian job, tỉ lệ fail, tỉ lệ test pass mỗi compile |
-| Chi phí | token LLM theo nhà xe / theo loại job / theo bot |
+| Chất lượng (khi runtime gửi feedback) | tỉ lệ 👎, handoff, knowledge gap mới theo nhà xe |
+| Chi phí | token LLM theo nhà xe / theo loại job |
 | Hạ tầng | Postgres (kết nối, replica lag), TEI QPS/latency, Redis |
 
-Cảnh báo chính: TTFT p95 vượt SLO, tỉ lệ 👎/handoff tăng đột biến sau deploy, queue tồn đọng, job `failed`,
-replica lag, chi phí LLM vượt ngân sách ngày.
+Cảnh báo chính: recall p95 vượt SLO, queue tồn đọng, job `failed`, webhook lỗi liên tục, replica lag,
+chi phí LLM vượt ngân sách ngày.
 
 ## 10. CI/CD
 
 ```
-PR ──► lint + unit (Go, Python) ──► contract tests (fixture chung Go ⇄ Python)
+PR ──► lint + unit (Go, Python) ──► contract tests (fixture chung Go ⇄ Python, schema Runtime API)
    ──► migration check (apply lên DB trống + DB bản sao staging)
    ──► prompt tests (bộ case cố định cho từng prompt)
    ──► build images
 main ─► deploy staging tự động ──► smoke + regression trên bot mẫu ──► duyệt ──► production (rolling)
 ```
 
-- Migration chạy **trước** khi rollout code, luôn tương thích ngược một phiên bản (expand → migrate → contract).
-- Thay đổi prompt ở worker là thay đổi code: qua PR, prompt tests, và chạy regression của các bot mẫu.
-- Deploy bot (snapshot) **không** đi qua CI/CD code — đi qua release gate của Brain (xem 4.2).
+- Migration chạy trước khi rollout code, luôn tương thích ngược một phiên bản (expand → migrate → contract).
+- Thay đổi prompt là thay đổi code: qua PR, prompt tests, regression bot mẫu.
+- Runtime API có version (`/runtime/v1`); thay đổi phá vỡ hợp đồng → `v2`, giữ `v1` trong thời gian chuyển đổi.
+- Phát hành snapshot **không** đi qua CI/CD code — đi qua release gate của Brain.
 
 ## 11. Tech stack
 
 | Lớp | Lựa chọn |
 |---|---|
-| Hot path, API, MCP | Go 1.24+, `pgx`/`sqlc`, `modelcontextprotocol/go-sdk`, `errgroup` |
+| API, MCP, Runtime API | Go 1.24+, `pgx`/`sqlc`, `modelcontextprotocol/go-sdk`, `errgroup` |
 | Worker | Python 3.12, asyncio + uvloop, `asyncpg`, Pydantic, underthesea |
 | Embedding / rerank | HF TEI trên CPU: bge-m3, bge-reranker-v2-m3 |
-| Database | PostgreSQL 16 + pgvector, pg_trgm, unaccent |
-| Cache / session | Redis |
+| Database | PostgreSQL 16 + pgvector, pg_trgm, unaccent; migration bằng golang-migrate |
+| Cache / quota | Redis |
 | Object storage | S3-compatible (MinIO ở local) |
 | Console | React + Vite + TypeScript, TanStack Query, shadcn/ui |
 | Hạ tầng | Kubernetes, KEDA, Helm; docker-compose cho local |
-| Quan sát | OpenTelemetry → Grafana stack: Prometheus (metrics), Tempo (traces), Loki (logs) |
+| Quan sát | OpenTelemetry → Grafana stack: Prometheus, Tempo, Loki |
 
 ## 12. Quyết định đã chốt
 
 | # | Chủ đề | Quyết định |
 |---|---|---|
-| S1 | Hạ tầng tính toán | **không có GPU**; TEI chạy CPU, rerank giới hạn trên hot path (§6.2) |
+| S1 | Hạ tầng tính toán | **không có GPU**; TEI chạy CPU, rerank giới hạn trên đường đọc (§6.2) |
 | S2 | Gọi LLM | **qua thư viện** trong từng service, quy ước chung (§3.4); không có gateway ở v1 |
 | S3 | Hotline (voice) | **ngoài phạm vi v1** |
-| S4 | Observability | **OpenTelemetry → Grafana stack** (Prometheus, Tempo, Loki); tự host hoặc Grafana Cloud |
-| S5 | Console | **React + Vite + TypeScript**, TanStack Query, shadcn/ui — SPA tĩnh, chỉ gọi REST của brain-api |
+| S4 | Observability | **OpenTelemetry → Grafana stack** (Prometheus, Tempo, Loki) |
+| S5 | Console | **React + Vite + TypeScript**, TanStack Query, shadcn/ui |
+| S6 | Chạy bot | **ngoài phạm vi**: Brain không chạy bot; mở Runtime Integration API (§3.5); nối runtime hiện có làm sau |

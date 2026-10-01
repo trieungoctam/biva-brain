@@ -6,7 +6,7 @@ Brain không đứng riêng — mỗi bước build đọc/ghi vào Brain. Xem k
 
 ```
    ┌──────────────── VÒNG BUILD (mỗi nhà xe mới) ────────────────────────────┐
-   │ ① Khởi tạo → ② Thu thập → ③ Duyệt → ④ Cấu hình → ⑤ Compile+Test → ⑥ Deploy│
+   │ ① Khởi tạo → ② Thu thập → ③ Duyệt → ④ Cấu hình → ⑤ Compile+Test → ⑥ Publish│
    └──────────────────────────────────────────────────────────────┬──────────┘
                                                                   ▼
    ┌──────────────── VÒNG VẬN HÀNH (suốt đời bot) ───────────────────────────┐
@@ -17,7 +17,7 @@ Brain không đứng riêng — mỗi bước build đọc/ghi vào Brain. Xem k
                         ════ BIVA BRAIN (L0·L1·L2·L3) ════
 ```
 
-Bên tham gia: **Builder** (team BIVA, làm việc qua AI + MCP), **Nhà xe**, **Brain**, **Bot Runtime**.
+Bên tham gia: **Builder** (team BIVA, làm việc qua AI + MCP), **Nhà xe**, **Brain**, và **runtime** chạy bot (hệ thống hiện có hoặc sau này — ngoài phạm vi Brain, nối qua Runtime Integration API).
 
 ## 2. Các bước của vòng build
 
@@ -68,7 +68,7 @@ compile(operator, bot) → Bot Definition draft
        · override                  mục khác thông lệ → theo L2, không theo L1
        · thiếu dữ liệu             → phải nói "thông lệ chung / xác nhận nhà xe"
   → chạy test → báo cáo
-  → sandbox chat (builder + nhà xe UAT); 👎 trong sandbox → lesson L2
+  → sandbox chat bằng reference executor (builder + nhà xe UAT); 👎 trong sandbox → lesson L2
 ```
 
 **Release gate**
@@ -82,13 +82,16 @@ compile(operator, bot) → Bot Definition draft
 | Conflict chưa xử lý | 0 |
 | Nhà xe xác nhận UAT | ✅ |
 
-### ⑥ Deploy
+### ⑥ Phát hành (publish)
+Brain **không chạy bot**; "deploy" ở đây là **phát hành snapshot** để runtime lấy về.
 ```
-draft ──► staging (sandbox) ──► canary (10% hội thoại) ──► production
-                                     │ 👎 / handoff tăng bất thường
-                                     └──► auto rollback về snapshot trước
+draft ──► testing ──► passed ──► published:staging ──► published:production
+                                                   │ rollback = phát hành lại snapshot trước
 ```
-Bot Runtime pin theo `snapshot_id`; mỗi câu trả lời lưu `snapshot_id` + rule/observation đã dùng để truy vết.
+- Phát hành → Brain bắn webhook `snapshot.published` (ký HMAC); runtime cũng có thể poll `snapshot/active` bằng ETag.
+- Staging: tự động khi gate pass. Production: lead duyệt trên console.
+- Canary / auto rollback theo tỉ lệ 👎 / handoff: **phụ thuộc runtime** gửi feedback về Brain; làm khi có runtime hỗ trợ.
+- Runtime nên gửi kèm `snapshot_id` + các item đã dùng trong mỗi câu trả lời để `trace_answer` truy vết được.
 
 ## 3. Bot Definition (sản phẩm của compile)
 
@@ -118,16 +121,16 @@ tests: {suite: phuongnam-v43, pass: 187/190}
 
 | Tín hiệu | Brain xử lý | Quay về |
 |---|---|---|
-| Nhà xe gửi update | ingest → diff → review | ③ → ⑤ → ⑥ (tự động nếu rủi ro thấp + test pass) |
+| Nhà xe gửi update | ingest → diff → review | ③ → ⑤ → ⑥ (tự động tới staging nếu rủi ro thấp + test pass) |
 | Tới `valid_to` (vd hết lịch Tết) | expire → consolidate | ⑤ → ⑥ tự động |
 | Khách hỏi mà bot **không có dữ liệu** | ghi *knowledge gap*, gộp; đủ N lần → câu hỏi gửi nhà xe | ② |
 | 👎 / nhân viên sửa / handoff | `learn` → lesson → consolidate/promote | ⑤ (thêm test) → ⑥ |
-| Thay đổi L1/L0 | liệt kê bot kế thừa bị ảnh hưởng | ⑤ cho mọi bot đó, deploy lần lượt |
+| Thay đổi L1/L0 | liệt kê bot kế thừa bị ảnh hưởng | ⑤ cho mọi bot đó, phát hành lần lượt |
 
 ## 5. Sơ đồ onboarding một nhà xe
 
 ```
-Builder        Nhà xe          Brain                          Bot Runtime
+Builder        Nhà xe          Brain                          Runtime (ngoài phạm vi)
   │ tạo NX ───────────────────► create_scope, skeleton
   │◄──────────────────────────── "Còn thiếu" 0%
   │ upload Excel/Zalo ────────► ingest ×N → diff
@@ -136,9 +139,9 @@ Builder        Nhà xe          Brain                          Bot Runtime
   │ duyệt queue ──────────────► apply → consolidate → promote → pages
   │ cấu hình bot ─────────────► validate tools/flows theo L0
   │ build ────────────────────► compile → tests → report
-  │ sandbox ──► │ UAT, 👎 ────► lesson L2 → compile lại
-  │ deploy ───────────────────► snapshot v1 ────────────────► pin v1, canary → prod
-  │                             ◄── gaps, 👎, handoff ─────── (log TTL, ẩn danh)
+  │ sandbox ──► │ UAT, 👎 ────► reference executor; lesson L2 → compile lại
+  │ publish ──────────────────► snapshot v1 ──webhook────────► lấy snapshot v1
+  │                             ◄── feedback, transcripts ──── (Runtime API, ẩn danh)
 ```
 
 Mọi thao tác của builder ở trên đi qua MCP ([mcp.md](mcp.md)); duyệt quan trọng làm trên console.

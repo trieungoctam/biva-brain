@@ -96,7 +96,7 @@ Item rời `active` → observation liên quan stale → re-consolidate → re-c
 ### 3.4 recall()
 
 4 arm song song → RRF (k=60) → rerank → boost nhân → pack theo `max_tokens`.
-Không có GPU: trên hot path chỉ rerank top 30–50 (CPU, ngân sách 80 ms, quá hạn thì dùng điểm RRF);
+Không có GPU: trên đường đọc (Runtime API) chỉ rerank top 30–50 (CPU, ngân sách 80 ms, quá hạn thì dùng điểm RRF);
 rerank sâu (top 300) chỉ dùng ở đường nền (reflect, compile, testgen).
 
 | Arm | Cách làm |
@@ -123,7 +123,7 @@ VÒNG VẬN HÀNH: update nhà xe → ③ → ⑤ → ⑥ ;  hội thoại → l
 | ③ Duyệt | review queue: diff, conflict, override, đề xuất promote |
 | ④ Cấu hình | persona, kênh (L3), tool binding, flows; kiểm tra tool bắt buộc của L0 |
 | ⑤ Compile+Test | regression L0/L1 + test sinh từ L2 (policy, data, override, thiếu dữ liệu) + sandbox/UAT |
-| ⑥ Deploy | draft → staging → canary → prod; pin `snapshot_id`; auto rollback |
+| ⑥ Publish | draft → testing → passed → phát hành staging → production (lead duyệt); runtime lấy qua Runtime API; rollback = phát hành lại bản trước |
 
 **Release gate**: coverage mục bắt buộc 100%, khuyến nghị ≥ 80%, regression L0/L1 100%, test L2 ≥ 95%,
 0 conflict mở, nhà xe đã UAT.
@@ -150,62 +150,77 @@ Danh mục tool đầy đủ: xem [mcp.md](mcp.md).
 
 ## 6. Kiến trúc runtime: Go + Python
 
-Nguyên tắc: **mọi lượt chat của bot không đi qua Python.** Go giữ hot path và mọi thứ nhiều kết nối;
-Python giữ việc cần LLM/NLP chạy nền; embedding/rerank tách ra TEI (chạy CPU, không cần GPU).
+**Phạm vi**: Brain lo **tri thức** (thu thập, duyệt, quên, promote, compile, test) và mở một
+**Runtime Integration API** chung. Brain **không chạy bot**. Các hệ thống chạy bot hiện có của BIVA
+chưa thống nhất và nằm **ngoài phạm vi** giai đoạn này; sau này bất kỳ runtime nào cũng nối vào qua API này.
+
+Nguyên tắc: **đường đọc phục vụ runtime (snapshot, recall, data) không đi qua Python.** Go giữ đường đọc
+và mọi thứ nhiều kết nối; Python giữ việc cần LLM/NLP chạy nền; embedding/rerank tách ra TEI (CPU).
 LLM được gọi **qua thư viện** trong từng service (không có LLM gateway riêng).
 
 ```
- Kênh chat ──► bot-runtime (Go)  ──┐            Builder (AI) ──MCP──► brain-api (Go)
-                snapshot trong RAM │                                    REST + MCP + recall
-                LLM stream + tools │                                    + scheduler
-                recall (in-proc) ──┤                                         │
-                                   ▼                                         ▼
+ Runtime bot (hiện có / sau này, ngoài phạm vi)       Builder (AI) ──MCP──┐   Console ──REST──┐
+        │  Runtime Integration API                                         ▼                   ▼
+        └──────────────────────────────────────────────────────────►  brain-api (Go)
+                                                                       REST · MCP · Runtime API
+                                                                       recall · scheduler
+                                                                            │
                       PostgreSQL 16: pgvector · pg_trgm · unaccent · operations(queue) · NOTIFY
-                                   ▲                                         ▲
+                                                                            ▲
                      ai-worker (Python): ingest · consolidate · promote · compile · testgen · eval · learn
+                                         + reference executor (chạy snapshot cho test/sandbox)
                                    │
                                    └──► TEI (Rust, CPU): /embed bge-m3 · /rerank bge-reranker-v2-m3
 ```
 
 | Deployable | Ngôn ngữ | Trách nhiệm |
 |---|---|---|
-| `brain-api` | Go | REST (console), MCP server, recall engine, enqueue job, scheduler (expire, requeue, TTL) |
-| `bot-runtime` | Go | webhook kênh, snapshot hot-reload, LLM streaming, tool calls, recall in-process |
-| `ai-worker` | Python | mọi job dùng LLM/NLP; **mọi prompt nằm ở đây** |
+| `brain-api` | Go | REST (console), MCP server, **Runtime Integration API**, recall engine, enqueue job, scheduler |
+| `ai-worker` | Python | mọi job dùng LLM/NLP; **mọi prompt nằm ở đây**; reference executor cho test/sandbox |
 | `tei` | Rust (HF TEI), CPU | embedding, rerank |
+
+**Runtime Integration API** (hợp đồng cho mọi runtime, chi tiết ở [system-architecture.md](system-architecture.md#35-runtime-integration-api)):
+
+| API | Mục đích |
+|---|---|
+| `GET snapshot/active` (ETag) + webhook `snapshot.published` | runtime lấy Bot Definition đang phát hành |
+| `POST recall` | tra policy/lesson theo tầng, lọc hiệu lực |
+| `POST data/{kind}` | tra tuyến, chuyến, giá, điểm đón |
+| `POST feedback`, `POST transcripts` | runtime gửi 👎, handoff, sửa của nhân viên, log ẩn danh → `learn` |
+
+**Reference executor**: để test và sandbox không phụ thuộc runtime nào, ai-worker có một bộ chạy snapshot
+tối giản (LLM + gọi Runtime API như một runtime thật). Nó chỉ dùng cho testgen/eval/sandbox, không phục vụ khách.
 
 **Giao tiếp giữa Go và Python**
 
 | Kênh | Dùng cho |
 |---|---|
 | Postgres queue (`operations`, `FOR UPDATE SKIP LOCKED`, lease) | mọi job nền |
-| `LISTEN/NOTIFY` | đánh thức worker; báo snapshot mới cho bot-runtime hot-reload |
+| `LISTEN/NOTIFY` | đánh thức worker; báo snapshot mới để brain-api phát webhook cho runtime |
 | HTTP → TEI | embed / rerank |
 
-Go **không gọi đồng bộ** sang Python. Python chết → bot vẫn chạy bằng snapshot hiện tại.
+Go **không gọi đồng bộ** sang Python. Python chết → Runtime API vẫn phục vụ snapshot, recall, data.
 
 **Hợp đồng dữ liệu** (`contracts/`) — một nguồn duy nhất cho cả hai ngôn ngữ:
 
-- `contracts/migrations/` — SQL migrations (một công cụ migration duy nhất, không để ORM Python sửa schema).
-- `contracts/proto/` hoặc `contracts/schemas/` — định nghĩa payload job và Bot Definition
-  (định dạng: xem [mục 9 — điểm cần chốt](#9-các-điểm-cần-chốt)).
+- `contracts/migrations/` — SQL migrations (golang-migrate; không để ORM Python sửa schema).
+- `contracts/schemas/` — JSON Schema cho payload job, Bot Definition và Runtime Integration API.
 - `contracts/fixtures/` — fixture dùng chung; test của **cả Go và Python** chạy trên cùng fixture
   (ví dụ chuẩn hoá tiếng Việt phải cho kết quả giống hệt nhau ở hai bên).
 
 Data model chi tiết: [data-model.md](data-model.md).
 
-**Tiếng Việt trên hot path không cần Python**: worker index sẵn `search_text` (bản không dấu + bigram
+**Tiếng Việt trên đường đọc không cần Python**: worker index sẵn `search_text` (bản không dấu + bigram
 âm tiết); Go chỉ chuẩn hoá query theo cùng thuật toán (`textnorm`, kiểm bằng fixture chung).
 
-**Ngân sách hiệu năng**
+**Ngân sách hiệu năng (Runtime API)**
 
 | Chỉ số | Mục tiêu |
 |---|---|
-| recall p95 (không tính LLM) | < 120 ms; trúng cache < 5 ms |
-| `query_data` p95 | < 15 ms |
-| time-to-first-token của bot | < 1.2 s |
-| hot-reload snapshot | < 1 s sau compile |
-| bot-runtime / instance | ≥ 2–5k hội thoại đồng thời, RAM < 512 MB |
+| `recall` p95 | < 120 ms; trúng cache < 5 ms |
+| `data/{kind}` p95 | < 15 ms |
+| `snapshot/active` p95 | < 20 ms (ETag, không đổi → 304) |
+| snapshot passed → webhook tới runtime | < 5 s |
 
 ## 7. Cấu trúc repo (dự kiến)
 
@@ -213,11 +228,10 @@ Data model chi tiết: [data-model.md](data-model.md).
 biva-brain/
 ├── contracts/            migrations · proto|schemas · fixtures
 ├── go/
-│   ├── cmd/brain-api/    REST + MCP + scheduler
-│   ├── cmd/bot-runtime/
-│   └── internal/         recall · store · queue · mcp · textnorm · snapshot · channels
+│   ├── cmd/brain-api/    REST + MCP + Runtime API + scheduler
+│   └── internal/         recall · store · queue · mcp · runtimeapi · textnorm
 ├── python/
-│   └── biva_worker/      jobs/ · prompts/ · nlp/ · llm/
+│   └── biva_worker/      jobs/ · prompts/ · nlp/ · llm/ · executor/
 ├── deploy/               docker-compose, helm
 └── docs/
 ```
@@ -232,7 +246,7 @@ Chưa bắt đầu code. Thứ tự dự kiến:
 | M1 | ingest (LLM extract + diff + review queue), embed qua TEI, recall semantic + keyword; MCP nhóm đọc + ingest + review, prompt `/process_update` |
 | M2 | coverage + sinh câu hỏi + `/onboard_operator`; entity resolution |
 | M3 | graph + temporal arm, rerank; consolidate + promote |
-| M4 | compile + testgen + sandbox + `/prepare_release`; bot-runtime |
+| M4 | compile + testgen + reference executor + sandbox + `/prepare_release`; Runtime Integration API |
 | M5 | feedback/lessons + knowledge gap + endpoint platform |
 
 ## 9. Quyết định đã chốt
@@ -246,11 +260,11 @@ Chưa bắt đầu code. Thứ tự dự kiến:
 | 5 | Quy mô thiết kế | **≤ 50 nhà xe, ≤ 2k hội thoại đồng thời** năm đầu; ngưỡng promote **N = 3** nhà xe | đủ để hạ tầng gọn, đo rồi tăng |
 | 6 | LLM | **gọi qua thư viện, không phụ thuộc provider**; 2 hạng model: *nhỏ* (extract, consolidate, eval) và *mạnh* (compile, reflect); model cho bot chọn bằng benchmark trên golden set tiếng Việt; luôn có provider dự phòng | tránh khoá vào một nhà cung cấp; chi phí nền thấp |
 | 7 | Release gate | như mục 4 (coverage bắt buộc 100%, khuyến nghị ≥ 80%, regression 100%, L2 ≥ 95%, 0 conflict, UAT) | điều chỉnh sau khi có dữ liệu thật |
-| 8 | Hạ tầng tính toán | **không có GPU** — TEI chạy CPU; rerank giới hạn trên hot path | xem system-architecture.md |
+| 8 | Hạ tầng tính toán | **không có GPU** — TEI chạy CPU; rerank giới hạn trên đường đọc | xem system-architecture.md |
 | 9 | Kênh v1 | **Zalo, Messenger, web**; **không có hotline (voice)** | giảm phạm vi v1 |
+| 10 | Chạy bot | **ngoài phạm vi**: Brain không chạy bot, chỉ mở **Runtime Integration API**; việc nối các runtime hiện có làm sau | runtime hiện có chưa thống nhất; tách để Brain không phụ thuộc vào chúng |
 
-**Còn mở**: BIVA đã có nền tảng chạy bot chưa? Nếu có → Brain chỉ cung cấp tri thức (snapshot/recall/data API)
-và bỏ `bot-runtime`; nếu chưa → giữ `bot-runtime` như thiết kế hiện tại.
+
 
 ## Tài liệu liên quan
 

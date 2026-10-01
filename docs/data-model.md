@@ -71,13 +71,18 @@ GIN trên `tsv`; HNSW trên `embedding`.
 | `review_items` | hàng đợi duyệt | `change_kind` (NEW · CHANGE · REMOVE · DUPLICATE · CONFLICT · OVERRIDE · PROMOTE), `before`, `after`, `risk`, `status`, `decided_by` |
 | `snapshots` | Bot Definition đã compile | `bot_id`, `version`, `built_from` (version từng tầng), `definition`, `status` (draft · testing · passed · failed · active · retired), `test_report` |
 | `test_cases` | regression theo tầng | `layer`, `operator_id`, `bot_id`, `input`, `expected` (must_call_tool, must_mention, must_not_say…), `source_item_id` |
-| `deployments` | yêu cầu và lịch sử deploy | `stage` (staging · canary · production), `status`, `requested_by`, `approved_by` |
+| `releases` | yêu cầu và lịch sử **phát hành snapshot** cho runtime | `stage` (staging · production), `status` (requested · approved · published · rolled_back · rejected), `requested_by`, `approved_by` |
+
+### Runtime (ngoài phạm vi chạy bot, chỉ là điểm nối)
+| Bảng | Vai trò | Cột chính |
+|---|---|---|
+| `runtime_clients` | runtime được phép gọi Runtime API | `id`, `name`, `api_key_hash`, `webhook_url`, `webhook_secret_ref`, `bot_ids[]`, `status` |
 
 ### Tín hiệu vận hành (có TTL)
 | Bảng | Vai trò |
 |---|---|
-| `chat_logs` | log hội thoại ẩn danh, `expires_at` mặc định 30 ngày |
-| `feedback` | thumbs_down · staff_correction · handoff · repeat_question → nguồn cho `learn` |
+| `chat_logs` | transcript ẩn danh do runtime gửi qua Runtime API (tuỳ chọn), `expires_at` mặc định 30 ngày |
+| `feedback` | runtime gửi qua Runtime API: thumbs_down · staff_correction · handoff · repeat_question → nguồn cho `learn` |
 | `knowledge_gaps` | câu khách hỏi chưa có dữ liệu, gộp theo `question_norm`, đếm `hits` |
 
 ### Queue & audit
@@ -101,5 +106,5 @@ documents ──parse──► items(pending) ──diff──► review_items(o
         items(kind=observation) + observation_sources
                 │ promote                 │ compile
                 ▼                         ▼
-        review_items(PROMOTE)       snapshots(draft → testing → passed) ──► deployments
+        review_items(PROMOTE)       snapshots(draft → testing → passed) ──► releases ──webhook──► runtime
 ```
