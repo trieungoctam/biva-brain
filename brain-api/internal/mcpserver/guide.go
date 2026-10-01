@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -12,6 +14,7 @@ import (
 	"github.com/trieungoctam/biva-brain/brain-api/internal/artifact"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/pack"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/pages"
+	"github.com/trieungoctam/biva-brain/brain-api/internal/queue"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/validate"
 )
 
@@ -175,6 +178,16 @@ func (s *Server) addGuide(srv *mcp.Server, operatorID string) {
 			rep, err := validate.Validate(ctx, s.db, operatorID, a, specs)
 			if err != nil {
 				return nil, rep, internal("validate_artifact", err)
+			}
+			if rep.Valid {
+				// E3.3: kiểm mâu thuẫn bằng LLM chạy nền — kết quả qua get_operation.
+				if _, _, err := queue.Enqueue(ctx, s.db, queue.Job{
+					Kind: "validate", OperatorID: operatorID,
+					IdempotencyKey: "validate:" + a.ID + ":" + strconv.Itoa(a.Version),
+					Payload:        map[string]string{"artifact_id": a.ID},
+				}); err != nil {
+					slog.Warn("enqueue validate lỗi", "err", err)
+				}
 			}
 			return nil, rep, nil
 		})

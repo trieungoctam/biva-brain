@@ -101,5 +101,10 @@ cd ai-worker && uv run pytest -q
   ≥ 0.6, centroid = feature chung, recommended = mode phổ biến nhất; `promote_candidate` khi ≥ 3 nhà xe
   hook/custom) + cache điểm tương đồng mọi cặp; tool `list_logic_families`. Phần tương đồng code
   (embedding chunks) và behavior bổ sung khi có dữ liệu nhiều nhà xe.
+- M3 E3.3 xong (CONTRADICTION): job `validate` (ai-worker `validate_llm.py`, LLM purpose
+  `validate`) chạy nền sau mỗi validate_artifact PASS — Go enqueue tự động; detect mâu thuẫn
+  fact (chỉ nhận confident), ghi lỗi CONTRADICTION + dòng + item, hạ valid→invalid, có audit;
+  không mâu thuẫn → đánh dấu đã kiểm. Live test Gemini thật (skip CI) đo recall ≥90% trên 10
+  case cài sẵn (5 mâu thuẫn / 5 hợp lệ); AC đo đầy đủ cần GEMINI key thật.
 - Linear: workspace dpos, project "BIVA Brain"; mỗi story xong thì comment kết quả + link CI rồi chuyển Done
   (chưa đạt hết AC thì để In Progress và ghi rõ phần thiếu).

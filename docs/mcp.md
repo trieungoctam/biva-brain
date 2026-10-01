@@ -111,7 +111,7 @@ Thứ tự ưu tiên khi AI cần thêm (giống reflect của Hindsight):
 | Dùng thông lệ L1 mà không gắn nhãn | `UNLABELED_DEFAULT it_090` |
 | Nêu con số giá/giờ thay vì gọi tool | `HARDCODED_DATA "300k" dòng 20` |
 | Tool khai báo capability không có hồ sơ logic active | `NO_CAPABILITY get_fare (capability: fare)` — tool_spec ghi `(capability: <tên>)`; không khai báo thì không kiểm |
-| Mâu thuẫn với tri thức (kiểm bằng LLM) | `CONTRADICTION it_311` |
+| Mâu thuẫn với tri thức (kiểm bằng LLM, chạy nền sau khi tĩnh PASS) | `CONTRADICTION it_311` — job `validate` ghi lỗi + hạ invalid, xem qua `get_operation`/`get_artifact` |
 | Chưa phủ mục bắt buộc | `COVERAGE topic=cancellation` |
 
 **Quên → build lại**: khi item bị `superseded / expired / retracted`, mọi artifact và hồ sơ logic trích dẫn nó
