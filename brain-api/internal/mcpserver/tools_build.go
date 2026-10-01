@@ -145,6 +145,7 @@ var citationGuide = []string{
 	"Item nhãn 'thông lệ chung' (L1): câu phải nói rõ là thông lệ, khách nên xác nhận với nhà xe.",
 	"Mọi quy tắc bắt buộc (locked_rules) phải có trong system_prompt, kèm [[id]].",
 	"Mục còn thiếu tri thức (coverage = missing): viết vào fallbacks, không bịa.",
+	"faq/fallbacks là lời gửi khách nguyên văn: không chèn ghi chú cho bot như \"(bot gọi tool …)\".",
 }
 
 // ─────────────────────────────── đăng ký ───────────────────────────────

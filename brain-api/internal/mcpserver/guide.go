@@ -45,7 +45,7 @@ Thông thường trẻ nhỏ ngồi chung ghế với bố mẹ được miễn 
 [[81374ef4-9b2f-4358-b098-6b7b61dda13b]]
 
 ### Giá vé bao nhiêu?
-Dạ để em kiểm tra giá theo ngày đi của anh/chị. (bot gọi tool tra giá — khai báo trong tool_spec)
+Dạ để em kiểm tra giá theo ngày đi của anh/chị.
 ` + "```" + `
 
 ## validate_artifact kiểm gì
@@ -58,6 +58,9 @@ Dạ để em kiểm tra giá theo ngày đi của anh/chị. (bot gọi tool tr
 | UNLABELED_DEFAULT | dùng thông lệ L1 mà câu không nói "thông thường / thông lệ / xác nhận lại" | nói rõ là thông lệ |
 | HARDCODED_DATA | ghi cứng giá tiền (320.000đ, 320k) hoặc giờ chạy (22:00, 22h) | hướng bot gọi tool |
 | COVERAGE | system_prompt + faq chưa dùng tri thức của một mục bắt buộc mà nhà xe đã có | recall_knowledge(topics=[…]) rồi bổ sung |
+
+Câu trả lời trong faq/fallbacks gửi khách nguyên văn: không chèn ghi chú cho bot ("(bot gọi tool …)"); tool nào gọi
+khi nào chỉ ghi trong tool_spec / system_prompt.
 
 Mục bắt buộc mà nhà xe CHƯA có tri thức: viết vào fallbacks (nói chưa có thông tin, chuyển nhân viên) — không bịa.
 `
@@ -254,7 +257,9 @@ func buildBotPrompt(channel string) string {
    - mọi câu mang thông tin có [[id]]; system_prompt chứa MỌI locked_rules kèm [[id]];
    - thông lệ chung phải nói rõ là thông lệ, mời khách xác nhận lại;
    - không ghi cứng giá/giờ: hướng bot gọi tool, khai báo tool trong tool_spec (theo capabilities);
-   - mục chưa có tri thức → fallbacks (nói chưa có thông tin, chuyển nhân viên), không bịa.
+   - mục chưa có tri thức → fallbacks (nói chưa có thông tin, chuyển nhân viên), không bịa;
+   - câu trả lời trong faq/fallbacks là lời gửi khách nguyên văn: không chèn ghi chú cho bot như "(bot gọi tool …)"
+     — việc gọi tool nào khi nào chỉ ghi trong tool_spec/system_prompt.
 4. Mỗi artifact: save_artifact(channel="` + channel + `") → validate_artifact → sửa đúng dòng bị lỗi →
    save_artifact(base_version=…) → validate lại, tới khi valid (tối đa 3 vòng; còn lỗi thì báo lại).
 5. Kết thúc: bảng artifact (version, valid/invalid), các mục cần hỏi thêm nhà xe (kèm câu hỏi từ get_bot_spec).
