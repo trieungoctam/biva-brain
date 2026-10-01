@@ -176,7 +176,7 @@ Cột **Mốc** = mốc dự kiến (xem lộ trình trong [architecture.md](arc
 | `save_artifact` | M1 | | lưu bản nháp (version mới, không ghi đè; y hệt bản hiện tại thì không tạo version); bot theo kênh (`zalo` mặc định), tự tạo; `[[id]]` phải là item của nhà xe/tri thức nền (sai → lỗi theo dòng), item hết hiệu lực → `warnings`; `base_version` chống ghi đè |
 | `validate_artifact` | M1 | RO | kiểm tĩnh theo §4 (UNCITED, STALE_CITATION — kể cả thông lệ L1 nay đã có tri thức nhà xe thay, MISSING_LOCKED, UNLABELED_DEFAULT, HARDCODED_DATA, COVERAGE); lỗi có dòng + item + cách sửa; ghi `valid`/`invalid` vào artifact |
 | `list_stale` | M2 | RO | bản mới nhất của artifact bị stale, mỗi chỗ có dòng, nội dung dòng, tri thức cũ/mới, lý do (`superseded` · `expired` · `retracted` · `overridden_default` · `new_locked_rule`) và cách sửa; hồ sơ logic: khi có E2.5 |
-| `export_bot` | M2 | RO | `json` · `markdown` · `faq_csv` từ bản đã validate |
+| `export_bot` | M2 | | lắp snapshot (bảng `snapshots`) từ bản mới nhất của các artifact — chỉ khi đủ artifact bắt buộc và tất cả `valid` (draft/invalid/stale → lỗi nêu cách xử lý); cùng bộ version → dùng lại snapshot. Trả nội dung `json` (Bot Definition, giữ danh sách trích dẫn) · `markdown` (system prompt ghép sẵn) · `faq_csv`; `[[id]]` bị bỏ khỏi nội dung. Link tải từ object storage: sau |
 | `run_tests` | M3 | | regression L0/L1 + test sinh từ L2 bằng reference executor |
 | `sandbox_chat` | M3 | | chat thử bot đang build (reference executor) |
 | `request_publish` | M4 | C | đánh dấu bản phát hành; production cần lead duyệt |

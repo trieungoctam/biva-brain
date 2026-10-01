@@ -10,6 +10,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/trieungoctam/biva-brain/brain-api/internal/artifact"
+	"github.com/trieungoctam/biva-brain/brain-api/internal/export"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/kb"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/pack"
 )
@@ -88,6 +89,16 @@ type listStaleOut struct {
 	NextActions []string                 `json:"next_actions"`
 }
 
+type exportIn struct {
+	Channel string `json:"channel,omitempty" jsonschema:"zalo (mặc định) | messenger | web"`
+	Format  string `json:"format,omitempty" jsonschema:"json (mặc định, Bot Definition đầy đủ) | markdown (system prompt ghép sẵn) | faq_csv"`
+}
+
+type exportOut struct {
+	export.Result
+	NextActions []string `json:"next_actions"`
+}
+
 type listArtifactsIn struct {
 	Channel string `json:"channel,omitempty" jsonschema:"lọc theo kênh"`
 }
@@ -112,6 +123,10 @@ const (
 	listStaleDesc   = "Artifact bị tri thức mới làm lỗi thời (nhà xe đổi chính sách, giá hết hiệu lực, quy tắc bắt buộc " +
 		"mới…): từng chỗ cần sửa với dòng, nội dung dòng, tri thức cũ/mới và cách sửa. Chỉ sửa các dòng này " +
 		"(prompt refresh_bot), artifact khác giữ nguyên version."
+	exportDesc = "Xuất bot đã kiểm: lắp snapshot từ bản mới nhất của các artifact (chỉ khi tất cả valid, đủ " +
+		"artifact bắt buộc) rồi trả nội dung theo format: json (Bot Definition), markdown (system prompt ghép sẵn " +
+		"để dán vào runtime), faq_csv. Trích dẫn [[id]] được bỏ khỏi nội dung. Chưa đủ điều kiện → lỗi nêu rõ " +
+		"artifact nào cần validate / sửa / refresh."
 	listArtifactsDesc = "Các artifact hiện có của bot (version mới nhất, trạng thái, số trích dẫn) và artifact bắt buộc còn thiếu."
 )
 
@@ -217,6 +232,30 @@ func (s *Server) addBuildTools(srv *mcp.Server, operatorID string) {
 					"save_artifact(base_version=version) → validate_artifact"}
 			}
 			return nil, listStaleOut{Artifacts: list, NextActions: next}, nil
+		})
+
+	mcp.AddTool(srv, &mcp.Tool{Name: "export_bot", Description: exportDesc,
+		Annotations: &mcp.ToolAnnotations{IdempotentHint: true, DestructiveHint: ptr(false), OpenWorldHint: ptr(false)}},
+		func(ctx context.Context, req *mcp.CallToolRequest, in exportIn) (*mcp.CallToolResult, exportOut, error) {
+			p, err := callerOf(req)
+			if err != nil {
+				return nil, exportOut{}, err
+			}
+			kv, err := pack.Version(ctx, s.db, operatorID)
+			if err != nil {
+				return nil, exportOut{}, internal("export_bot", err)
+			}
+			res, err := export.Export(ctx, s.db, export.Input{OperatorID: operatorID, Channel: in.Channel,
+				Format: in.Format, Required: s.template.Artifacts.Required, Actor: p.Actor(), KnowledgeVersion: kv})
+			var nr *export.NotReadyError
+			if errors.As(err, &nr) {
+				return nil, exportOut{}, err
+			}
+			if err != nil {
+				return nil, exportOut{}, internal("export_bot", err)
+			}
+			return nil, exportOut{Result: res, NextActions: []string{"lưu content thành file " + res.Filename +
+				" và nạp vào runtime của bot"}}, nil
 		})
 
 	mcp.AddTool(srv, &mcp.Tool{Name: "list_artifacts", Description: listArtifactsDesc, Annotations: readOnly},
