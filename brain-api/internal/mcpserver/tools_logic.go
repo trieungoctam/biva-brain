@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"slices"
 	"strings"
@@ -326,5 +327,109 @@ func (s *Server) addRunExamplesTool(srv *mcp.Server, operatorID string) {
 			return nil, runExamplesOut{OperationID: opID,
 				NextActions: []string{"get_operation(operation_id=" + opID + ") — % pass từng ứng viên",
 					"plan_logic_implementation khi đã chốt điểm xuất phát"}}, nil
+		})
+}
+
+type addLogicTestIn struct {
+	Capability string         `json:"capability" jsonschema:"capability của ví dụ (thuộc template)"`
+	Input      map[string]any `json:"input" jsonschema:"input truyền cho entry (vd route/seat/date)"`
+	Out        any            `json:"out,omitempty" jsonschema:"kết quả kỳ vọng (hoặc error)"`
+	Error      string         `json:"error,omitempty" jsonschema:"thông điệp lỗi kỳ vọng (so theo nội dung, không cần nguyên văn)"`
+	Note       string         `json:"note,omitempty" jsonschema:"hoàn cảnh của ví dụ (vd '28 Tết')"`
+	SourceItem string         `json:"source_item,omitempty" jsonschema:"id item tri thức làm nguồn (nếu có)"`
+}
+
+type logicTestOut struct {
+	ID         string         `json:"id"`
+	Input      map[string]any `json:"input"`
+	Expected   map[string]any `json:"expected"`
+	Note       string         `json:"note,omitempty"`
+	SourceItem string         `json:"source_item,omitempty"`
+	Commit     string         `json:"commit,omitempty"`
+}
+
+type listLogicTestsIn struct {
+	Capability string `json:"capability,omitempty" jsonschema:"lọc theo capability; bỏ trống = mọi capability"`
+}
+
+const (
+	addLogicTestDesc = "Thêm ví dụ input → output của nhà xe (logic test): dùng cho run_examples_against " +
+		"chọn điểm xuất phát triển khai và CI repo chạy lại. Chọn out HOẶC error. Ví dụ nên kèm note " +
+		"hoàn cảnh và source item tri thức khi có."
+	listLogicTestsDesc = "Danh sách ví dụ input → output của nhà xe theo capability (từ tests/cases.yaml " +
+		"đồng bộ bởi index_code và add_logic_test)."
+)
+
+type addLogicTestOut struct {
+	logicTestOut
+	NextActions []string `json:"next_actions"`
+}
+
+type listLogicTestsOut struct {
+	Tests       []logicTestOut `json:"tests"`
+	NextActions []string       `json:"next_actions"`
+}
+
+func (s *Server) addLogicTestsTools(srv *mcp.Server, operatorID string) {
+	mcp.AddTool(srv, &mcp.Tool{Name: "add_logic_test", Description: addLogicTestDesc,
+		Annotations: &mcp.ToolAnnotations{IdempotentHint: false, DestructiveHint: ptr(false), OpenWorldHint: ptr(false)}},
+		func(ctx context.Context, req *mcp.CallToolRequest, in addLogicTestIn) (*mcp.CallToolResult, addLogicTestOut, error) {
+			if _, err := callerOf(req); err != nil {
+				return nil, addLogicTestOut{}, err
+			}
+			if in.Capability == "" || len(in.Input) == 0 {
+				return nil, addLogicTestOut{}, errors.New("thiếu capability hoặc input")
+			}
+			if !slices.ContainsFunc(s.template.Capabilities, func(c kb.Capability) bool { return c.ID == in.Capability }) {
+				return nil, addLogicTestOut{}, errors.New("capability phải thuộc template")
+			}
+			if (in.Out == nil) == (in.Error == "") {
+				return nil, addLogicTestOut{}, errors.New("chỉ một trong out hoặc error")
+			}
+			expected := map[string]any{"out": in.Out}
+			if in.Error != "" {
+				expected = map[string]any{"error": in.Error}
+			}
+			var id string
+			if err := s.db.QueryRow(ctx, `
+				INSERT INTO logic_tests (operator_id, capability, input, expected, note, source_item_id, commit)
+				VALUES ($1, $2, $3::jsonb, $4::jsonb, NULLIF($5, ''), NULLIF($6, '')::uuid, 'mcp')
+				RETURNING id::text`,
+				operatorID, in.Capability, in.Input, expected, in.Note, in.SourceItem).Scan(&id); err != nil {
+				return nil, addLogicTestOut{}, internal("add_logic_test", err)
+			}
+			return nil, addLogicTestOut{
+				logicTestOut: logicTestOut{ID: id, Input: in.Input, Expected: expected, Note: in.Note, SourceItem: in.SourceItem},
+				NextActions: []string{"thêm ví dụ đủ che các trường hợp đặc biệt (mùa lễ, ghế lạ…)",
+					"run_examples_against (capability=" + in.Capability + ") khi đã có ứng viên"}}, nil
+		})
+
+	mcp.AddTool(srv, &mcp.Tool{Name: "list_logic_tests", Description: listLogicTestsDesc, Annotations: readOnly},
+		func(ctx context.Context, _ *mcp.CallToolRequest, in listLogicTestsIn) (*mcp.CallToolResult, listLogicTestsOut, error) {
+			rows, err := s.db.Query(ctx, `
+				SELECT id::text, input::text, expected::text, coalesce(note, ''),
+				       coalesce(source_item_id::text, ''), coalesce(commit, '')
+				FROM logic_tests
+				WHERE operator_id = $1 AND ($2 = '' OR capability = $2)
+				ORDER BY capability, note LIMIT 100`, operatorID, in.Capability)
+			if err != nil {
+				return nil, listLogicTestsOut{}, internal("list_logic_tests", err)
+			}
+			defer rows.Close()
+			out := listLogicTestsOut{Tests: []logicTestOut{}}
+			for rows.Next() {
+				var t logicTestOut
+				var inp, exp string
+				if err := rows.Scan(&t.ID, &inp, &exp, &t.Note, &t.SourceItem, &t.Commit); err != nil {
+					return nil, listLogicTestsOut{}, internal("list_logic_tests", err)
+				}
+				_ = json.Unmarshal([]byte(inp), &t.Input)
+				_ = json.Unmarshal([]byte(exp), &t.Expected)
+				out.Tests = append(out.Tests, t)
+			}
+			if len(out.Tests) > 0 {
+				out.NextActions = []string{"run_examples_against để thử code ứng viên trên các ví dụ này"}
+			}
+			return nil, out, nil
 		})
 }

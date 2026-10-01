@@ -115,5 +115,7 @@ cd ai-worker && uv run pytest -q
   chạy logic_tests của nhà xe trên code ứng viên (repo biva-integrations: module chuẩn + hook/custom
   + params từ profile) trong sandbox; % pass + case fail từng ứng viên, mode api/handoff bỏ qua;
   code ghép bằng glue wire hook vào đúng tham số entry.
+- M3 S3.4.4 xong: `add_logic_test` (out HOẶC error, note, source item) / `list_logic_tests`;
+  CI repo biva-integrations chạy cases.yaml module bằng pytest (đã có từ S2.5.1). E3.4 đủ 4/4 story.
 - Linear: workspace dpos, project "BIVA Brain"; mỗi story xong thì comment kết quả + link CI rồi chuyển Done
   (chưa đạt hết AC thì để In Progress và ghi rõ phần thiếu).

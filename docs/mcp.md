@@ -166,7 +166,7 @@ Cột **Mốc** = mốc dự kiến (xem lộ trình trong [architecture.md](arc
 | `get_logic_module` | M2 | RO | manifest: interface, params_schema, hooks, version, test bắt buộc |
 | `propose_logic_profile` | M2 ✅ | | gửi profile.yaml (+file hook/custom) → job logic.propose: validate schema, custom bắt buộc ADR (record_decision), có token thì tạo PR vào biva-integrations, chưa có thì trả nội dung để tạo PR tay; trả operation_id |
 | `record_decision` | M2 ✅ | | ghi ADR (lý do hook/custom) → id adr_* dùng trong profile.yaml |
-| `add_logic_test` / `list_logic_tests` | M3 | | ví dụ input → output |
+| `add_logic_test` / `list_logic_tests` | M3 ✅ | | thêm / liệt kê ví dụ input → output của nhà xe (out hoặc error, note hoàn cảnh, source item); CI repo biva-integrations cũng chạy lại cases.yaml của module bằng pytest |
 | `impact_of_change` | M3 | RO | module/version/feature hoặc item đổi → nhà xe, bot, test bị ảnh hưởng |
 
 ### 5.4 Build bot

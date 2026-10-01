@@ -189,3 +189,41 @@ func TestListLogicFamilies(t *testing.T) {
 		t.Fatalf("phải gợi ý promote hook: %+v", out)
 	}
 }
+
+// S3.4.4: add_logic_test / list_logic_tests.
+func TestLogicTestsTools(t *testing.T) {
+	f := setup(t)
+	s, err := connect(t, f.url+"/mcp/operator/"+f.opA+"/", f.builderTok)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	isErr, out, _ := call(t, s, "add_logic_test", map[string]any{
+		"capability": "fare", "input": map[string]any{"seat": "sleeper", "date": "2027-02-04"},
+		"out": 420000, "note": "28 Tết"})
+	if isErr {
+		t.Fatal("add lỗi")
+	}
+	if out["id"] == "" || out["expected"].(map[string]any)["out"].(float64) != 420000 {
+		t.Fatalf("add = %+v", out)
+	}
+	// Chỉ một trong out/error.
+	if isErr, _, _ = call(t, s, "add_logic_test", map[string]any{
+		"capability": "fare", "input": map[string]any{"x": 1}, "out": 1, "error": "e"}); !isErr {
+		t.Fatal("out + error phải lỗi")
+	}
+
+	isErr, lst, _ := call(t, s, "list_logic_tests", map[string]any{"capability": "fare"})
+	if isErr {
+		t.Fatal("list lỗi")
+	}
+	tests := lst["tests"].([]any)
+	if len(tests) == 0 {
+		t.Fatal("phải có ít nhất 1 test")
+	}
+	first := tests[0].(map[string]any)
+	if first["note"] != "28 Tết" || first["input"].(map[string]any)["seat"] != "sleeper" {
+		t.Fatalf("test = %+v", first)
+	}
+}
