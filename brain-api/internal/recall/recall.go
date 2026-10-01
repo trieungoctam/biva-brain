@@ -24,6 +24,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/trieungoctam/biva-brain/brain-api/internal/entity"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/textnorm"
 )
 
@@ -90,7 +91,8 @@ type Result struct {
 
 type Recaller struct {
 	DB       *pgxpool.Pool
-	Embedder Embedder // nil = chỉ keyword
+	Embedder Embedder         // nil = chỉ keyword
+	Entities *entity.Resolver // nil = không mở rộng alias
 
 	once      sync.Once
 	iterative bool
@@ -165,7 +167,7 @@ func (r *Recaller) Recall(ctx context.Context, q Query) (Result, error) {
 		// Chỉ có topics: liệt kê theo topic (không xếp hạng ngữ nghĩa).
 		run("browse", func() ([]armHit, error) { return r.browse(ctx, q) })
 	} else {
-		if tsq := tsQuery(text); tsq != "" {
+		if tsq := tsQuery(r.expand(text)); tsq != "" {
 			run("keyword", func() ([]armHit, error) { return r.keyword(ctx, q, tsq) })
 		}
 		if r.Embedder != nil {
@@ -223,6 +225,15 @@ func (r *Recaller) Recall(ctx context.Context, q Query) (Result, error) {
 	}
 	res.TookMS = time.Since(start).Milliseconds()
 	return res, nil
+}
+
+// expand: thêm mọi cách viết của thực thể nhận ra trong query ("SG" → "TP.HCM", "Sài Gòn"…) cho nhánh keyword.
+func (r *Recaller) expand(text string) string {
+	parts := []string{text}
+	for _, m := range r.Entities.Find(text) {
+		parts = append(parts, m.Entity.Variants()...)
+	}
+	return strings.Join(parts, " . ")
 }
 
 // tsQuery: token + bigram của textnorm nối bằng OR. Bigram khớp cụm từ nên item chứa đúng cụm được điểm cao hơn.

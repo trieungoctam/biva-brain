@@ -25,6 +25,7 @@ import (
 	"github.com/santhosh-tekuri/jsonschema/v6"
 	"go.yaml.in/yaml/v3"
 
+	"github.com/trieungoctam/biva-brain/brain-api/internal/entity"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/queue"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/textnorm"
 )
@@ -77,7 +78,8 @@ type Template struct {
 // Bundle là toàn bộ nội dung kb/ đã kiểm tra.
 type Bundle struct {
 	Rules     []Rule
-	Templates map[string]Template // theo ngành
+	Templates map[string]Template        // theo ngành
+	Entities  map[string][]entity.Entity // từ điển thực thể + alias theo ngành (entities.yaml)
 }
 
 // Load đọc và kiểm tra kb/: schema, key duy nhất, prefix key khớp tầng, topic L1 có trong template ngành.
@@ -92,8 +94,12 @@ func Load(kbDir, schemasDir string) (*Bundle, error) {
 	if err != nil {
 		return nil, fmt.Errorf("schema kb/template: %w", err)
 	}
+	entitiesSchema, err := compiler.Compile(filepath.Join(schemasDir, "kb", "entities.schema.json"))
+	if err != nil {
+		return nil, fmt.Errorf("schema kb/entities: %w", err)
+	}
 
-	b := &Bundle{Templates: map[string]Template{}}
+	b := &Bundle{Templates: map[string]Template{}, Entities: map[string][]entity.Entity{}}
 	files, err := filepath.Glob(filepath.Join(kbDir, "L0", "*.yaml"))
 	if err != nil {
 		return nil, err
@@ -126,6 +132,33 @@ func Load(kbDir, schemasDir string) (*Bundle, error) {
 				problems = append(problems, fmt.Sprintf("%s: industry %q phải trùng tên thư mục %q", rel, t.Industry, want))
 			}
 			b.Templates[t.Industry] = t
+			continue
+		}
+		if filepath.Base(path) == "entities.yaml" {
+			if err := entitiesSchema.Validate(doc); err != nil {
+				return nil, fmt.Errorf("%s: %v", rel, err)
+			}
+			var f struct {
+				Industry string          `json:"industry"`
+				Entities []entity.Entity `json:"entities"`
+			}
+			if err := remarshal(doc, &f); err != nil {
+				return nil, fmt.Errorf("%s: %w", rel, err)
+			}
+			if want := filepath.Base(filepath.Dir(path)); f.Industry != want {
+				problems = append(problems, fmt.Sprintf("%s: industry %q phải trùng tên thư mục %q", rel, f.Industry, want))
+			}
+			if _, err := entity.New(f.Entities); err != nil { // alias trùng giữa hai thực thể
+				problems = append(problems, rel+": "+err.Error())
+			}
+			ids := map[string]bool{}
+			for _, e := range f.Entities {
+				if ids[e.ID] {
+					problems = append(problems, fmt.Sprintf("%s: id %s trùng", rel, e.ID))
+				}
+				ids[e.ID] = true
+			}
+			b.Entities[f.Industry] = f.Entities
 			continue
 		}
 		if err := rulesSchema.Validate(doc); err != nil {

@@ -24,6 +24,9 @@ func TestLoadRealKB(t *testing.T) {
 	if !ok || len(tpl.Sections) == 0 {
 		t.Fatal("thiếu template xe-khach")
 	}
+	if len(b.Entities["xe-khach"]) < 10 {
+		t.Fatal("thiếu từ điển thực thể xe-khach")
+	}
 	required := map[string]bool{}
 	for _, s := range tpl.Sections {
 		if s.Level == "required" {
@@ -76,6 +79,18 @@ industry: xe-khach
 rules:
   - {key: l1.test.luggage, kind: policy, topic: luggage, locked: false, text: "Thường được mang 20kg hành lý."}
 `
+
+func TestLoadRejectsEntityAliasClash(t *testing.T) {
+	dir := writeKB(t, l0OK, l1OK)
+	clash := "industry: xe-khach\nentities:\n  - {id: hcm, type: city, name: TP.HCM, aliases: [Sài Gòn]}\n" +
+		"  - {id: x, type: city, name: Sai gon}\n"
+	if err := os.WriteFile(filepath.Join(dir, "L1", "xe-khach", "entities.yaml"), []byte(clash), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(dir, schemas); err == nil || !strings.Contains(err.Error(), "thuộc cả hcm và x") {
+		t.Fatalf("alias trùng phải lỗi: %v", err)
+	}
+}
 
 func TestLoadRejects(t *testing.T) {
 	cases := map[string][2]string{

@@ -29,7 +29,7 @@ type recallOut struct {
 
 type queryDataIn struct {
 	Topics          []string          `json:"topics,omitempty" jsonschema:"vd route, fare, schedule, pickup; bỏ trống = mọi data"`
-	Match           string            `json:"match,omitempty" jsonschema:"các từ phải có đủ trong key/nội dung/facts, không phân biệt dấu, vd 'đà lạt giường nằm'"`
+	Match           string            `json:"match,omitempty" jsonschema:"các từ phải có đủ trong key/nội dung/facts, không phân biệt dấu; tên nơi/bến/loại xe khớp mọi cách viết (SG = Sài Gòn = TP.HCM), vd 'sg đà lạt giường nằm'"`
 	Facts           map[string]string `json:"facts,omitempty" jsonschema:"lọc theo fact, vd {\"diem_den\": \"Đà Lạt\"}"`
 	Date            string            `json:"date,omitempty" jsonschema:"YYYY-MM-DD: data có hiệu lực ngày này (vd ngày đi); mặc định hôm nay"`
 	IncludeUpcoming bool              `json:"include_upcoming,omitempty" jsonschema:"thêm bản sẽ có hiệu lực sau ngày đó (giá/lịch mới đã chốt)"`
@@ -77,7 +77,8 @@ func (s *Server) addRecallTools(srv *mcp.Server, operatorID string) {
 				return nil, recall.DataResult{}, err
 			}
 			res, err := recall.QueryData(ctx, s.db, recall.DataQuery{OperatorID: operatorID, Topics: in.Topics,
-				Match: in.Match, Facts: in.Facts, At: at, Until: until, IncludeUpcoming: in.IncludeUpcoming, Limit: in.Limit})
+				Match: in.Match, Facts: in.Facts, At: at, Until: until, IncludeUpcoming: in.IncludeUpcoming, Limit: in.Limit,
+				Entities: s.recaller.Entities})
 			if err != nil {
 				return nil, res, internal("query_data", err)
 			}

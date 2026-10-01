@@ -2,12 +2,12 @@ package recall
 
 import (
 	"context"
-	"slices"
 	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/trieungoctam/biva-brain/brain-api/internal/entity"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/textnorm"
 )
 
@@ -22,6 +22,7 @@ type DataQuery struct {
 	Until           time.Time         // cuối khoảng (vd hết ngày đi); zero = At
 	IncludeUpcoming bool              // thêm bản sẽ có hiệu lực sau At (vd giá Tết đã chốt)
 	Limit           int
+	Entities        *entity.Resolver // "SG" khớp "Sài Gòn"; nil = so token thường
 }
 
 type DataRow struct {
@@ -72,7 +73,7 @@ func QueryData(ctx context.Context, db *pgxpool.Pool, q DataQuery) (DataResult, 
 	}
 	defer rows.Close()
 
-	words := textnorm.Tokens(q.Match)
+	words := q.Entities.QueryTerms(q.Match) // resolver nil → token thường
 	for rows.Next() {
 		var r DataRow
 		var key *string
@@ -83,7 +84,7 @@ func QueryData(ctx context.Context, db *pgxpool.Pool, q DataQuery) (DataResult, 
 		}
 		r.Key = deref(key)
 		r.Facts = Facts(value)
-		if !matchWords(r, words) || !matchFacts(r.Facts, q.Facts) {
+		if !matchWords(r, words, q.Entities) || !matchFacts(r.Facts, q.Facts, q.Entities) {
 			continue
 		}
 		if len(res.Rows)+len(res.Upcoming) >= q.Limit {
@@ -99,7 +100,7 @@ func QueryData(ctx context.Context, db *pgxpool.Pool, q DataQuery) (DataResult, 
 	return res, rows.Err()
 }
 
-func matchWords(r DataRow, words []string) bool {
+func matchWords(r DataRow, words []string, ents *entity.Resolver) bool {
 	if len(words) == 0 {
 		return true
 	}
@@ -107,27 +108,54 @@ func matchWords(r DataRow, words []string) bool {
 	for k, v := range r.Facts {
 		parts = append(parts, strings.ReplaceAll(k, "_", " "), v)
 	}
-	have := textnorm.Tokens(strings.Join(parts, " "))
+	have := map[string]bool{}
+	for _, p := range parts {
+		for _, t := range ents.Terms(p) {
+			have[t] = true
+		}
+	}
 	for _, w := range words {
-		if !slices.Contains(have, w) {
+		if !have[w] {
 			return false
 		}
 	}
 	return true
 }
 
-// matchFacts: mỗi điều kiện {tên: giá trị} khớp khi fact cùng tên (chuẩn hoá) chứa giá trị (chuẩn hoá).
-func matchFacts(facts, want map[string]string) bool {
+// matchFacts: mỗi điều kiện {tên: giá trị} khớp khi fact cùng tên (chuẩn hoá) chứa giá trị (trọn từ, hoặc cùng
+// thực thể: "SG" khớp "Sài Gòn").
+func matchFacts(facts, want map[string]string, ents *entity.Resolver) bool {
 	for wk, wv := range want {
-		wk, wv = textnorm.Fold(strings.ReplaceAll(wk, "_", " ")), textnorm.Fold(wv)
+		wk = textnorm.Fold(strings.ReplaceAll(wk, "_", " "))
 		ok := false
 		for k, v := range facts {
-			if textnorm.Fold(strings.ReplaceAll(k, "_", " ")) == wk && containsWords(textnorm.Fold(v), wv) {
+			if textnorm.Fold(strings.ReplaceAll(k, "_", " ")) != wk {
+				continue
+			}
+			if containsWords(textnorm.Fold(v), textnorm.Fold(wv)) || sameEntities(ents, v, wv) {
 				ok = true
 				break
 			}
 		}
 		if !ok {
+			return false
+		}
+	}
+	return true
+}
+
+// sameEntities: giá trị cần tìm là (các) thực thể và fact nhắc tới đủ các thực thể đó.
+func sameEntities(ents *entity.Resolver, have, want string) bool {
+	wm := ents.Find(want)
+	if len(wm) == 0 {
+		return false
+	}
+	hm := map[string]bool{}
+	for _, m := range ents.Find(have) {
+		hm[m.Entity.ID] = true
+	}
+	for _, m := range wm {
+		if !hm[m.Entity.ID] {
 			return false
 		}
 	}

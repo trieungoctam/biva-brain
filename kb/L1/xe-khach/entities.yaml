@@ -1,0 +1,47 @@
+# Từ điển thực thể + alias ngành xe khách — BẢN NHÁP (DYN-113, cần vận hành tri thức rà soát và bổ sung theo
+# tuyến của 3 pilot). Alias so khớp sau textnorm: không dấu, không phân biệt hoa thường, bỏ dấu câu
+# ("TP.HCM" = "tp hcm"). Một alias chỉ thuộc một thực thể: tên mơ hồ (vd "Miền Đông" — mới hay cũ?) KHÔNG đưa vào.
+industry: xe-khach
+entities:
+  # ── thành phố / tỉnh ──
+  - {id: hcm, type: city, name: TP.HCM, aliases: [Sài Gòn, SG, HCM, TPHCM, Hồ Chí Minh, thành phố Hồ Chí Minh, Saigon]}
+  - {id: ha_noi, type: city, name: Hà Nội, aliases: [HN, Hanoi]}
+  - {id: da_lat, type: city, name: Đà Lạt, aliases: [Dalat]}
+  - {id: nha_trang, type: city, name: Nha Trang}
+  - {id: da_nang, type: city, name: Đà Nẵng, aliases: [Danang]}
+  - {id: vung_tau, type: city, name: Vũng Tàu}
+  - {id: can_tho, type: city, name: Cần Thơ}
+  - {id: phan_thiet, type: city, name: Phan Thiết}
+  - {id: mui_ne, type: place, name: Mũi Né}
+  - {id: buon_ma_thuot, type: city, name: Buôn Ma Thuột, aliases: [Ban Mê Thuột, BMT, Buôn Mê Thuột]}
+  - {id: quy_nhon, type: city, name: Quy Nhơn, aliases: [Qui Nhơn]}
+  - {id: hue, type: city, name: Huế}
+  - {id: hai_phong, type: city, name: Hải Phòng}
+  - {id: sa_pa, type: city, name: Sa Pa, aliases: [Sapa]}
+  - {id: ninh_binh, type: city, name: Ninh Bình}
+  - {id: ha_long, type: city, name: Hạ Long}
+  - {id: chau_doc, type: city, name: Châu Đốc}
+  - {id: rach_gia, type: city, name: Rạch Giá}
+  - {id: ca_mau, type: city, name: Cà Mau}
+  - {id: bao_loc, type: city, name: Bảo Lộc}
+  - {id: pleiku, type: city, name: Pleiku, aliases: [Plei Ku]}
+  - {id: tay_ninh, type: city, name: Tây Ninh}
+  - {id: bien_hoa, type: city, name: Biên Hòa, aliases: [Biên Hoà]}
+  - {id: phan_rang, type: city, name: Phan Rang - Tháp Chàm, aliases: [Phan Rang]}
+  - {id: tuy_hoa, type: city, name: Tuy Hòa, aliases: [Tuy Hoà]}
+  # ── bến xe ──
+  - {id: bx_mien_dong_moi, type: station, name: Bến xe Miền Đông mới, aliases: [BX Miền Đông mới, Miền Đông mới, BXMĐ mới]}
+  - {id: bx_mien_dong_cu, type: station, name: Bến xe Miền Đông cũ, aliases: [BX Miền Đông cũ, Miền Đông cũ, BXMĐ cũ]}
+  - {id: bx_mien_tay, type: station, name: Bến xe Miền Tây, aliases: [BX Miền Tây]}
+  - {id: bx_an_suong, type: station, name: Bến xe An Sương, aliases: [BX An Sương]}
+  - {id: bx_giap_bat, type: station, name: Bến xe Giáp Bát, aliases: [BX Giáp Bát]}
+  - {id: bx_my_dinh, type: station, name: Bến xe Mỹ Đình, aliases: [BX Mỹ Đình]}
+  - {id: bx_nuoc_ngam, type: station, name: Bến xe Nước Ngầm, aliases: [BX Nước Ngầm]}
+  - {id: bx_gia_lam, type: station, name: Bến xe Gia Lâm, aliases: [BX Gia Lâm]}
+  - {id: bx_yen_nghia, type: station, name: Bến xe Yên Nghĩa, aliases: [BX Yên Nghĩa]}
+  - {id: bx_lien_tinh_da_lat, type: station, name: Bến xe liên tỉnh Đà Lạt, aliases: [BX liên tỉnh Đà Lạt]}
+  # ── loại xe ──
+  - {id: giuong_nam, type: vehicle_type, name: giường nằm, aliases: [xe giường nằm, sleeper, giường]}
+  - {id: limousine, type: vehicle_type, name: limousine, aliases: [xe limousine, limo]}
+  - {id: ghe_ngoi, type: vehicle_type, name: ghế ngồi, aliases: [xe ghế ngồi]}
+  - {id: cabin, type: vehicle_type, name: phòng nằm, aliases: [cabin, xe phòng nằm, xe cabin]}

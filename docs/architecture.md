@@ -73,7 +73,9 @@ Hai đầu vào, chung một pipeline: **AI phía builder** (ChatGPT, coding age
 
 1. Lưu document gốc (ai gửi, kênh, thời điểm), `content_hash` để chống trùng.
 2. Item có cấu trúc `{kind, topic, key, value, text, valid_from, valid_to}`: từ AI client, hoặc LLM tách từ nội dung thô.
-3. Entity resolution: alias L1 → trigram trên `name_norm` → co-occurrence.
+3. Entity resolution: alias L1 → trigram trên `name_norm` → co-occurrence. **Bản M2**: từ điển `kb/L1/<ngành>/entities.yaml` (thành phố, bến, loại xe; một alias chỉ thuộc một
+   thực thể) — recall mở rộng query theo mọi cách viết, `query_data` so khớp theo thực thể (`SG` = `Sài Gòn` = `TP.HCM`).
+   Trigram/co-occurrence và `item_entities` (graph arm): M3.
 4. Diff với trạng thái hiện tại của scope: `NEW | CHANGE | REMOVE | DUPLICATE | CONFLICT`.
 5. Classify tầng so với L1: giống thông lệ / override / ứng viên chung.
 6. Review: **tự apply** chỉ khi vô hại — nhắc lại điều đã đúng (DUPLICATE) hoặc thêm mới (NEW) ở topic không

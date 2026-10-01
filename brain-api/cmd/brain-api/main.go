@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/trieungoctam/biva-brain/brain-api/internal/config"
+	"github.com/trieungoctam/biva-brain/brain-api/internal/entity"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/form"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/httpapi"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/kb"
@@ -134,7 +135,11 @@ func serve(cfg config.Config) error {
 	mux := httpapi.NewRouter(db)
 	authServer := oauth.New(db.Primary, cfg.PublicURL)
 	authServer.Mount(mux)
-	mcpSrv := mcpserver.New(db.Primary, version, topics).WithOAuth(authServer).
+	resolver, err := entity.New(bundle.Entities["xe-khach"])
+	if err != nil {
+		return err
+	}
+	mcpSrv := mcpserver.New(db.Primary, version, topics).WithOAuth(authServer).WithEntities(resolver).
 		WithTemplate(bundle.Templates["xe-khach"]).WithPublicURL(cfg.PublicURL)
 	(&form.Handler{DB: db.Primary}).Mount(mux)
 	if cfg.TEIURL != "" {

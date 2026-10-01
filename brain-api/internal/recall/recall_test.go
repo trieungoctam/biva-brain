@@ -10,6 +10,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/trieungoctam/biva-brain/brain-api/internal/entity"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/testdb"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/textnorm"
 )
@@ -337,5 +338,42 @@ func TestQueryData(t *testing.T) {
 	res, _ = QueryData(ctx, e.pool, DataQuery{OperatorID: e.op, Facts: map[string]string{"diem_den": "da la"}})
 	if len(res.Rows) != 0 {
 		t.Fatalf("facts khớp trọn từ, không khớp nửa cụm: %+v", res)
+	}
+}
+
+func TestEntityAliases(t *testing.T) {
+	e := setup(t)
+	ctx := context.Background()
+	ents, err := entity.New([]entity.Entity{
+		{ID: "hcm", Type: "city", Name: "TP.HCM", Aliases: []string{"Sài Gòn", "SG"}},
+		{ID: "da_lat", Type: "city", Name: "Đà Lạt"},
+		{ID: "giuong_nam", Type: "vehicle_type", Name: "giường nằm", Aliases: []string{"sleeper"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	val := func(f string) map[string]any { return map[string]any{"value": []byte(f)} }
+	dl := e.insertIt(2, e.op, "data", "fare", "fare.sai_gon_da_lat.giuong_nam", "Sài Gòn → Đà Lạt giường nằm 320.000đ",
+		val(`{"facts": {"diem_di": "Sài Gòn", "diem_den": "Đà Lạt"}}`))
+	e.insertIt(2, e.op, "data", "fare", "fare.ha_noi_sa_pa", "Hà Nội → Sa Pa 350.000đ", nil)
+
+	// query_data: "SG" = "Sài Gòn", "sleeper" = "giường nằm"; facts theo thực thể.
+	res, err := QueryData(ctx, e.pool, DataQuery{OperatorID: e.op, Match: "SG đà lạt sleeper", Entities: ents})
+	if err != nil || len(res.Rows) != 1 || res.Rows[0].ID != dl {
+		t.Fatalf("match alias: %+v %v", res, err)
+	}
+	if res, _ := QueryData(ctx, e.pool, DataQuery{OperatorID: e.op, Match: "SG đà lạt"}); len(res.Rows) != 0 {
+		t.Fatalf("không có từ điển thì 'SG' không khớp: %+v", res)
+	}
+	res, _ = QueryData(ctx, e.pool, DataQuery{OperatorID: e.op, Facts: map[string]string{"diem_di": "TP.HCM"}, Entities: ents})
+	if len(res.Rows) != 1 || res.Rows[0].ID != dl {
+		t.Fatalf("facts alias: %+v", res)
+	}
+
+	// recall: query "SG" tìm ra item viết "Sài Gòn" (nhánh keyword mở rộng alias).
+	r := &Recaller{DB: e.pool, Entities: ents}
+	rec, err := r.Recall(ctx, Query{OperatorID: e.op, Text: "giá vé SG", Topics: []string{"fare"}})
+	if err != nil || byID(rec.Hits, dl) == nil || rec.Hits[0].ID != dl {
+		t.Fatalf("recall alias: %v %v", ids(rec.Hits), err)
 	}
 }

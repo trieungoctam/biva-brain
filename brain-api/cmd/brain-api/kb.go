@@ -22,7 +22,11 @@ func kbCheck() error {
 			l0++
 		}
 	}
-	fmt.Printf("kb hợp lệ: %d rule L0, %d rule L1, %d template\n", l0, len(b.Rules)-l0, len(b.Templates))
+	ents := 0
+	for _, es := range b.Entities {
+		ents += len(es)
+	}
+	fmt.Printf("kb hợp lệ: %d rule L0, %d rule L1, %d template, %d thực thể\n", l0, len(b.Rules)-l0, len(b.Templates), ents)
 	return nil
 }
 

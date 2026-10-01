@@ -23,6 +23,7 @@ import (
 
 	"github.com/trieungoctam/biva-brain/brain-api/internal/audit"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/authz"
+	"github.com/trieungoctam/biva-brain/brain-api/internal/entity"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/kb"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/oauth"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/pack"
@@ -97,6 +98,12 @@ func (s *Server) WithPublicURL(u string) *Server {
 // WithTemplate: template ngành cho get_bot_spec / artifact bắt buộc.
 func (s *Server) WithTemplate(t kb.Template) *Server {
 	s.template = t
+	return s
+}
+
+// WithEntities: từ điển thực thể + alias (kb/L1/<ngành>/entities.yaml) cho recall và query_data.
+func (s *Server) WithEntities(r *entity.Resolver) *Server {
+	s.recaller.Entities = r
 	return s
 }
 
