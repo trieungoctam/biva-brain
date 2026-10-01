@@ -198,7 +198,8 @@ func TestGetOperationScopedToOperator(t *testing.T) {
 		"get_coverage": true, "generate_questions": true, "create_form": false, "get_form": true,
 		"ingest": false, "submit_knowledge": false, "propose_item": false, "apply_review": false,
 		"get_operator_logic": true, "get_logic_spec": true, "find_similar_operators": true, "compare_logic": true,
-		"plan_logic_implementation": true, "record_decision": false, "propose_logic_profile": false}
+		"plan_logic_implementation": true, "record_decision": false, "propose_logic_profile": false,
+		"list_logic_families": true}
 	if len(tools.Tools) != len(readOnlyWant) {
 		names := make([]string, len(tools.Tools))
 		for i, tl := range tools.Tools {

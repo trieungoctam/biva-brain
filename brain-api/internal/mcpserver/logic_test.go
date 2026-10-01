@@ -153,3 +153,39 @@ func TestPlanDecisionProposeTools(t *testing.T) {
 		t.Fatalf("job = %s %s %v", kind, status, err)
 	}
 }
+
+// S3.4.3: list_logic_families đọc họ logic do job promote gom.
+func TestListLogicFamilies(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	if _, err := f.pool.Exec(ctx, `
+		INSERT INTO logic_families (id, capability, name, centroid_features, members,
+			recommended_implementation, promote_candidate)
+		VALUES ('fare.basic', 'fare', 'Họ fare: by_route (3 nhà xe)',
+		        ARRAY['fare.by_route_vehicle'], ARRAY[$1, 'x1', 'x2'],
+		        '{"mode": "hook", "module": "fare.standard"}'::jsonb, true)`, f.opA); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { f.pool.Exec(ctx, `DELETE FROM logic_families`) })
+
+	s, err := connect(t, f.url+"/mcp/operator/"+f.opA+"/", f.builderTok)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	isErr, out, _ := call(t, s, "list_logic_families", map[string]any{})
+	if isErr {
+		t.Fatal("list lỗi")
+	}
+	fams := out["families"].([]any)
+	if len(fams) != 1 {
+		t.Fatalf("families = %+v", fams)
+	}
+	fam := fams[0].(map[string]any)
+	if fam["id"] != "fare.basic" || fam["promote_candidate"] != true || len(fam["members"].([]any)) != 3 {
+		t.Fatalf("family = %+v", fam)
+	}
+	if len(out["next_actions"].([]any)) == 0 {
+		t.Fatalf("phải gợi ý promote hook: %+v", out)
+	}
+}

@@ -8,6 +8,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/trieungoctam/biva-brain/brain-api/internal/kb"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/logic"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/queue"
 )
@@ -247,5 +248,43 @@ func (s *Server) addPlanTools(srv *mcp.Server, operatorID string) {
 			return nil, proposeProfileOut{OperationID: opID,
 				NextActions: []string{"get_operation(operation_id=" + opID + ") — job tạo PR hoặc trả patch",
 					"sau khi PR merge: job index_code đồng bộ lại trong ≤ 1 phút"}}, nil
+		})
+}
+
+type familiesIn struct {
+	Capability string `json:"capability,omitempty" jsonschema:"bỏ trống = mọi capability"`
+}
+
+const familiesDesc = "Họ logic theo capability: cụm nhà xe có logic spec giống nhau (trùng feature ≥ 60%). " +
+	"promote_candidate = ≥ 3 nhà xe cùng hook/custom — ứng viên đưa lên tham số/hook chuẩn " +
+	"(docs/logic-knowledge.md §8); members là danh sách nhà xe được lợi."
+
+type familiesOut struct {
+	Families    []logic.Family `json:"families"`
+	NextActions []string       `json:"next_actions"`
+}
+
+func (s *Server) addFamiliesTool(srv *mcp.Server, operatorID string) {
+	mcp.AddTool(srv, &mcp.Tool{Name: "list_logic_families", Description: familiesDesc, Annotations: readOnly},
+		func(ctx context.Context, _ *mcp.CallToolRequest, in familiesIn) (*mcp.CallToolResult, familiesOut, error) {
+			if in.Capability != "" && !slices.ContainsFunc(s.template.Capabilities, func(c kb.Capability) bool {
+				return c.ID == in.Capability
+			}) {
+				return nil, familiesOut{}, errors.New("capability phải thuộc template")
+			}
+			fams, err := logic.Families(ctx, s.db, in.Capability)
+			if err != nil {
+				return nil, familiesOut{}, internal("list_logic_families", err)
+			}
+			var next []string
+			for _, f := range fams {
+				if f.PromoteCandidate {
+					next = append(next, "họ "+f.ID+": đề xuất promote hook (members: "+
+						strings.Join(f.Members, ", ")+")")
+					break
+				}
+			}
+			next = append(next, "compare_logic giữa các thành viên để xem khác biệt")
+			return nil, familiesOut{Families: fams, NextActions: next}, nil
 		})
 }

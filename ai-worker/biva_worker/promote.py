@@ -14,6 +14,7 @@ from typing import Any
 import asyncpg
 
 from biva_worker import textnorm
+from biva_worker.families import update_families
 from biva_worker.runner import Job
 
 MIN_OPERATORS = 3
@@ -137,10 +138,19 @@ async def promote(pool: asyncpg.Pool) -> dict[str, Any]:
                     f"{len(ops)} nhà xe có cùng thông lệ: {', '.join(ops)}",
                 )
                 created += 1
+        fam = await update_families(pool)
         return {
             "status": "done",
-            "summary": f"{created} đề xuất promote lên L1" if created else "chưa có cụm đủ 3 nhà xe",
-            "counts": {"promoted_proposals": created, "observations": len(observations)},
+            "summary": (
+                f"{created} đề xuất promote lên L1; {fam['counts']['families']} họ logic"
+                f" ({fam['counts']['promote_candidates']} ứng candidate promote hook)"
+            ),
+            "counts": {
+                "promoted_proposals": created,
+                "observations": len(observations),
+                "logic_families": fam["counts"]["families"],
+                "promote_hook_candidates": fam["counts"]["promote_candidates"],
+            },
         }
 
 

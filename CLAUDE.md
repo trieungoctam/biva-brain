@@ -96,6 +96,10 @@ cd ai-worker && uv run pytest -q
   near-dup bỏ trùng, nguồn ghi observation_sources; observation đã lọc khỏi pack/recall) — enqueue
   tự động sau mỗi apply_review; job `promote` (scheduler 5 phút/lần): cụm observation giống nhau
   (cosine ≥0.7 / jaccard câu ≥0.45×0.9) ở ≥3 nhà xe → review PROMOTE kèm danh sách nhà xe, duyệt
-  qua apply_review → item L1 active. Còn S3.2.3 promote logic.
+  qua apply_review → item L1 active. S3.2.3 + S3.4.3 xong: migration 000020
+  (`logic_families`, `logic_similarity`); job promote gom họ logic (union-find theo trùng feature
+  ≥ 0.6, centroid = feature chung, recommended = mode phổ biến nhất; `promote_candidate` khi ≥ 3 nhà xe
+  hook/custom) + cache điểm tương đồng mọi cặp; tool `list_logic_families`. Phần tương đồng code
+  (embedding chunks) và behavior bổ sung khi có dữ liệu nhiều nhà xe.
 - Linear: workspace dpos, project "BIVA Brain"; mỗi story xong thì comment kết quả + link CI rồi chuyển Done
   (chưa đạt hết AC thì để In Progress và ghi rõ phần thiếu).

@@ -120,3 +120,54 @@ def test_clusters_can_gom_3_nhà_xe():
     ]
     got = pjob.clusters(obs)
     assert len(got) == 1 and {o["operator"] for o in got[0]} == {"a", "b", "c"}
+
+
+@needs_db
+def test_promote_updates_logic_families():
+    """S3.4.3 + S3.2.3: promote chạy xong gom họ logic; >= 3 nhà xe hook/custom -> promote_candidate."""
+
+    async def t() -> None:
+        pool = await asyncpg.create_pool(DB_URL, init=init_connection)
+        ops = [f"fam{i}{uuid.uuid4().hex[:6]}" for i in range(3)]
+        for op in ops:
+            await pool.execute("INSERT INTO operators (id, name) VALUES ($1, 'F')", op)
+        try:
+            for op in ops:
+                await pool.execute(
+                    """INSERT INTO logic_specs (operator_id, capability, features, rules_text,
+                           source_item_ids, implementation, created_by)
+                       VALUES ($1, 'fare', $2::jsonb, ARRAY['giá theo tuyến'], '{}', $3::jsonb, 't')""",
+                    op,
+                    [{"id": "fare.by_route_vehicle"}, {"id": "fare.weekend_surcharge"}],
+                    {"mode": "hook", "module": "fare.standard"},
+                )
+            res = await pjob.promote(pool)
+            assert res["counts"]["logic_families"] >= 1, res
+            assert res["counts"]["promote_hook_candidates"] >= 1, res
+            fam = await pool.fetchrow(
+                "SELECT members, promote_candidate, recommended_implementation::text AS rec"
+                " FROM logic_families WHERE capability = 'fare' AND $1 = ANY(members)",
+                ops[0],
+            )
+            assert fam is not None and fam["promote_candidate"] is True
+            assert sorted(fam["members"]) == sorted(ops)
+            # Cache similarity mọi cặp.
+            n = await pool.fetchval("SELECT count(*) FROM logic_similarity WHERE capability = 'fare'")
+            assert n == 3
+            # Nhà xe rời họ (đổi spec hoàn toàn) → lần sau họ không còn thành viên đó.
+            await pool.execute(
+                'UPDATE logic_specs SET features = \'[{"id":"fare.parcel_only"}]\'::jsonb WHERE operator_id = $1',
+                ops[2],
+            )
+            await pjob.promote(pool)
+            fam2 = await pool.fetchrow(
+                "SELECT members FROM logic_families WHERE capability = 'fare' AND $1 = ANY(members)", ops[0]
+            )
+            assert fam2 is not None and ops[2] not in fam2["members"]
+        finally:
+            for op in ops:
+                await pool.execute("DELETE FROM operators WHERE id = $1", op)
+            await pool.execute("DELETE FROM logic_families")
+            await pool.execute("DELETE FROM logic_similarity")
+
+    asyncio.run(t())

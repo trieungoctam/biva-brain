@@ -489,3 +489,42 @@ func randHex(n int) string {
 	}
 	return hex.EncodeToString(b)[:n]
 }
+
+// Family: họ logic theo capability (bảng logic_families, job promote cập nhật).
+type Family struct {
+	ID               string         `json:"id"`
+	Capability       string         `json:"capability"`
+	Name             string         `json:"name"`
+	CentroidFeatures []string       `json:"centroid_features"`
+	Members          []string       `json:"members"`
+	Recommended      map[string]any `json:"recommended_implementation,omitempty"`
+	PromoteCandidate bool           `json:"promote_candidate"`
+}
+
+// Families: họ logic có ≥ 2 nhà xe; lọc theo capability khi khác rỗng.
+func Families(ctx context.Context, db *pgxpool.Pool, capability string) ([]Family, error) {
+	rows, err := db.Query(ctx, `
+		SELECT id, capability, name, centroid_features, members,
+		       coalesce(recommended_implementation::text, ''), promote_candidate
+		FROM logic_families
+		WHERE ($1 = '' OR capability = $1)
+		ORDER BY promote_candidate DESC, capability, id`, capability)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []Family{}
+	for rows.Next() {
+		var f Family
+		var rec string
+		if err := rows.Scan(&f.ID, &f.Capability, &f.Name, &f.CentroidFeatures, &f.Members,
+			&rec, &f.PromoteCandidate); err != nil {
+			return nil, err
+		}
+		if rec != "" {
+			_ = json.Unmarshal([]byte(rec), &f.Recommended)
+		}
+		out = append(out, f)
+	}
+	return out, rows.Err()
+}
