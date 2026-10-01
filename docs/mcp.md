@@ -133,7 +133,7 @@ Cột **Mốc** = mốc dự kiến (xem lộ trình trong [architecture.md](arc
 | `recall_knowledge` | M1 | RO | tìm item L0/L1/L2 theo `query` (semantic + keyword, có dấu hay không đều được), `valid_at` (ngày), `kinds`, `topics`, `max_tokens`; mỗi kết quả có `id` để trích dẫn, tầng, **nhãn** (vd "thông lệ chung"), nguồn; TEI lỗi → chỉ keyword, báo `degraded` |
 | `query_data` | M1 | RO | data vận hành (tuyến, giá, lịch, điểm đón) hiệu lực vào `date`: lọc chính xác theo `topics`, `match` (đủ từ, không dấu), `facts`; `include_upcoming` → bản sẽ có hiệu lực (giá mới đã chốt) |
 | `get_source` | M1 | RO | nguồn của một item (nhận cả `[[id]]`): tin/tài liệu gốc, kênh, ai gửi, ai duyệt, các lần nhà xe nhắc lại; L0/L1 → file `kb/` |
-| `get_coverage` | M2 | RO | mục đã có / thiếu / mơ hồ / đang dùng thông lệ L1 |
+| `get_coverage` | M2 | RO | theo template: `covered` · `industry_default` (đang dùng thông lệ L1) · `ambiguous` (CONFLICT đang mở) · `missing`; % mục bắt buộc đã phủ |
 | `compare_with_industry` | M3 | RO | chỗ nhà xe khác thông lệ, bao nhiêu nhà xe khác cũng vậy |
 | `reflect` | M3 | RO | câu hỏi phân tích, trả lời có trích dẫn |
 
@@ -149,7 +149,8 @@ Cột **Mốc** = mốc dự kiến (xem lộ trình trong [architecture.md](arc
 | `propose_item` | M1 | | AI đề xuất item mới/sửa/bỏ (topic thuộc template, `reason` = nguồn) → review queue; **không bao giờ tự áp dụng** |
 | `apply_review` | M1 | C | approve/reject; reject cần `reason`. Token gắn với (người gọi, review, quyết định), dùng một lần |
 | `add_lesson` | M2 | | bài học đúng/sai ở L2 (L1/L0 → tạo request) |
-| `generate_questions` | M2 | RO | bộ câu hỏi gửi nhà xe cho mục thiếu/mơ hồ |
+| `generate_questions` | M2 | RO | câu hỏi cho mục chưa phủ (bắt buộc trước), không dùng LLM: mục < 30% nhà xe khác quy định riêng → câu **xác nhận nhanh** theo thông lệ L1; còn lại → câu hỏi mở của template; CONFLICT → câu xin xác nhận; kèm `message` gộp sẵn gửi Zalo |
+| `create_form` / `get_form` | M2 | | link form (`/f/<token>`, token chỉ lưu SHA-256, dùng một lần, mặc định 14 ngày) để nhà xe trả lời trên điện thoại → job `ingest` (`source=form`) → review; `get_form` xem câu trả lời + `operation_id` |
 
 ### 5.3 Tri thức logic (chi tiết: [logic-knowledge.md](logic-knowledge.md))
 | Tool | Mốc | Cờ | Mô tả |
@@ -204,7 +205,7 @@ Cột **Mốc** = mốc dự kiến (xem lộ trình trong [architecture.md](arc
 
 | Prompt | AI sẽ làm |
 |---|---|
-| `/onboard_operator` | overview → coverage → gợi ý nguồn cần xin → `generate_questions` |
+| `/onboard_operator` | (M2) overview → `get_coverage` → đưa tài liệu có sẵn vào (process_update) → `generate_questions` → gửi message hoặc `create_form` → khi nhà xe trả lời: review → gợi ý `build_bot` |
 | `/process_update` | (M1, tham số `content`, `source`) `list_knowledge` → `submit_knowledge` (hoặc `ingest` nếu thô) → `get_operation` → review + preview → builder đồng ý mới `apply_review` → `validate_artifact` → sửa đúng dòng STALE_CITATION |
 | `/implement_operator_logic` | `get_logic_spec` → `find_similar_operators` → `run_examples_against` → `plan_logic_implementation` → viết profile/hook trong repo (PR, custom kèm ADR) → test |
 | `/build_bot` | (M1, tham số `channel`) `get_bot_spec` → `get_knowledge_pack` → viết từng artifact có trích dẫn → `save_artifact` → `validate_artifact` → sửa đến khi sạch → (M2) `export_bot` |

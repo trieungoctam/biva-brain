@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/trieungoctam/biva-brain/brain-api/internal/config"
+	"github.com/trieungoctam/biva-brain/brain-api/internal/form"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/httpapi"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/kb"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/mcpserver"
@@ -134,7 +135,8 @@ func serve(cfg config.Config) error {
 	authServer := oauth.New(db.Primary, cfg.PublicURL)
 	authServer.Mount(mux)
 	mcpSrv := mcpserver.New(db.Primary, version, topics).WithOAuth(authServer).
-		WithTemplate(bundle.Templates["xe-khach"])
+		WithTemplate(bundle.Templates["xe-khach"]).WithPublicURL(cfg.PublicURL)
+	(&form.Handler{DB: db.Primary}).Mount(mux)
 	if cfg.TEIURL != "" {
 		mcpSrv.WithEmbedder(recall.NewTEI(cfg.TEIURL))
 	} else {
@@ -143,7 +145,8 @@ func serve(cfg config.Config) error {
 	mcpSrv.Mount(mux)
 	// otelhttp: mỗi request (MCP call...) là một span gốc; health không cần trace.
 	handler := otelhttp.NewHandler(mux, "brain-api", otelhttp.WithFilter(func(r *http.Request) bool {
-		return !strings.HasPrefix(r.URL.Path, "/health/")
+		// health: không cần trace; /f/<token>: path chứa token bí mật của form — không đưa vào trace.
+		return !strings.HasPrefix(r.URL.Path, "/health/") && !strings.HasPrefix(r.URL.Path, "/f/")
 	}), otelhttp.WithSpanNameFormatter(func(_ string, r *http.Request) string { return r.Method + " " + routeName(r.URL.Path) }))
 	srv := &http.Server{Addr: cfg.HTTPAddr, Handler: handler}
 	errCh := make(chan error, 1)

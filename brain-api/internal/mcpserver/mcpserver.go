@@ -32,13 +32,14 @@ import (
 const principalKey = "principal"
 
 type Server struct {
-	db       *pgxpool.Pool
-	version  string
-	oauth    *oauth.Server // nil = chỉ nhận token cá nhân
-	topics   []Topic       // bộ topic của template L1 (kb/): kiểm đầu vào và hướng dẫn AI chọn topic
-	recaller *recall.Recaller
-	packs    *pack.Builder
-	template kb.Template // template ngành (kb/L1/<ngành>/template.yaml): get_bot_spec, artifact bắt buộc
+	db        *pgxpool.Pool
+	version   string
+	oauth     *oauth.Server // nil = chỉ nhận token cá nhân
+	topics    []Topic       // bộ topic của template L1 (kb/): kiểm đầu vào và hướng dẫn AI chọn topic
+	recaller  *recall.Recaller
+	packs     *pack.Builder
+	publicURL string      // URL công khai (link form gửi nhà xe)
+	template  kb.Template // template ngành (kb/L1/<ngành>/template.yaml): get_bot_spec, artifact bắt buộc
 
 	mu        sync.Mutex
 	operators map[string]*mcp.Server // MCP server theo nhà xe, dựng một lần
@@ -84,6 +85,12 @@ func New(db *pgxpool.Pool, version string, topics []Topic) *Server {
 // WithOAuth bật token OAuth (ChatGPT connector) bên cạnh token cá nhân.
 func (s *Server) WithOAuth(o *oauth.Server) *Server {
 	s.oauth = o
+	return s
+}
+
+// WithPublicURL: URL công khai của brain-api (link form cho nhà xe).
+func (s *Server) WithPublicURL(u string) *Server {
+	s.publicURL = u
 	return s
 }
 
@@ -231,6 +238,7 @@ func (s *Server) operatorServer(operatorID string) *mcp.Server {
 	s.addRecallTools(srv, operatorID)
 	s.addBuildTools(srv, operatorID)
 	s.addGuide(srv, operatorID)
+	s.addOnboardTools(srv, operatorID)
 	s.addReviewTools(srv, operatorID)
 	s.operators[operatorID] = srv
 	return srv

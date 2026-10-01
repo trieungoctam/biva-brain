@@ -48,7 +48,7 @@ func TestGuideResourcesPromptsAndValidate(t *testing.T) {
 	}
 
 	pr, err := s.ListPrompts(ctx, nil)
-	if err != nil || len(pr.Prompts) != 3 {
+	if err != nil || len(pr.Prompts) != 4 {
 		t.Fatalf("prompts = %v %v", pr, err)
 	}
 	gp, err := s.GetPrompt(ctx, &mcp.GetPromptParams{Name: "process_update",
