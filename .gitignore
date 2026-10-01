@@ -11,3 +11,6 @@ brain-api/bin/
 # Local
 .env
 *.log
+
+# port override riêng theo máy — không commit
+deploy/docker-compose.local.yml
