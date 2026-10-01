@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://biva.vn/schemas/kb/template.schema.json",
+  "title": "Template onboarding L1 (kb/L1/<ngành>/template.yaml)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["industry", "version", "sections", "capabilities", "artifacts"],
+  "properties": {
+    "industry": {"type": "string", "pattern": "^[a-z0-9-]+$"},
+    "version": {"type": "integer", "minimum": 1},
+    "sections": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["topic", "level", "title", "facts", "questions"],
+        "properties": {
+          "topic": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+          "level": {"enum": ["required", "recommended"]},
+          "title": {"type": "string"},
+          "facts": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+          "questions": {"type": "array", "minItems": 1, "items": {"type": "string"}}
+        }
+      }
+    },
+    "capabilities": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "level", "title"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+          "level": {"enum": ["required", "recommended"]},
+          "title": {"type": "string"},
+          "modes": {"type": "array", "items": {"enum": ["api", "handoff"]}, "minItems": 1}
+        }
+      }
+    },
+    "artifacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["required"],
+      "properties": {
+        "required": {"type": "array", "items": {"$ref": "#/$defs/artifact"}, "minItems": 1},
+        "recommended": {"type": "array", "items": {"$ref": "#/$defs/artifact"}}
+      }
+    }
+  },
+  "$defs": {
+    "artifact": {"enum": ["persona", "system_prompt", "faq", "flows", "tool_spec", "fallbacks"]}
+  }
+}

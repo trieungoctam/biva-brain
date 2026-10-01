@@ -23,6 +23,7 @@ Trạng thái: **thiết kế đã chốt**, đang làm **M0 — Nền móng** (
 contracts/   migrations (golang-migrate) · schemas (JSON Schema) · fixtures dùng chung Go ⇄ Python
 go/          brain-api (Go): HTTP health, migrate; MCP, recall… ở các mốc sau
 python/      ai-worker (Python): job dùng LLM/NLP
+kb/         tri thức nền L0/L1 (YAML, review bằng PR) → brain-api kb sync
 deploy/      docker-compose cho local
 docs/        thiết kế
 ```

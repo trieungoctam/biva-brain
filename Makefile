@@ -32,7 +32,7 @@ test-py:
 	cd python && uv run pytest -q
 
 lint:
-	cd go && test -z "$$(gofmt -l .)" && go vet ./...
+	cd go && test -z "$$(gofmt -l .)" && go vet ./... && go run ./cmd/brain-api kb check
 	cd python && uv run ruff check . && uv run ruff format --check .
 
 fmt:

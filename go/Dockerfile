@@ -10,7 +10,10 @@ FROM alpine:3.20
 RUN adduser -D -u 10001 app && apk add --no-cache wget
 COPY --from=build /out/brain-api /usr/local/bin/brain-api
 COPY contracts /contracts
+COPY kb /kb
 ENV BIVA_MIGRATIONS_DIR=/contracts/migrations \
+    BIVA_SCHEMAS_DIR=/contracts/schemas \
+    BIVA_KB_DIR=/kb \
     BIVA_HTTP_ADDR=:8080
 USER app
 EXPOSE 8080

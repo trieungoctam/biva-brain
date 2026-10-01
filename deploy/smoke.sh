@@ -23,6 +23,11 @@ $C up -d --build "${services[@]}"
 wait_for "brain-api /health/ready" 120 curl -fsS "$API/health/ready"
 wait_for "S3 (SeaweedFS) trả lời ListBuckets" 60 bash -c "curl -sS 127.0.0.1:8333/ | grep -q ListAllMyBucketsResult"
 
+# Tri thức nền L0/L1 từ kb/ (image brain-api) — chạy hai lần: lần hai không được đổi gì.
+$C exec -T brain-api brain-api kb sync
+$C exec -T brain-api brain-api kb sync | grep -q "thêm 0, sửa 0, bỏ 0" && echo "✓ kb sync idempotent" \
+  || { echo "✗ kb sync lần hai vẫn ghi"; exit 1; }
+
 # Dữ liệu thử: nhà xe, builder, token.
 sfx=$(date +%s)
 $C exec -T brain-api brain-api operator add "smoke$sfx" "Smoke $sfx"

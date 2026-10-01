@@ -12,7 +12,14 @@ type Config struct {
 	DatabaseReplicaURL string        // BIVA_DATABASE_REPLICA_URL — đọc; trống thì dùng primary
 	HTTPAddr           string        // BIVA_HTTP_ADDR, mặc định :8080
 	MigrationsDir      string        // BIVA_MIGRATIONS_DIR, mặc định ../contracts/migrations
+	KBDir              string        // BIVA_KB_DIR, mặc định ../kb
+	SchemasDir         string        // BIVA_SCHEMAS_DIR, mặc định ../contracts/schemas
 	ShutdownTimeout    time.Duration // thời gian chờ tắt êm
+}
+
+// Paths trả về thư mục kb/ và contracts/schemas — dùng cả cho lệnh không cần DB (kb check).
+func Paths() (kbDir, schemasDir string) {
+	return getenv("BIVA_KB_DIR", "../kb"), getenv("BIVA_SCHEMAS_DIR", "../contracts/schemas")
 }
 
 func Load() (Config, error) {
@@ -23,6 +30,7 @@ func Load() (Config, error) {
 		MigrationsDir:      getenv("BIVA_MIGRATIONS_DIR", "../contracts/migrations"),
 		ShutdownTimeout:    10 * time.Second,
 	}
+	c.KBDir, c.SchemasDir = Paths()
 	if c.DatabaseURL == "" {
 		return c, errors.New("thiếu BIVA_DATABASE_URL")
 	}

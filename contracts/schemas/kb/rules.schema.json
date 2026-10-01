@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://biva.vn/schemas/kb/rules.schema.json",
+  "title": "Rule tri thức nền L0/L1 (kb/L0/rules.yaml, kb/L1/<ngành>/rules.yaml)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["layer", "rules"],
+  "properties": {
+    "layer": {"enum": [0, 1]},
+    "industry": {"type": "string", "pattern": "^[a-z0-9-]+$"},
+    "rules": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["key", "kind", "topic", "locked", "text"],
+        "properties": {
+          "key": {"type": "string", "pattern": "^l[01]\\.[a-z0-9_.]+$"},
+          "kind": {"enum": ["policy", "persona", "lesson"]},
+          "topic": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+          "locked": {"type": "boolean"},
+          "text": {"type": "string", "minLength": 10},
+          "value": {"type": "object"}
+        }
+      }
+    }
+  },
+  "if": {"properties": {"layer": {"const": 1}}},
+  "then": {"required": ["industry"]}
+}

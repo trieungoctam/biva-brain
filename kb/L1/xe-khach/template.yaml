@@ -1,0 +1,136 @@
+# Template onboarding L1 — ngành xe khách. Dùng cho: skeleton khi tạo nhà xe, coverage, get_bot_spec, release gate.
+# BẢN NHÁP (DYN-111). Topic ở đây là bộ từ vựng chuẩn cho items.topic (parser/ingest phải dùng đúng các topic này).
+industry: xe-khach
+version: 1
+
+sections:
+  # ── bắt buộc: coverage 100% trước phát hành ──
+  - topic: route
+    level: required
+    title: Tuyến & điểm dừng
+    facts: [danh sách tuyến, bến đi / bến đến, điểm dừng dọc đường, thời gian chạy dự kiến]
+    questions:
+      - Nhà xe chạy những tuyến nào, đi và đến bến nào?
+      - Xe có dừng đón trả dọc đường không, ở đâu?
+  - topic: fare
+    level: required
+    title: Giá vé
+    facts: [giá theo tuyến × loại xe, phụ thu cuối tuần / lễ Tết, giá trẻ em, khuyến mãi]
+    questions:
+      - Giá vé từng tuyến theo từng loại xe là bao nhiêu?
+      - Dịp lễ Tết, cuối tuần có phụ thu không, áp dụng từ ngày nào đến ngày nào?
+  - topic: schedule
+    level: required
+    title: Lịch chạy
+    facts: [giờ xuất bến từng tuyến, số chuyến, lịch thay đổi theo mùa]
+    questions:
+      - Mỗi tuyến có những chuyến lúc mấy giờ?
+      - Lịch có thay đổi theo ngày trong tuần hoặc theo mùa không?
+  - topic: pickup
+    level: required
+    title: Điểm đón / trả
+    facts: [văn phòng, điểm đón trong thành phố, đón tận nơi, giờ có mặt]
+    questions:
+      - Khách lên xe ở đâu, có đón tận nhà hay đón dọc đường không?
+      - Khách cần có mặt trước giờ chạy bao lâu?
+  - topic: cancellation
+    level: required
+    title: Huỷ, đổi vé & hoàn tiền
+    facts: [hạn huỷ, phí huỷ / tỉ lệ hoàn, đổi vé, đến muộn]
+    questions:
+      - Khách huỷ hoặc đổi vé thì cần báo trước bao lâu, mất phí bao nhiêu?
+      - Hoàn tiền bằng cách nào, trong bao lâu?
+
+  # ── khuyến nghị: coverage ≥ 80% ──
+  - topic: booking
+    level: recommended
+    title: Cách đặt vé & giữ chỗ
+    facts: [kênh đặt vé, giữ chỗ không cọc, chọn ghế, đặt nhóm]
+    questions:
+      - Khách đặt vé qua những kênh nào, có giữ chỗ trước được không?
+  - topic: payment
+    level: recommended
+    title: Thanh toán
+    facts: [hình thức thanh toán, số tài khoản chính thức, xuất hoá đơn]
+    questions:
+      - Nhà xe nhận thanh toán bằng những cách nào?
+      - Số tài khoản chính thức là gì?
+  - topic: vehicle
+    level: recommended
+    title: Loại xe & tiện ích
+    facts: [giường nằm / ghế ngồi / limousine, số chỗ, wifi, nhà vệ sinh, nước uống]
+    questions:
+      - Nhà xe có những loại xe nào, mỗi loại có tiện ích gì?
+  - topic: luggage
+    level: recommended
+    title: Hành lý
+    facts: [số kg miễn phí, hàng cồng kềnh, phụ thu]
+    questions:
+      - Mỗi khách được mang bao nhiêu hành lý miễn phí?
+  - topic: children
+    level: recommended
+    title: Trẻ em
+    facts: [độ tuổi miễn vé, giá vé trẻ em]
+    questions:
+      - Trẻ em bao nhiêu tuổi thì miễn vé, bao nhiêu tuổi phải mua vé?
+  - topic: pets
+    level: recommended
+    title: Thú cưng
+    facts: [có nhận không, điều kiện, phụ thu]
+    questions:
+      - Nhà xe có nhận chở thú cưng không, điều kiện thế nào?
+  - topic: parcel
+    level: recommended
+    title: Gửi hàng
+    facts: [cước, nơi gửi / nhận, thời gian lưu kho]
+    questions:
+      - Nhà xe có nhận gửi hàng không, tính cước thế nào?
+  - topic: transfer
+    level: recommended
+    title: Trung chuyển
+    facts: [khu vực trung chuyển miễn phí, giờ chạy]
+    questions:
+      - Nhà xe có xe trung chuyển không, phục vụ khu vực nào?
+  - topic: contact
+    level: recommended
+    title: Liên hệ & văn phòng
+    facts: [hotline, giờ làm việc, địa chỉ văn phòng]
+    questions:
+      - Hotline và địa chỉ các văn phòng của nhà xe?
+  - topic: boarding
+    level: recommended
+    title: Thủ tục lên xe
+    facts: [giấy tờ cần mang, mã vé, đến muộn]
+    questions:
+      - Khách cần mang gì khi lên xe?
+  - topic: onboard
+    level: recommended
+    title: Quy định trên xe
+    facts: [hút thuốc, đồ ăn, trẻ em, người cao tuổi]
+    questions:
+      - Trên xe có quy định gì khách cần biết?
+
+capabilities:
+  - id: fare
+    level: required
+    title: Tính giá vé theo tuyến, loại xe, ngày đi
+  - id: schedule
+    level: required
+    title: Tra lịch chạy / chuyến
+  - id: booking
+    level: required
+    title: Kiểm tra ghế & giữ chỗ
+    modes: [api, handoff]       # nhà xe chưa có API đặt vé → handoff
+  - id: pickup
+    level: recommended
+    title: Gán điểm đón theo địa chỉ / giờ
+  - id: transfer
+    level: recommended
+    title: Trung chuyển
+  - id: parcel
+    level: recommended
+    title: Báo cước gửi hàng
+
+artifacts:
+  required: [persona, system_prompt, faq, tool_spec, fallbacks]
+  recommended: [flows]

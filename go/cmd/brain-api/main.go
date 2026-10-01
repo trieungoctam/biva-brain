@@ -5,6 +5,7 @@
 //	brain-api migrate down   lùi một migration
 //	brain-api migrate version
 //	brain-api operator|user|token ...   quản trị (xem adminUsage)
+//	brain-api kb check | kb sync [--dry-run]   tri thức nền L0/L1 từ kb/
 package main
 
 import (
@@ -42,6 +43,9 @@ func main() {
 }
 
 func run(args []string) error {
+	if len(args) >= 2 && args[0] == "kb" && args[1] == "check" {
+		return kbCheck() // không cần DB: chạy được trong CI
+	}
 	cfg, err := config.Load()
 	if err != nil {
 		return err
@@ -57,8 +61,10 @@ func run(args []string) error {
 		return runMigrate(cfg, args[1:])
 	case "operator", "user", "token":
 		return runAdmin(cfg, cmd, args[1:])
+	case "kb":
+		return runKB(cfg, args[1:])
 	default:
-		return fmt.Errorf("lệnh không hợp lệ %q (dùng: serve | migrate up|down|version | operator | user | token)", cmd)
+		return fmt.Errorf("lệnh không hợp lệ %q (dùng: serve | migrate up|down|version | operator | user | token | kb)", cmd)
 	}
 }
 

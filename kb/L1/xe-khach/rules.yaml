@@ -1,0 +1,100 @@
+# L1 — thông lệ ngành xe khách. Spec: kb/README.md
+# BẢN NHÁP (DYN-111) — nội dung nghiệp vụ cần lead/vận hành xác nhận trước khi sync.
+#
+# locked: true  → nhà xe nào cũng phải theo (L2 không ghi đè được).
+# locked: false → thông lệ mặc định: chỉ dùng khi nhà xe chưa có thông tin riêng, và bot PHẢI gắn nhãn
+#                 "thông lệ chung" (L0 l0.label_industry_default). Câu chữ dùng "thường" vì không chắc đúng
+#                 với từng nhà xe.
+layer: 1
+industry: xe-khach
+rules:
+  # ── luật chung của ngành ──
+  - key: l1.eta_not_guaranteed
+    kind: policy
+    topic: schedule
+    locked: true
+    text: >-
+      Giờ đến chỉ là dự kiến và có thể thay đổi theo tình hình giao thông, thời tiết; không cam kết giờ đến
+      chính xác.
+
+  - key: l1.holiday_price_by_date
+    kind: policy
+    topic: fare
+    locked: true
+    text: >-
+      Giá vé dịp Tết và ngày lễ có thể khác ngày thường: luôn báo giá theo ngày đi cụ thể của khách và nêu rõ
+      khoảng ngày áp dụng.
+
+  - key: l1.prohibited_goods
+    kind: policy
+    topic: parcel
+    locked: true
+    text: >-
+      Không nhận chở hoặc gửi hàng cấm, hàng dễ cháy nổ, chất độc hại theo quy định pháp luật.
+
+  - key: l1.cancellation_by_policy
+    kind: policy
+    topic: cancellation
+    locked: true
+    text: >-
+      Huỷ, đổi vé và hoàn tiền chỉ theo chính sách đã công bố của nhà xe; nếu chưa có chính sách thì chuyển
+      nhân viên, không tự đưa mức hoàn tiền.
+
+  # ── thông lệ mặc định (gắn nhãn khi dùng) ──
+  - key: l1.default.arrive_early
+    kind: policy
+    topic: boarding
+    locked: false
+    text: Khách thường được dặn có mặt tại điểm đón hoặc bến trước giờ xuất bến khoảng 15–30 phút.
+
+  - key: l1.default.luggage
+    kind: policy
+    topic: luggage
+    locked: false
+    text: >-
+      Mỗi khách thường được mang một vali và một túi xách (khoảng 20 kg) miễn phí; hàng cồng kềnh như xe máy
+      phải gửi hàng riêng.
+
+  - key: l1.default.children
+    kind: policy
+    topic: children
+    locked: false
+    text: >-
+      Trẻ nhỏ (thường dưới khoảng 5–6 tuổi) ngồi chung ghế với người lớn có thể được miễn vé; trẻ lớn hơn hoặc
+      cần ghế riêng thường phải mua vé.
+
+  - key: l1.default.pets
+    kind: policy
+    topic: pets
+    locked: false
+    text: >-
+      Thú cưng thường phải để trong lồng hoặc túi chuyên dụng và có thể bị phụ thu; một số nhà xe không nhận thú
+      cưng.
+
+  - key: l1.default.cancellation_window
+    kind: policy
+    topic: cancellation
+    locked: false
+    text: >-
+      Nhiều nhà xe cho huỷ hoặc đổi vé trước giờ chạy (thường từ 24 giờ) với mức phí hoặc tỉ lệ hoàn tiền nhất
+      định; huỷ sát giờ thường không được hoàn.
+
+  - key: l1.default.id_document
+    kind: policy
+    topic: boarding
+    locked: false
+    text: Khách nên mang theo giấy tờ tuỳ thân và mã vé (tin nhắn, email hoặc Zalo) khi lên xe.
+
+  - key: l1.default.onboard_rules
+    kind: policy
+    topic: onboard
+    locked: false
+    text: Trên xe thường không được hút thuốc, uống rượu bia hay mang đồ ăn có mùi nặng.
+
+  - key: l1.default.parcel_pricing
+    kind: policy
+    topic: parcel
+    locked: false
+    text: >-
+      Phí gửi hàng thường tính theo khối lượng hoặc kích thước kiện hàng, nhận và trả tại văn phòng hoặc bến
+      của nhà xe.
