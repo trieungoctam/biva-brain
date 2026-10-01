@@ -84,3 +84,72 @@ func TestLogicTools(t *testing.T) {
 		t.Fatal("so với chính mình phải lỗi")
 	}
 }
+
+// TestPlanDecisionProposeTools: plan_logic_implementation, record_decision, propose_logic_profile.
+func TestPlanDecisionProposeTools(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	ins := func(op, feats string) {
+		t.Helper()
+		if _, err := f.pool.Exec(ctx, `
+			INSERT INTO logic_specs (operator_id, capability, features, rules_text, source_item_ids, created_by)
+			VALUES ($1, 'fare', $2::jsonb, $3, '{}', 't')`, op, feats,
+			[]string{"Phụ thu Tết 20% theo ngày đi"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ins(f.opA, `[{"id":"fare.by_route_vehicle"},{"id":"fare.holiday_surcharge","params":{"tet":0.20}}]`)
+	t.Cleanup(func() { f.pool.Exec(ctx, `DELETE FROM logic_specs WHERE operator_id = $1`, f.opA) })
+	if _, err := f.pool.Exec(ctx, `INSERT INTO logic_modules (id, version, layer, operator_id, capability,
+		summary, entrypoint, features, params_schema, hooks, required_tests, repo, path, commit)
+		VALUES ('fare.standard', 1, 'L1', NULL, 'fare', 'Giá chuẩn', 'calculator.py:calculate',
+		$1::text[], '{}', '[]', '{}', 'biva-integrations', 'modules/fare/standard', 'abc')`,
+		[]string{"fare.by_route_vehicle", "fare.holiday_surcharge"}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		f.pool.Exec(ctx, `DELETE FROM logic_modules WHERE id = 'fare.standard'`)
+	})
+
+	s, err := connect(t, f.url+"/mcp/operator/"+f.opA+"/", f.builderTok)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	// plan: module phủ đủ → config, không cần ADR.
+	isErr, plan, _ := call(t, s, "plan_logic_implementation", map[string]any{"capability": "fare"})
+	if isErr {
+		t.Fatal("plan lỗi")
+	}
+	if plan["mode"] != "config" || plan["module"] != "fare.standard@1" || plan["needs_adr"] != false {
+		t.Fatalf("plan = %+v", plan)
+	}
+	if _, ok := plan["params_draft"].(map[string]any)["fare.holiday_surcharge"]; !ok {
+		t.Fatalf("params_draft = %+v", plan["params_draft"])
+	}
+
+	// record_decision → id adr_*.
+	isErr, dec, _ := call(t, s, "record_decision", map[string]any{"capability": "fare",
+		"title": "test ADR", "context": "c", "decision": "d"})
+	if isErr {
+		t.Fatal("record_decision lỗi")
+	}
+	adr := dec["id"].(string)
+	if len(adr) < 8 || adr[:4] != "adr_" {
+		t.Fatalf("adr = %v", adr)
+	}
+
+	// propose_logic_profile → operation_id của job logic.propose.
+	profile := "operator: " + f.opA + "\ncapabilities:\n  fare:\n    mode: config\n    module: fare.standard@1\n"
+	isErr, prop, _ := call(t, s, "propose_logic_profile", map[string]any{"profile_yaml": profile})
+	if isErr {
+		t.Fatal("propose lỗi")
+	}
+	opID := prop["operation_id"].(string)
+	var kind, status string
+	if err := f.pool.QueryRow(ctx, `SELECT kind, status FROM operations WHERE id = $1`, opID).
+		Scan(&kind, &status); err != nil || kind != "logic.propose" || status != "queued" {
+		t.Fatalf("job = %s %s %v", kind, status, err)
+	}
+}

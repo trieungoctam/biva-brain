@@ -304,6 +304,11 @@ func Validate(ctx context.Context, db *pgxpool.Pool, operatorID string, a artifa
 			return rep, err
 		}
 	}
+	if a.Kind == "tool_spec" {
+		if err := checkToolSpec(ctx, db, operatorID, a, &rep); err != nil {
+			return rep, err
+		}
+	}
 
 	rep.Valid = len(rep.Errors) == 0
 	rep.Status = map[bool]string{true: "valid", false: "invalid"}[rep.Valid]
@@ -404,3 +409,72 @@ func containsAny(s string, subs []string) bool {
 }
 
 func itoa(n int) string { return strconv.Itoa(n) }
+
+// capabilityDeclRe: khai báo tool → capability trong tool_spec, vd "- `get_fare` (capability: fare)".
+var capabilityDeclRe = regexp.MustCompile("(?i)capability\\s*[:=]\\s*`?([a-z][a-z0-9_]*)`?")
+
+// checkToolSpec (S2.5.6 NO_CAPABILITY): mỗi tool khai báo capability phải có hồ sơ logic active
+// (logic_profiles) — bot không được gọi cái nhà xe chưa triển khai. Tool không khai báo capability
+// không bị kiểm (chỉ là hướng dẫn dùng tool tra data của runtime).
+func checkToolSpec(ctx context.Context, db *pgxpool.Pool, operatorID string, a artifact.Artifact, rep *Report) error {
+	var decls []struct {
+		line       int
+		tool       string
+		capability string
+	}
+	for _, b := range blocks(a.Content) {
+		m := capabilityDeclRe.FindStringSubmatch(b.text)
+		if m == nil {
+			continue
+		}
+		tool := ""
+		if t := backtickRe.FindStringSubmatch(b.text); t != nil {
+			tool = t[1]
+		}
+		decls = append(decls, struct {
+			line       int
+			tool       string
+			capability string
+		}{b.start, tool, strings.ToLower(m[1])})
+	}
+	if len(decls) == 0 {
+		return nil
+	}
+	caps := make([]string, len(decls))
+	for i, d := range decls {
+		caps[i] = d.capability
+	}
+	rows, err := db.Query(ctx, `SELECT capability FROM logic_profiles
+		WHERE operator_id = $1 AND capability = ANY($2) AND status = 'active'`, operatorID, caps)
+	if err != nil {
+		return err
+	}
+	active := map[string]bool{}
+	for rows.Next() {
+		var c string
+		if err := rows.Scan(&c); err != nil {
+			rows.Close()
+			return err
+		}
+		active[c] = true
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, d := range decls {
+		if active[d.capability] {
+			continue
+		}
+		msg := "capability " + d.capability + " chưa có hồ sơ logic active — triển khai trước " +
+			"(get_operator_logic → plan_logic_implementation → propose_logic_profile) hoặc bỏ khai báo capability"
+		if d.tool != "" {
+			msg = "tool " + d.tool + ": " + msg
+		}
+		rep.Errors = append(rep.Errors, Issue{Code: "NO_CAPABILITY", Line: d.line,
+			Excerpt: excerpt(d.capability), Message: msg})
+	}
+	return nil
+}
+
+var backtickRe = regexp.MustCompile("`([a-z][a-z0-9_]*)`")

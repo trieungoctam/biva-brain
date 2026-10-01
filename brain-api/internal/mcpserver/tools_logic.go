@@ -9,6 +9,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/trieungoctam/biva-brain/brain-api/internal/logic"
+	"github.com/trieungoctam/biva-brain/brain-api/internal/queue"
 )
 
 type logicSpecIn struct {
@@ -139,5 +140,112 @@ func (s *Server) addLogicTools(srv *mcp.Server, operatorID string) {
 			}
 			next = append(next, "get_logic_spec(capability=…) cho từng capability")
 			return nil, operatorLogicOut{Capabilities: states, Missing: missing, NextActions: next}, nil
+		})
+}
+
+type planIn struct {
+	Capability string `json:"capability"`
+}
+
+type recordDecisionIn struct {
+	Capability string   `json:"capability"`
+	Title      string   `json:"title" jsonschema:"tóm tắt quyết định"`
+	Context    string   `json:"context" jsonschema:"vì sao phải quyết định (trạng thái, ràng buộc)"`
+	Options    []string `json:"options,omitempty" jsonschema:"các phương án đã cân nhắc"`
+	Decision   string   `json:"decision" jsonschema:"phương án chọn và hệ quả"`
+}
+
+type proposeProfileIn struct {
+	ProfileYAML string        `json:"profile_yaml" jsonschema:"nội dung operators/<id>/profile.yaml theo schema logic.profile"`
+	Files       []proposeFile `json:"files,omitempty" jsonschema:"file hook/custom kèm theo"`
+}
+type proposeFile struct {
+	Path    string `json:"path" jsonschema:"đường dẫn trong thư mục nhà xe, vd hooks/pickup_by_hour.py"`
+	Content string `json:"content"`
+}
+
+const (
+	planDesc = "Kế hoạch triển khai logic theo capability: module L1 phủ nhiều feature của spec nhất " +
+		"(config nếu đủ), phần thiếu — viết mới hoặc tái dùng của nhà xe tương tự (hook), thật sự đặc biệt " +
+		"thì custom + ADR. Bậc thấp nhất đủ dùng. Kèm params_draft từ spec (khi viết profile phải ghi source item)."
+	recordDecisionDesc = "Ghi ADR — lý do nhà xe cần hook/custom thay vì module chuẩn. Bắt buộc trước " +
+		"propose_logic_profile với mode=custom. Trả id để ghi vào profile.yaml (decision:)."
+	proposeProfileDesc = "Đề xuất hồ sơ logic (profile.yaml + file hook/custom) → job tạo PR vào repo " +
+		"biva-integrations (cần cấu hình token; chưa có thì trả patch để builder tạo PR tay). Custom phải có " +
+		"ADR (record_decision) — bị từ chối nếu chưa có. Trả operation_id, xem kết quả bằng get_operation."
+)
+
+type recordDecisionOut struct {
+	ID          string   `json:"id"`
+	RecordedAs  string   `json:"recorded_as"`
+	NextActions []string `json:"next_actions"`
+}
+
+type proposeProfileOut struct {
+	OperationID string   `json:"operation_id"`
+	NextActions []string `json:"next_actions"`
+}
+
+func (s *Server) addPlanTools(srv *mcp.Server, operatorID string) {
+	mcp.AddTool(srv, &mcp.Tool{Name: "plan_logic_implementation", Description: planDesc, Annotations: readOnly},
+		func(ctx context.Context, _ *mcp.CallToolRequest, in planIn) (*mcp.CallToolResult, logic.ImplementationPlan, error) {
+			if in.Capability == "" {
+				return nil, logic.ImplementationPlan{}, errors.New("thiếu capability")
+			}
+			p, err := logic.BuildPlan(ctx, s.db, operatorID, in.Capability)
+			if errors.Is(err, logic.ErrNoSpec) {
+				return nil, logic.ImplementationPlan{}, errors.New("chưa có logic spec — ops chạy job logic.spec trước")
+			}
+			if err != nil {
+				return nil, logic.ImplementationPlan{}, internal("plan_logic_implementation", err)
+			}
+			return nil, p, nil
+		})
+
+	mcp.AddTool(srv, &mcp.Tool{Name: "record_decision", Description: recordDecisionDesc,
+		Annotations: &mcp.ToolAnnotations{IdempotentHint: false, DestructiveHint: ptr(false), OpenWorldHint: ptr(false)}},
+		func(ctx context.Context, req *mcp.CallToolRequest, in recordDecisionIn) (*mcp.CallToolResult, recordDecisionOut, error) {
+			p, err := callerOf(req)
+			if err != nil {
+				return nil, recordDecisionOut{}, err
+			}
+			if in.Capability == "" || in.Title == "" || in.Decision == "" {
+				return nil, recordDecisionOut{}, errors.New("thiếu capability, title hoặc decision")
+			}
+			id, err := logic.RecordDecision(ctx, s.db, operatorID, in.Capability, in.Title, in.Context,
+				in.Options, in.Decision, p.Actor())
+			if err != nil {
+				return nil, recordDecisionOut{}, internal("record_decision", err)
+			}
+			return nil, recordDecisionOut{ID: id, RecordedAs: p.Actor(),
+				NextActions: []string{"ghi \"" + id + "\" vào phần decision của capability (profile.yaml)",
+					"propose_logic_profile"}}, nil
+		})
+
+	mcp.AddTool(srv, &mcp.Tool{Name: "propose_logic_profile", Description: proposeProfileDesc,
+		Annotations: &mcp.ToolAnnotations{IdempotentHint: true, DestructiveHint: ptr(false), OpenWorldHint: ptr(false)}},
+		func(ctx context.Context, req *mcp.CallToolRequest, in proposeProfileIn) (*mcp.CallToolResult, proposeProfileOut, error) {
+			p, err := callerOf(req)
+			if err != nil {
+				return nil, proposeProfileOut{}, err
+			}
+			if in.ProfileYAML == "" {
+				return nil, proposeProfileOut{}, errors.New("thiếu profile_yaml")
+			}
+			files := make([]map[string]string, len(in.Files))
+			for i, f := range in.Files {
+				files[i] = map[string]string{"path": f.Path, "content": f.Content}
+			}
+			opID, created, err := queue.Enqueue(ctx, s.db, queue.Job{
+				Kind: "logic.propose", OperatorID: operatorID,
+				Payload: map[string]any{"profile_yaml": in.ProfileYAML, "files": files, "requested_by": p.Actor()},
+			})
+			if err != nil {
+				return nil, proposeProfileOut{}, internal("propose_logic_profile", err)
+			}
+			_ = created
+			return nil, proposeProfileOut{OperationID: opID,
+				NextActions: []string{"get_operation(operation_id=" + opID + ") — job tạo PR hoặc trả patch",
+					"sau khi PR merge: job index_code đồng bộ lại trong ≤ 1 phút"}}, nil
 		})
 }

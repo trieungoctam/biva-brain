@@ -11,6 +11,8 @@ package logic
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -453,4 +455,37 @@ func Compare(ctx context.Context, db *pgxpool.Pool, operator, other, capability 
 	weight := func(id string) float64 { return math.Log(1 + total/(1+df[id])) }
 	c := compare(mine, nil, textnorm.SearchText(strings.Join(mine.RulesText, " ")), r, weight)
 	return &c, nil
+}
+
+// RecordDecision ghi ADR vào logic_decisions; trả id dạng adr_<hex> để tham chiếu trong profile.yaml.
+func RecordDecision(ctx context.Context, db *pgxpool.Pool, operator, capability, title, context_ string,
+	options []string, decision, actor string) (string, error) {
+	if options == nil {
+		options = []string{}
+	}
+	id := "adr_" + randHex(6)
+	_, err := db.Exec(ctx, `
+		INSERT INTO logic_decisions (id, operator_id, capability, title, context, options, decision, author)
+		VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8)`,
+		id, operator, capability, title, context_, options, decision, actor)
+	if err != nil {
+		return "", err
+	}
+	return id, nil
+}
+
+// DecisionExists kiểm tra ADR đã ghi cho nhà xe (propose_logic_profile từ chối custom chưa có ADR).
+func DecisionExists(ctx context.Context, db *pgxpool.Pool, operator, decisionID string) (bool, error) {
+	var ok bool
+	err := db.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM logic_decisions WHERE operator_id = $1 AND id = $2)`,
+		operator, decisionID).Scan(&ok)
+	return ok, err
+}
+
+func randHex(n int) string {
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		panic(err) // crypto/rand không lỗi trên nền tảng được hỗ trợ
+	}
+	return hex.EncodeToString(b)[:n]
 }

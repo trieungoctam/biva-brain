@@ -79,7 +79,11 @@ cd ai-worker && uv run pytest -q
   catalog → `logic_specs` (migration 000016), feature lạ → `proposed_features` chờ review; embedding
   rules_text qua TEI (optional). S2.5.4 xong: `internal/logic` + tools MCP `get_operator_logic`,
   `get_logic_spec`, `find_similar_operators` (0.5 feature IDF + 0.3 rules + 0.2 params, giải thích
-  trùng/thiếu/khác + param lệch), `compare_logic`. Còn: S2.5.5 plan/propose + ADR, S2.5.6 NO_CAPABILITY,
-  S2.5.7 prompt.
+  trùng/thiếu/khác + param lệch), `compare_logic`. S2.5.5–5.7 xong: `plan_logic_implementation` (bậc thấp nhất đủ
+  dùng, params_draft), `record_decision` (ADR, bảng logic_decisions — migration 000017),
+  `propose_logic_profile` (job `logic.propose`: validate + custom chặn khi thiếu ADR; có
+  BIVA_INTEGRATIONS_TOKEN thì tạo PR, không thì trả nội dung tạo PR tay), `NO_CAPABILITY` trong
+  validate_artifact (tool khai báo `capability:` trong tool_spec phải có profile active),
+  prompt `/implement_operator_logic`. E2.5 đủ nội dung M2 — đo trên pilot thật chờ DYN-110.
 - Linear: workspace dpos, project "BIVA Brain"; mỗi story xong thì comment kết quả + link CI rồi chuyển Done
   (chưa đạt hết AC thì để In Progress và ghi rõ phần thiếu).

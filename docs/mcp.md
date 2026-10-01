@@ -110,7 +110,7 @@ Thứ tự ưu tiên khi AI cần thêm (giống reflect của Hindsight):
 | Thiếu rule `locked` bắt buộc | `MISSING_LOCKED it_007` |
 | Dùng thông lệ L1 mà không gắn nhãn | `UNLABELED_DEFAULT it_090` |
 | Nêu con số giá/giờ thay vì gọi tool | `HARDCODED_DATA "300k" dòng 20` |
-| Tool không có capability active trong hồ sơ logic | `NO_CAPABILITY check_seats` |
+| Tool khai báo capability không có hồ sơ logic active | `NO_CAPABILITY get_fare (capability: fare)` — tool_spec ghi `(capability: <tên>)`; không khai báo thì không kiểm |
 | Mâu thuẫn với tri thức (kiểm bằng LLM) | `CONTRADICTION it_311` |
 | Chưa phủ mục bắt buộc | `COVERAGE topic=cancellation` |
 
@@ -159,13 +159,13 @@ Cột **Mốc** = mốc dự kiến (xem lộ trình trong [architecture.md](arc
 | `get_logic_spec` | M2 ✅ | RO | logic spec theo capability (feature + tham số, rules_text, implementation nếu có) — dựng bởi job logic.spec, có cả với khách mới chưa có code; chưa có → hướng dẫn chạy job |
 | `find_similar_operators` | M2 ✅ | RO | ứng viên tương tự tầng spec: 50% trùng feature (trọng số IDF) + 30% rules (cosine embedding hoặc bigram keyword) + 20% gần tham số; giải thích trùng / thiếu (mình có họ không) / khác (họ có mình chưa) / tham số lệch |
 | `compare_logic` | M2 ✅ | RO | so hai nhà xe theo capability: điểm + chi tiết như find_similar |
-| `plan_logic_implementation` | M2 | RO | kế hoạch: tái dùng gì, config/hook/custom, phần viết mới |
+| `plan_logic_implementation` | M2 ✅ | RO | kế hoạch theo capability: module L1 phủ nhiều feature của spec nhất, phần thiếu (viết mới / tái dùng nhà xe tương tự), bậc thấp nhất đủ dùng (config → hook → custom+ADR), params_draft từ spec |
 | `list_logic_families` | M3 | RO | họ logic theo capability |
 | `run_examples_against` | M3 | | chạy ví dụ của nhà xe này trên code ứng viên (sandbox) → % pass, case fail |
 | `search_logic` | M2 | RO | tìm module, feature, pattern, lesson, code chunk |
 | `get_logic_module` | M2 | RO | manifest: interface, params_schema, hooks, version, test bắt buộc |
-| `propose_logic_profile` | M2 | | đề xuất hồ sơ (config/hook/custom) → PR vào repo (custom kèm ADR) |
-| `record_decision` | M2 | | ghi ADR |
+| `propose_logic_profile` | M2 ✅ | | gửi profile.yaml (+file hook/custom) → job logic.propose: validate schema, custom bắt buộc ADR (record_decision), có token thì tạo PR vào biva-integrations, chưa có thì trả nội dung để tạo PR tay; trả operation_id |
+| `record_decision` | M2 ✅ | | ghi ADR (lý do hook/custom) → id adr_* dùng trong profile.yaml |
 | `add_logic_test` / `list_logic_tests` | M3 | | ví dụ input → output |
 | `impact_of_change` | M3 | RO | module/version/feature hoặc item đổi → nhà xe, bot, test bị ảnh hưởng |
 
@@ -209,7 +209,7 @@ dựng sẵn bởi job `refresh_pages` (scheduler leader, mỗi phút theo versi
 |---|---|
 | `/onboard_operator` | (M2) overview → `get_coverage` → đưa tài liệu có sẵn vào (process_update) → `generate_questions` → gửi message hoặc `create_form` → khi nhà xe trả lời: review → gợi ý `build_bot` |
 | `/process_update` | (M1, tham số `content`, `source`) `list_knowledge` → `submit_knowledge` (hoặc `ingest` nếu thô) → `get_operation` → review + preview → builder đồng ý mới `apply_review` → `validate_artifact` → sửa đúng dòng STALE_CITATION |
-| `/implement_operator_logic` | `get_logic_spec` → `find_similar_operators` → `run_examples_against` → `plan_logic_implementation` → viết profile/hook trong repo (PR, custom kèm ADR) → test |
+| `/implement_operator_logic` | ✅ `get_operator_logic` → `get_logic_spec` → `find_similar_operators`/`compare_logic` → `plan_logic_implementation` → custom: `record_decision` (ADR) → viết profile/hook → `propose_logic_profile` → `get_operation` (PR/patch) → merge: index_code đồng bộ ≤ 1 phút (`run_examples_against`: M3) |
 | `/build_bot` | (M1, tham số `channel`) `get_bot_spec` → `get_knowledge_pack` → viết từng artifact có trích dẫn → `save_artifact` → `validate_artifact` → sửa đến khi sạch → (M2) `export_bot` |
 | `/refresh_bot` | (M2) `list_stale` → sửa đúng dòng bị ảnh hưởng → `save_artifact(base_version)` → validate; artifact không stale giữ nguyên version → export |
 | `/review_quality` | đọc artifact + coverage + lessons → chỉ ra chỗ yếu, đề xuất lesson/test |

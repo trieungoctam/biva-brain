@@ -197,9 +197,14 @@ func TestGetOperationScopedToOperator(t *testing.T) {
 		"validate_artifact": true, "list_stale": true, "export_bot": false,
 		"get_coverage": true, "generate_questions": true, "create_form": false, "get_form": true,
 		"ingest": false, "submit_knowledge": false, "propose_item": false, "apply_review": false,
-		"get_operator_logic": true, "get_logic_spec": true, "find_similar_operators": true, "compare_logic": true}
+		"get_operator_logic": true, "get_logic_spec": true, "find_similar_operators": true, "compare_logic": true,
+		"plan_logic_implementation": true, "record_decision": false, "propose_logic_profile": false}
 	if len(tools.Tools) != len(readOnlyWant) {
-		t.Fatalf("có %d tool, muốn %d", len(tools.Tools), len(readOnlyWant))
+		names := make([]string, len(tools.Tools))
+		for i, tl := range tools.Tools {
+			names[i] = tl.Name
+		}
+		t.Fatalf("có %d tool, muốn %d: %v", len(tools.Tools), len(readOnlyWant), names)
 	}
 	for _, tool := range tools.Tools {
 		if (tool.Name == "submit_knowledge" || tool.Name == "propose_item") && !strings.Contains(tool.Description, "children (Trẻ em)") {

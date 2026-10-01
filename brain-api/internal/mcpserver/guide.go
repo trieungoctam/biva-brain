@@ -230,6 +230,12 @@ func (s *Server) addGuide(srv *mcp.Server, operatorID string) {
 			return userPrompt("Build bot kênh "+channel+" cho nhà xe "+operatorID, buildBotPrompt(channel)), nil
 		})
 
+	srv.AddPrompt(&mcp.Prompt{Name: "implement_operator_logic", Title: "Triển khai logic cho nhà xe",
+		Description: "Spec → nhà xe tương tự → kế hoạch → ADR nếu custom → PR hồ sơ logic"},
+		func(context.Context, *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+			return userPrompt("Triển khai logic của nhà xe "+operatorID, implementLogicPrompt), nil
+		})
+
 	srv.AddPrompt(&mcp.Prompt{Name: "refresh_bot", Title: "Cập nhật bot sau khi tri thức đổi",
 		Description: "Sửa đúng các đoạn artifact bị tri thức mới làm lỗi thời (list_stale), artifact khác giữ nguyên"},
 		func(context.Context, *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
@@ -306,3 +312,13 @@ func processUpdatePrompt(content, source string) string {
 	}
 	return b.String()
 }
+
+const implementLogicPrompt = `Tri thức logic của nhà xe cần triển khai theo bậc thấp nhất đủ dùng (config → hook → custom, custom bắt buộc ADR). Quy trình:
+
+1. get_operator_logic — capability nào còn thiếu profile.
+2. Với từng capability: get_logic_spec — spec trích từ tri thức đã duyệt (chưa có thì báo ops chạy job logic.spec).
+3. find_similar_operators(capability) + compare_logic — chọn nhà xe tương tự làm điểm xuất phát (trùng feature, tham số gần).
+4. plan_logic_implementation(capability) — module đề xuất, phần thiếu (viết mới / tái dùng), params_draft.
+5. Nếu phải custom: record_decision (ADR) TRƯỚC — ghi id nó trả về vào phần decision của capability.
+6. Viết profile.yaml theo schema logic.profile (mọi tham số phải có source là id item tri thức) + file hook/custom; gọi propose_logic_profile rồi get_operation — nhận PR hoặc patch (chưa có token thì tạo PR tay theo nội dung trả về).
+7. Sau khi PR merge: job index_code đồng bộ trong ≤ 1 phút; get_operator_logic kiểm lại — capability phải có profile active. Validate lại tool_spec: tool khai báo capability phải có profile active (NO_CAPABILITY).`

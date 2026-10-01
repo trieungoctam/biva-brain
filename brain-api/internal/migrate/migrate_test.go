@@ -34,7 +34,7 @@ func TestUpDownUp(t *testing.T) {
 		}
 	}
 	v, dirty, err := Version(dir, url)
-	if err != nil || dirty || v != 16 {
+	if err != nil || dirty || v != 17 {
 		t.Fatalf("version = %d dirty=%v err=%v", v, dirty, err)
 	}
 

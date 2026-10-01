@@ -167,3 +167,50 @@ func TestValidateCodes(t *testing.T) {
 		t.Fatalf("thiếu COVERAGE: %s", codes(sp2.Errors))
 	}
 }
+
+func TestNoCapability(t *testing.T) {
+	ctx := context.Background()
+	pool := testdb.Pool(t)
+	sfx := fmt.Sprintf("%d", time.Now().UnixNano())
+	op := "nc" + sfx
+	if _, err := pool.Exec(ctx, `INSERT INTO operators (id, name) VALUES ($1, 'N')`, op); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { pool.Exec(ctx, `DELETE FROM operators WHERE id = $1`, op) })
+
+	run := func(content string) Report {
+		t.Helper()
+		res, err := artifact.Save(ctx, pool, artifact.SaveInput{OperatorID: op, Kind: "tool_spec",
+			Content: content, Author: "ai:t"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		a, err := artifact.Get(ctx, pool, op, "", "tool_spec", res.Version)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rep, err := Validate(ctx, pool, op, a, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return rep
+	}
+
+	spec := "- `get_fare` (capability: fare): tra giá theo ngày đi.\n- `check_seats`: xem ghế trống."
+	rep := run(spec)
+	if rep.Valid || len(rep.Errors) != 1 || rep.Errors[0].Code != "NO_CAPABILITY" {
+		t.Fatalf("chưa có hồ sơ: %+v", rep)
+	}
+	if !strings.Contains(rep.Errors[0].Message, "plan_logic_implementation") {
+		t.Fatalf("message phải hướng dẫn triển khai: %+v", rep.Errors[0])
+	}
+	// Có hồ sơ active → pass; tool không khai báo capability không bị kiểm.
+	if _, err := pool.Exec(ctx, `INSERT INTO logic_profiles (operator_id, capability, mode, module_id,
+		module_version, commit) VALUES ($1, 'fare', 'config', 'fare.standard', 1, 'c')`, op); err != nil {
+		t.Fatal(err)
+	}
+	rep = run(spec)
+	if !rep.Valid {
+		t.Fatalf("đã có hồ sơ: %+v", rep)
+	}
+}
