@@ -1,0 +1,87 @@
+package mcpserver
+
+import (
+	"context"
+	"strings"
+	"testing"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+)
+
+func TestGuideResourcesPromptsAndValidate(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	s, err := connect(t, f.url+"/mcp/operator/"+f.opA+"/", f.builderTok)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if !strings.Contains(s.InitializeResult().Instructions, "build_bot") {
+		t.Fatalf("instructions = %q", s.InitializeResult().Instructions)
+	}
+
+	res, err := s.ListResources(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	uris := map[string]bool{}
+	for _, r := range res.Resources {
+		uris[r.URI] = true
+	}
+	profile := "biva://operator/" + f.opA + "/profile"
+	for _, u := range []string{"biva://guides/citation", "biva://guides/workflow", "biva://industry/template", profile} {
+		if !uris[u] {
+			t.Fatalf("thiếu resource %s: %v", u, uris)
+		}
+	}
+	read := func(uri string) string {
+		r, err := s.ReadResource(ctx, &mcp.ReadResourceParams{URI: uri})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return r.Contents[0].Text
+	}
+	if !strings.Contains(read("biva://guides/citation"), "MISSING_LOCKED") ||
+		!strings.Contains(read("biva://industry/template"), "| fare | Giá vé | required |") ||
+		!strings.Contains(read(profile), "# Nhà xe "+f.opA) {
+		t.Fatal("nội dung resource sai")
+	}
+
+	pr, err := s.ListPrompts(ctx, nil)
+	if err != nil || len(pr.Prompts) != 2 {
+		t.Fatalf("prompts = %v %v", pr, err)
+	}
+	gp, err := s.GetPrompt(ctx, &mcp.GetPromptParams{Name: "process_update",
+		Arguments: map[string]string{"content": "Từ 1/11 giá lên 350k", "source": "zalo"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := gp.Messages[0].Content.(*mcp.TextContent).Text
+	if !strings.Contains(text, "submit_knowledge") || !strings.Contains(text, "<noi_dung_nha_xe>\nTừ 1/11 giá lên 350k") {
+		t.Fatalf("process_update = %s", text)
+	}
+	if gp, err = s.GetPrompt(ctx, &mcp.GetPromptParams{Name: "build_bot"}); err != nil ||
+		!strings.Contains(gp.Messages[0].Content.(*mcp.TextContent).Text, `channel="zalo"`) {
+		t.Fatalf("build_bot: %v", err)
+	}
+
+	// validate_artifact: chưa có → lỗi; có lỗi ghi cứng giá → invalid, có dòng.
+	if isErr, _, _ := call(t, s, "validate_artifact", map[string]any{"kind": "faq"}); !isErr {
+		t.Fatal("artifact chưa có phải lỗi")
+	}
+	var pets string
+	f.pool.QueryRow(ctx, `INSERT INTO items (layer, operator_id, kind, topic, text, status)
+		VALUES (2, $1, 'policy', 'pets', 'Không nhận chó mèo', 'active') RETURNING id::text`, f.opA).Scan(&pets)
+	call(t, s, "save_artifact", map[string]any{"kind": "faq",
+		"content": "### Giá?\nGiá vé là 320.000đ ạ. [[" + pets + "]]"})
+	_, rep, _ := call(t, s, "validate_artifact", map[string]any{"kind": "faq"})
+	errs := rep["errors"].([]any)
+	if rep["valid"] != false || len(errs) != 1 || errs[0].(map[string]any)["code"] != "HARDCODED_DATA" ||
+		errs[0].(map[string]any)["line"].(float64) != 2 {
+		t.Fatalf("validate = %v", rep)
+	}
+	_, lst, _ := call(t, s, "list_artifacts", map[string]any{})
+	if lst["artifacts"].([]any)[0].(map[string]any)["status"] != "invalid" {
+		t.Fatalf("status phải invalid: %v", lst)
+	}
+}

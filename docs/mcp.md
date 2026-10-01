@@ -174,7 +174,7 @@ Cột **Mốc** = mốc dự kiến (xem lộ trình trong [architecture.md](arc
 | `get_bot_spec` | M1 | RO | artifact bắt buộc/khuyến nghị kèm trạng thái hiện có, mục tri thức theo template + độ phủ (`operator` · `industry_default` · `missing`, kèm câu hỏi cho nhà xe), capability, `locked_rules` phải có trong system_prompt, hướng dẫn trích dẫn |
 | `get_artifact` / `list_artifacts` | M1 | RO | nội dung + trích dẫn theo dòng + lịch sử version; danh sách bản mới nhất + artifact bắt buộc còn thiếu |
 | `save_artifact` | M1 | | lưu bản nháp (version mới, không ghi đè; y hệt bản hiện tại thì không tạo version); bot theo kênh (`zalo` mặc định), tự tạo; `[[id]]` phải là item của nhà xe/tri thức nền (sai → lỗi theo dòng), item hết hiệu lực → `warnings`; `base_version` chống ghi đè |
-| `validate_artifact` | M1 | RO | kiểm tra theo §4, lỗi có vị trí |
+| `validate_artifact` | M1 | RO | kiểm tĩnh theo §4 (UNCITED, STALE_CITATION — kể cả thông lệ L1 nay đã có tri thức nhà xe thay, MISSING_LOCKED, UNLABELED_DEFAULT, HARDCODED_DATA, COVERAGE); lỗi có dòng + item + cách sửa; ghi `valid`/`invalid` vào artifact |
 | `list_stale` | M2 | RO | artifact + hồ sơ logic bị stale, kèm đoạn/tham số và item liên quan |
 | `export_bot` | M2 | RO | `json` · `markdown` · `faq_csv` từ bản đã validate |
 | `run_tests` | M3 | | regression L0/L1 + test sinh từ L2 bằng reference executor |
@@ -195,15 +195,19 @@ Cột **Mốc** = mốc dự kiến (xem lộ trình trong [architecture.md](arc
 | `biva://logic/modules` | danh mục module L1 |
 | `biva://platform/rules` | L0 (chỉ đọc) |
 | `biva://guides/citation` | hướng dẫn hợp đồng trích dẫn cho AI |
+| `biva://guides/workflow` | quy trình build bot / xử lý cập nhật |
+
+Đã có ở M1: `biva://guides/citation`, `biva://guides/workflow`, `biva://industry/template`, và
+`biva://operator/{id}/profile` (hồ sơ tri thức dựng trực tiếp từ knowledge pack; các trang tách riêng + `refresh_pages`: M2).
 
 ## 7. Prompts (workflow chuẩn)
 
 | Prompt | AI sẽ làm |
 |---|---|
 | `/onboard_operator` | overview → coverage → gợi ý nguồn cần xin → `generate_questions` |
-| `/process_update` | `ingest` → giải thích diff → đánh dấu rủi ro → chờ duyệt → báo artifact/logic sẽ stale |
+| `/process_update` | (M1, tham số `content`, `source`) `list_knowledge` → `submit_knowledge` (hoặc `ingest` nếu thô) → `get_operation` → review + preview → builder đồng ý mới `apply_review` → `validate_artifact` → sửa đúng dòng STALE_CITATION |
 | `/implement_operator_logic` | `get_logic_spec` → `find_similar_operators` → `run_examples_against` → `plan_logic_implementation` → viết profile/hook trong repo (PR, custom kèm ADR) → test |
-| `/build_bot` | `get_bot_spec` → `get_knowledge_pack` → viết từng artifact có trích dẫn → `validate_artifact` → sửa đến khi sạch → `export_bot` |
+| `/build_bot` | (M1, tham số `channel`) `get_bot_spec` → `get_knowledge_pack` → viết từng artifact có trích dẫn → `save_artifact` → `validate_artifact` → sửa đến khi sạch → (M2) `export_bot` |
 | `/refresh_bot` | `list_stale` → sửa đúng đoạn/tham số bị ảnh hưởng → validate → export |
 | `/review_quality` | đọc artifact + coverage + lessons → chỉ ra chỗ yếu, đề xuất lesson/test |
 
