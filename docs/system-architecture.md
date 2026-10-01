@@ -89,7 +89,8 @@ recall/          4 arm, RRF, rerank (giới hạn), boost, pack
 pack/            knowledge pack: merge tầng, lọc hiệu lực, cắt theo budget_tokens; cache theo version tri thức của scope
 artifacts/       lưu artifact (version), validate tĩnh (trích dẫn, locked, nhãn L1, hardcoded data,
                  capability, coverage), stale, lắp snapshot, export
-logic/           danh mục module, hồ sơ logic, ADR, find_similar_operators, impact_of_change
+logic/           danh mục module/feature, hồ sơ, logic spec, họ logic, find_similar_operators (spec + code),
+                 plan_logic_implementation, impact_of_change
 queue/           enqueue job (idempotency_key), theo dõi operation
 scheduler/       leader-only: expire (valid_to), requeue job hết lease, dọn TTL, cron refresh
 store/           sqlc generated, pgxpool (primary + replica)
@@ -101,7 +102,8 @@ textnorm/        chuẩn hoá tiếng Việt cho query (cùng thuật toán vớ
 ```
 runner/          claim job (SKIP LOCKED, lease, heartbeat), LISTEN để thức dậy, retry + backoff
 jobs/            ingest · consolidate · promote (tri thức + logic) · mark_stale · validate (LLM:
-                 mâu thuẫn) · run_tests · index_code (code chunk theo commit) · refresh_pages
+                 mâu thuẫn) · run_tests · index_code (đồng bộ git) · extract_logic_spec ·
+                 run_examples_against (sandbox) · refresh_pages
 executor/        reference executor: chạy một snapshot như bot thật (LLM + tool tra tri thức/data của Brain)
                  — chỉ cho test và sandbox/UAT; không phục vụ khách
 prompts/         toàn bộ prompt (có version, có test)
@@ -133,10 +135,14 @@ cho ingest, consolidate, validate phần mâu thuẫn, reflect và reference exe
 
 ### 3.5 Tích hợp git (tri thức logic)
 
-- Brain đọc repo code tích hợp (read-only) để index `code_chunks` theo commit (`index_code`).
-- Trigger: webhook push của git hoặc job định kỳ; chỉ index nhánh chính.
-- Code **không** được ghi qua Brain: AI/builder sửa code trong repo như bình thường, CI chạy logic test,
-  merge xong Brain re-index. Chi tiết: [logic-knowledge.md](logic-knowledge.md).
+- Repo code tích hợp chứa code **và manifest**: `modules/*/module.yaml`, `operators/*/profile.yaml`,
+  `operators/*/tests/cases.yaml` ([logic-knowledge.md §3](logic-knowledge.md#3-lưu-ở-đâu)).
+- Brain đọc repo (read-only); webhook push hoặc job định kỳ trên nhánh chính → `index_code`: đồng bộ manifest,
+  hồ sơ, ví dụ; cắt code theo hàm/lớp thành `code_chunks` gắn commit; cập nhật logic spec và họ logic.
+- Code **không** được ghi qua Brain: AI/builder sửa trong repo qua PR, CI chạy logic test, merge xong Brain đồng bộ.
+  `propose_logic_profile` tạo PR thay vì ghi thẳng.
+- **Sandbox** cho `run_examples_against`: container riêng trong ai-worker, không mạng, giới hạn CPU/RAM/thời gian,
+  chỉ chạy hàm thuần với input giả lập; adapter gọi API thật không chạy kiểu này.
 
 ### 3.6 Runtime Integration API (giai đoạn sau)
 

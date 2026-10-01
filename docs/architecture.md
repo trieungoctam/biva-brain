@@ -87,7 +87,9 @@ Mỗi tầng chứa 5 loại tri thức:
 | **refresh_pages** | trang Tổng quan / Chính sách / Khác thông lệ / Còn thiếu / Logic cho mỗi nhà xe |
 | **validate** (phần LLM) | kiểm tra mâu thuẫn giữa artifact và tri thức (phần tĩnh chạy đồng bộ ở brain-api) |
 | **run_tests** | chạy test bằng reference executor (M3) |
-| **index_code** | index code chunk theo commit cho tri thức logic |
+| **index_code** | đồng bộ từ git: manifest, hồ sơ, ví dụ; index code chunk theo commit |
+| **extract_logic_spec** | tri thức nhà xe → logic spec (ánh xạ vào feature catalog L1); gom họ logic |
+| **run_examples_against** | chạy ví dụ của nhà xe trên code nhà xe khác trong sandbox (M3) |
 
 ### 3.3 Vòng đời trạng thái ("quên")
 
@@ -268,7 +270,7 @@ Chưa bắt đầu code. Thứ tự dự kiến:
 | 9 | Kênh v1 | **Zalo, Messenger, web**; **không có hotline (voice)** | giảm phạm vi |
 | 10 | Chạy bot | **ngoài phạm vi**; Brain xuất bot (json · markdown · faq_csv); Runtime Integration API để giai đoạn sau | runtime hiện có chưa thống nhất |
 | 11 | Trọng tâm | **Brain + MCP**: AI viết bot từ knowledge pack, mọi câu có trích dẫn; Brain validate, đánh dấu stale, xuất bot | bot luôn khớp tri thức, kể cả khi "quên" |
-| 12 | Tri thức logic | Brain lưu **tri thức về code** (module, hồ sơ, ADR, test, index theo commit); code ở git; bậc thang config → hook → custom; promote khi ≥ 3 nhà xe có custom giống nhau | dùng lại logic chung; nhà xe đặc biệt có lý do rõ |
+| 12 | Tri thức logic | code ở git kèm manifest (`module.yaml`, `profile.yaml`, `tests/cases.yaml`); Brain đồng bộ và lưu **tri thức về code**; so nhà xe theo **logic spec** (feature catalog L1) → code → **hành vi** (chạy ví dụ trong sandbox); gom **họ logic**; bậc thang config → hook → custom; promote khi ≥ 3 nhà xe có custom giống nhau | khách mới triển khai nhanh từ nhà xe tương tự; logic chung được dùng lại |
 | 13 | Ai viết bot | **AI của builder** (qua MCP) viết artifact; Brain **không tự sinh** bot, chỉ lắp snapshot từ artifact đã valid | giữ người + AI trong vòng quyết định; Brain giữ vai trò kiểm tra |
 
 ## Tài liệu liên quan

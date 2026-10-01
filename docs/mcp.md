@@ -131,13 +131,18 @@ Cột **Mốc** = mốc dự kiến (xem lộ trình trong [architecture.md](arc
 | Tool | Mốc | Cờ | Mô tả |
 |---|---|---|---|
 | `get_operator_logic` | M2 | RO | hồ sơ logic của nhà xe, capability còn thiếu, chỗ stale |
-| `search_logic` | M2 | RO | tìm module, pattern, lesson, code chunk |
-| `get_logic_module` | M2 | RO | interface, params_schema, hooks, version, test bắt buộc |
-| `find_similar_operators` | M2 | RO | nhà xe nào có logic giống cho một capability |
-| `propose_logic_profile` | M2 | | đề xuất config/hook/custom → review (custom bắt buộc kèm ADR) |
+| `get_logic_spec` | M2 | RO | logic spec theo capability — có cả với khách mới chưa có code |
+| `find_similar_operators` | M2 | RO | ứng viên tương tự kèm điểm, feature trùng/thiếu/khác, họ logic |
+| `compare_logic` | M2 | RO | so hai nhà xe theo spec, tham số, code |
+| `plan_logic_implementation` | M2 | RO | kế hoạch: tái dùng gì, config/hook/custom, phần viết mới |
+| `list_logic_families` | M3 | RO | họ logic theo capability |
+| `run_examples_against` | M3 | | chạy ví dụ của nhà xe này trên code ứng viên (sandbox) → % pass, case fail |
+| `search_logic` | M2 | RO | tìm module, feature, pattern, lesson, code chunk |
+| `get_logic_module` | M2 | RO | manifest: interface, params_schema, hooks, version, test bắt buộc |
+| `propose_logic_profile` | M2 | | đề xuất hồ sơ (config/hook/custom) → PR vào repo (custom kèm ADR) |
 | `record_decision` | M2 | | ghi ADR |
-| `add_logic_test` / `list_logic_tests` | M3 | | test input → output từ ví dụ thật |
-| `impact_of_change` | M3 | RO | module/version hoặc item đổi → nhà xe, bot, test bị ảnh hưởng |
+| `add_logic_test` / `list_logic_tests` | M3 | | ví dụ input → output |
+| `impact_of_change` | M3 | RO | module/version/feature hoặc item đổi → nhà xe, bot, test bị ảnh hưởng |
 
 ### 5.4 Build bot
 | Tool | Mốc | Cờ | Mô tả |
@@ -173,7 +178,7 @@ Cột **Mốc** = mốc dự kiến (xem lộ trình trong [architecture.md](arc
 |---|---|
 | `/onboard_operator` | overview → coverage → gợi ý nguồn cần xin → `generate_questions` |
 | `/process_update` | `ingest` → giải thích diff → đánh dấu rủi ro → chờ duyệt → báo artifact/logic sẽ stale |
-| `/implement_operator_logic` | capability bắt buộc → `find_similar_operators` → chọn config/hook/custom → `propose_logic_profile` (+ ADR) → test |
+| `/implement_operator_logic` | `get_logic_spec` → `find_similar_operators` → `run_examples_against` → `plan_logic_implementation` → viết profile/hook trong repo (PR, custom kèm ADR) → test |
 | `/build_bot` | `get_bot_spec` → `get_knowledge_pack` → viết từng artifact có trích dẫn → `validate_artifact` → sửa đến khi sạch → `export_bot` |
 | `/refresh_bot` | `list_stale` → sửa đúng đoạn/tham số bị ảnh hưởng → validate → export |
 | `/review_quality` | đọc artifact + coverage + lessons → chỉ ra chỗ yếu, đề xuất lesson/test |
