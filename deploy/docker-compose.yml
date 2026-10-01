@@ -83,6 +83,7 @@ services:
       BIVA_TEI_URL: http://tei-embed:80
       BIVA_REDIS_URL: redis://redis:6379/0
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}         # LLM Gemini (ingest...) — để trống nếu chưa dùng
+      BIVA_INGEST_AUTO_APPLY: ${BIVA_INGEST_AUTO_APPLY:-true}   # false: mọi đề xuất chờ duyệt
       OTEL_EXPORTER_OTLP_ENDPOINT: *otel
     depends_on:
       migrate: { condition: service_completed_successfully }

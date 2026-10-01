@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from datetime import date, datetime, time
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -31,6 +32,12 @@ from biva_worker.runner import Job, PermanentError
 
 VN = ZoneInfo("Asia/Ho_Chi_Minh")
 ACTOR = "system:ingest"
+
+
+def auto_apply_enabled() -> bool:
+    """BIVA_INGEST_AUTO_APPLY=false: không tự áp dụng gì, mọi đề xuất (kể cả rủi ro thấp) chờ người duyệt.
+    Rủi ro cao không bao giờ tự áp dụng, bất kể cấu hình."""
+    return os.environ.get("BIVA_INGEST_AUTO_APPLY", "true").strip().lower() not in ("0", "false", "no", "off")
 
 
 def content_hash(content: str) -> str:
@@ -216,9 +223,10 @@ async def ingest(pool: asyncpg.Pool, llm: LLMClient, job: Job) -> dict[str, Any]
         return {"status": "done", "summary": "tin đã ingest trước đó", "counts": {"duplicate_document": 1}}
 
     applied, stale = 0, 0
+    auto = auto_apply_enabled()
     async with pool.acquire() as conn:
         for review_id, risk in reviews:
-            if risk != "low":
+            if risk != "low" or not auto:
                 continue
             async with conn.transaction():
                 res = json.loads(
@@ -235,7 +243,7 @@ async def ingest(pool: asyncpg.Pool, llm: LLMClient, job: Job) -> dict[str, Any]
     counts: dict[str, int] = {"candidates": len(candidates), "auto_applied": applied, "stale": stale}
     for d in decisions:
         counts[d.change_kind.lower()] = counts.get(d.change_kind.lower(), 0) + 1
-    waiting = sum(1 for _, risk in reviews if risk == "high")
+    waiting = len(reviews) - applied - stale
     counts["waiting_review"] = waiting
     model = llm_result.served_model
     summary = f"{len(candidates)} item ứng viên ({model}): tự áp dụng {applied}, chờ duyệt {waiting}"

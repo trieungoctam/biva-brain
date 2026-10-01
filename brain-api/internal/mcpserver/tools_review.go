@@ -27,9 +27,9 @@ type ingestIn struct {
 }
 
 type ingestOut struct {
-	OperationID string `json:"operation_id"`
-	Duplicate   bool   `json:"duplicate" jsonschema:"true nếu nội dung này đã được gửi trước đó"`
-	Next        string `json:"next"`
+	OperationID string   `json:"operation_id"`
+	Duplicate   bool     `json:"duplicate" jsonschema:"true nếu nội dung này đã được gửi trước đó"`
+	NextActions []string `json:"next_actions"`
 }
 
 type listIn struct {
@@ -39,7 +39,8 @@ type listIn struct {
 }
 
 type listOut struct {
-	Items []review.Summary `json:"items"`
+	Items       []review.Summary `json:"items"`
+	NextActions []string         `json:"next_actions"`
 }
 
 type reviewIn struct {
@@ -60,11 +61,13 @@ type applyOut struct {
 	ExpiresAt    *time.Time      `json:"confirm_expires_at,omitempty"`
 	Outcome      *review.Outcome `json:"outcome,omitempty"`
 	Message      string          `json:"message"`
+	NextActions  []string        `json:"next_actions"`
 }
 
 type proposeOut struct {
-	Review review.Summary `json:"review"`
-	Note   string         `json:"note"`
+	Review      review.Summary `json:"review"`
+	Note        string         `json:"note"`
+	NextActions []string       `json:"next_actions"`
 }
 
 const (
@@ -108,7 +111,11 @@ func (s *Server) addReviewTools(srv *mcp.Server, operatorID string) {
 			if err != nil {
 				return nil, listOut{}, internal("list_review_queue", err)
 			}
-			return nil, listOut{Items: items}, nil
+			next := []string{}
+			if len(items) > 0 {
+				next = []string{"get_review_item(review_id) để xem chi tiết", "apply_review(review_id, decision) để duyệt"}
+			}
+			return nil, listOut{Items: items, NextActions: next}, nil
 		})
 
 	mcp.AddTool(srv, &mcp.Tool{Name: "get_review_item", Description: getDesc, Annotations: readOnly},
@@ -140,7 +147,8 @@ func (s *Server) addReviewTools(srv *mcp.Server, operatorID string) {
 				}
 				return nil, proposeOut{}, err // lỗi kiểm tra đầu vào: trả nguyên văn để AI sửa
 			}
-			return nil, proposeOut{Review: sum, Note: "đã vào hàng đợi duyệt; dùng apply_review khi builder đồng ý"}, nil
+			return nil, proposeOut{Review: sum, Note: "đã vào hàng đợi duyệt, chưa áp dụng",
+				NextActions: []string{"apply_review(" + sum.ID + ", approve) khi builder đồng ý"}}, nil
 		})
 
 	mcp.AddTool(srv, &mcp.Tool{Name: "apply_review", Description: applyDesc, Annotations: decideTool},
@@ -193,7 +201,7 @@ func (s *Server) ingest(ctx context.Context, p authz.Principal, operatorID strin
 		return nil, ingestOut{}, internal("ingest", err)
 	}
 	return nil, ingestOut{OperationID: id, Duplicate: !created,
-		Next: "gọi get_operation tới khi status=done, rồi list_review_queue"}, nil
+		NextActions: []string{"get_operation(" + id + ") tới khi status=done", "list_review_queue"}}, nil
 }
 
 func (s *Server) applyReview(ctx context.Context, p authz.Principal, operatorID string, in applyIn) (*mcp.CallToolResult, applyOut, error) {
@@ -225,7 +233,8 @@ func (s *Server) applyReview(ctx context.Context, p authz.Principal, operatorID 
 		}
 		return nil, applyOut{Preview: &d, ConfirmToken: token, ExpiresAt: &exp,
 			Message: "CHƯA thực thi. Trình bày preview cho builder; chỉ gọi lại với confirm_token khi builder đồng ý " +
-				in.Decision + "."}, nil
+				in.Decision + ".",
+			NextActions: []string{"hỏi builder", "apply_review(" + in.ReviewID + ", " + in.Decision + ", confirm_token)"}}, nil
 	}
 
 	if err := confirm.Consume(ctx, s.db, in.ConfirmToken, p.UserID, operatorID, "apply_review", subject); err != nil {
@@ -249,7 +258,11 @@ func (s *Server) applyReview(ctx context.Context, p authz.Principal, operatorID 
 	if out.Status == "stale" {
 		msg += ": " + out.Reason + " — cần ingest/đề xuất lại trên trạng thái mới"
 	}
-	return nil, applyOut{Executed: true, Outcome: &out, Message: msg}, nil
+	next := []string{"list_review_queue"}
+	if out.Status == "stale" {
+		next = []string{"ingest lại nội dung mới nhất hoặc propose_item", "list_review_queue"}
+	}
+	return nil, applyOut{Executed: true, Outcome: &out, Message: msg, NextActions: next}, nil
 }
 
 func callerOf(req *mcp.CallToolRequest) (authz.Principal, error) {

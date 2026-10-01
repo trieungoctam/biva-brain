@@ -420,3 +420,31 @@ def test_normalize_key_shared_fixture():
     for line in (contracts_root() / "textnorm" / "keys.jsonl").read_text(encoding="utf-8").splitlines():
         c = json.loads(line)
         assert normalize_key(c["topic"], c["key"]) == c["expected"], c
+
+
+@needs_db
+def test_auto_apply_can_be_disabled(monkeypatch):
+    """AC S1.2.2: rủi ro thấp chỉ tự áp dụng theo cấu hình; tắt → mọi đề xuất chờ duyệt."""
+    monkeypatch.setenv("BIVA_INGEST_AUTO_APPLY", "false")
+
+    async def t() -> None:
+        pool = await asyncpg.create_pool(DB_URL, init=init_connection)
+        op = f"noauto{uuid.uuid4().hex[:6]}"
+        fake = ScriptedLLM([[it("upsert", "policy", "pets", "pets.dieu_kien", "Thú cưng để trong lồng")]])
+        run = ingest_job.handler(pool, LLMClient(load(), providers={"gemini": fake}))
+        payload = {
+            "operator_id": op,
+            "source": "zalo",
+            "received_at": "2026-10-01T09:00:00+07:00",
+            "content": "x",
+        }
+        try:
+            await pool.execute("INSERT INTO operators (id, name) VALUES ($1, 'No auto')", op)
+            r = await run(Job(str(uuid.uuid4()), "ingest", op, payload, 1, 5, {}))
+            assert (r["counts"]["auto_applied"], r["counts"]["waiting_review"]) == (0, 1)
+            assert await pool.fetchval("SELECT status FROM review_items WHERE operator_id=$1", op) == "open"
+        finally:
+            await pool.execute("DELETE FROM operators WHERE id = $1", op)
+            await pool.close()
+
+    asyncio.run(t())
