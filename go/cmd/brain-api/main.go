@@ -15,7 +15,9 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
+	"time"
 
 	"github.com/trieungoctam/biva-brain/go/internal/config"
 	"github.com/trieungoctam/biva-brain/go/internal/httpapi"
@@ -23,6 +25,8 @@ import (
 	"github.com/trieungoctam/biva-brain/go/internal/migrate"
 	"github.com/trieungoctam/biva-brain/go/internal/scheduler"
 	"github.com/trieungoctam/biva-brain/go/internal/store"
+	"github.com/trieungoctam/biva-brain/go/internal/telemetry"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 // version được ghi đè lúc build: -ldflags "-X main.version=..."
@@ -83,6 +87,16 @@ func serve(cfg config.Config) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	shutdownTracing, err := telemetry.Setup(ctx, "brain-api", version)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		flushCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = shutdownTracing(flushCtx)
+	}()
+
 	db, err := store.Open(ctx, cfg.DatabaseURL, cfg.DatabaseReplicaURL)
 	if err != nil {
 		return err
@@ -100,7 +114,11 @@ func serve(cfg config.Config) error {
 
 	mux := httpapi.NewRouter(db)
 	mcpserver.New(db.Primary, version).Mount(mux)
-	srv := &http.Server{Addr: cfg.HTTPAddr, Handler: mux}
+	// otelhttp: mỗi request (MCP call...) là một span gốc; health không cần trace.
+	handler := otelhttp.NewHandler(mux, "brain-api", otelhttp.WithFilter(func(r *http.Request) bool {
+		return !strings.HasPrefix(r.URL.Path, "/health/")
+	}), otelhttp.WithSpanNameFormatter(func(_ string, r *http.Request) string { return r.Method + " " + routeName(r.URL.Path) }))
+	srv := &http.Server{Addr: cfg.HTTPAddr, Handler: handler}
 	errCh := make(chan error, 1)
 	go func() {
 		slog.Info("brain-api đang lắng nghe", "addr", cfg.HTTPAddr)
@@ -119,4 +137,12 @@ func serve(cfg config.Config) error {
 		defer cancel()
 		return srv.Shutdown(shutdownCtx)
 	}
+}
+
+// routeName đưa path về dạng template cho tên span (tránh mỗi nhà xe một tên span).
+func routeName(path string) string {
+	if rest, ok := strings.CutPrefix(path, "/mcp/operator/"); ok && rest != "" {
+		return "/mcp/operator/{operator_id}/"
+	}
+	return path
 }

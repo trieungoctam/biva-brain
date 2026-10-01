@@ -4,6 +4,8 @@
 name: biva-brain
 
 x-db-url: &db_url postgres://biva:biva@postgres:5432/biva?sslmode=disable
+# Trace: đặt OTEL_EXPORTER_OTLP_ENDPOINT (vd http://host.docker.internal:4318) để gửi span tới collector.
+x-otel: &otel ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
 
 services:
   postgres:
@@ -65,6 +67,7 @@ services:
     build: { context: .., dockerfile: go/Dockerfile }
     environment:
       BIVA_DATABASE_URL: *db_url
+      OTEL_EXPORTER_OTLP_ENDPOINT: *otel
     ports: ["8080:8080"]
     depends_on:
       migrate: { condition: service_completed_successfully }
@@ -78,6 +81,7 @@ services:
     build: { context: .., dockerfile: python/Dockerfile }
     environment:
       BIVA_DATABASE_URL: *db_url
+      OTEL_EXPORTER_OTLP_ENDPOINT: *otel
     depends_on:
       migrate: { condition: service_completed_successfully }
 

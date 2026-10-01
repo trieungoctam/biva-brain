@@ -13,7 +13,14 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 )
+
+var tracer = otel.Tracer("github.com/trieungoctam/biva-brain/go/internal/queue")
 
 var ErrNotFound = errors.New("operation không tồn tại")
 
@@ -25,7 +32,7 @@ type Job struct {
 	Priority       int16  // nhỏ chạy trước; 0 = mặc định 100
 	RunAfter       time.Time
 	ParentID       string
-	TraceContext   map[string]string
+	TraceContext   map[string]string // rỗng = lấy từ span hiện tại (traceparent W3C)
 }
 
 type Operation struct {
@@ -42,7 +49,19 @@ type Operation struct {
 }
 
 // Enqueue thêm job. Cùng IdempotencyKey → trả về id của job đã có, created=false.
+// Trace context của ctx được ghi vào operations.trace_context để span của ai-worker nối tiếp trace.
 func Enqueue(ctx context.Context, db *pgxpool.Pool, j Job) (id string, created bool, err error) {
+	ctx, span := tracer.Start(ctx, "enqueue "+j.Kind, trace.WithSpanKind(trace.SpanKindProducer),
+		trace.WithAttributes(attribute.String("biva.job.kind", j.Kind), attribute.String("biva.operator_id", j.OperatorID)))
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+		} else {
+			span.SetAttributes(attribute.String("biva.operation_id", id), attribute.Bool("biva.created", created))
+		}
+		span.End()
+	}()
 	if j.Kind == "" {
 		return "", false, errors.New("thiếu kind")
 	}
@@ -53,9 +72,10 @@ func Enqueue(ctx context.Context, db *pgxpool.Pool, j Job) (id string, created b
 	if j.Payload == nil {
 		payload = []byte("{}")
 	}
-	trace := j.TraceContext
-	if trace == nil {
-		trace = map[string]string{}
+	traceCtx := j.TraceContext
+	if len(traceCtx) == 0 {
+		traceCtx = map[string]string{}
+		otel.GetTextMapPropagator().Inject(ctx, propagation.MapCarrier(traceCtx))
 	}
 	priority := j.Priority
 	if priority == 0 {
@@ -71,7 +91,7 @@ func Enqueue(ctx context.Context, db *pgxpool.Pool, j Job) (id string, created b
 		VALUES ($1, NULLIF($2, ''), $3, NULLIF($4, ''), $5, $6, NULLIF($7, '')::uuid, $8)
 		ON CONFLICT (idempotency_key) DO NOTHING
 		RETURNING id`,
-		j.Kind, j.OperatorID, payload, j.IdempotencyKey, priority, runAfter, j.ParentID, trace,
+		j.Kind, j.OperatorID, payload, j.IdempotencyKey, priority, runAfter, j.ParentID, traceCtx,
 	).Scan(&id)
 	if err == nil {
 		return id, true, nil

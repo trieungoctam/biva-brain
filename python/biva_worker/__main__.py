@@ -13,7 +13,7 @@ import signal
 
 import asyncpg
 
-from biva_worker import __version__
+from biva_worker import __version__, telemetry
 from biva_worker.handlers import HANDLERS
 from biva_worker.runner import Runner, init_connection
 
@@ -26,6 +26,8 @@ async def main() -> None:
         raise SystemExit("thiếu BIVA_DATABASE_URL")
     concurrency = int(os.environ.get("BIVA_WORKER_CONCURRENCY", "4"))
     lease = float(os.environ.get("BIVA_WORKER_LEASE_SECONDS", "60"))
+
+    tracing = telemetry.setup("ai-worker", __version__)
 
     # +1 kết nối cho LISTEN, +concurrency cho heartbeat chạy song song với handler.
     pool = await asyncpg.create_pool(url, min_size=1, max_size=2 * concurrency + 1, init=init_connection)
@@ -47,6 +49,7 @@ async def main() -> None:
         log.info("ai-worker dừng")
     finally:
         await pool.close()
+        tracing.shutdown()  # flush span còn trong batch
 
 
 if __name__ == "__main__":

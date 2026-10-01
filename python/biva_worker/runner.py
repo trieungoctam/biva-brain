@@ -7,6 +7,7 @@
 - Lỗi: ``RetryableError`` hoặc exception lạ → thử lại với backoff tới ``max_attempts``;
   ``PermanentError`` → ``failed`` ngay.
 - LISTEN 'biva_operations' để thức dậy khi có job; vẫn poll định kỳ nên mất NOTIFY không làm sót job.
+- Trace: span "job <kind>" là con của span enqueue ở brain-api (traceparent trong ``trace_context``).
 """
 
 from __future__ import annotations
@@ -23,12 +24,16 @@ from dataclasses import dataclass
 from typing import Any
 
 import asyncpg
+from opentelemetry import propagate, trace
+from opentelemetry.trace import SpanKind, Status, StatusCode
 
 from biva_worker.contracts import validate
 
 log = logging.getLogger(__name__)
 
 NOTIFY_CHANNEL = "biva_operations"  # phát bởi trigger ở migration 000002
+
+tracer = trace.get_tracer(__name__)
 
 
 class RetryableError(Exception):
@@ -210,7 +215,7 @@ class Runner:
 
     async def _process(self, job: Job, stop: asyncio.Event) -> None:
         lost = asyncio.Event()
-        work = asyncio.create_task(self.handlers[job.kind](job))
+        work = asyncio.create_task(self._traced(job))
         beat = asyncio.create_task(self._heartbeat(job, lost))
         lost_wait = asyncio.create_task(lost.wait())
         stop_wait = asyncio.create_task(stop.wait())
@@ -237,6 +242,27 @@ class Runner:
             for t in (beat, lost_wait, stop_wait):
                 t.cancel()
             await asyncio.gather(beat, lost_wait, stop_wait, return_exceptions=True)
+
+    async def _traced(self, job: Job) -> dict[str, Any]:
+        """Chạy handler trong span nối tiếp trace của người enqueue."""
+        parent = propagate.extract(job.trace_context)
+        with tracer.start_as_current_span(
+            f"job {job.kind}",
+            context=parent,
+            kind=SpanKind.CONSUMER,
+            attributes={
+                "biva.operation_id": job.id,
+                "biva.job.kind": job.kind,
+                "biva.operator_id": job.operator_id or "",
+                "biva.attempt": job.attempts,
+                "biva.worker_id": self.worker_id,
+            },
+            record_exception=True,
+            set_status_on_exception=True,
+        ) as span:
+            result = await self.handlers[job.kind](job)
+            span.set_status(Status(StatusCode.OK))
+            return result
 
     async def _heartbeat(self, job: Job, lost: asyncio.Event) -> None:
         while True:

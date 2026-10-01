@@ -258,3 +258,36 @@ def test_ping_rejects_bad_payload():
         assert (await row(pool, job_id))["status"] == "failed"
 
     run(t)
+
+
+def test_job_span_continues_enqueue_trace():
+    """AC S0.4.3: span của job là con của span enqueue (traceparent do brain-api ghi)."""
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+
+    from biva_worker import runner as runner_mod
+
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    original = runner_mod.tracer
+    runner_mod.tracer = provider.get_tracer("test")
+    trace_id, parent_span = "4bf92f3577b34da6a3ce929d0e0e4736", "00f067aa0ba902b7"
+
+    async def t(pool: asyncpg.Pool, kind: str) -> None:
+        await pool.execute(
+            "INSERT INTO operations (kind, trace_context) VALUES ($1, $2)",
+            kind,
+            {"traceparent": f"00-{trace_id}-{parent_span}-01"},
+        )
+        assert await Runner(pool, {kind: ping}).run_once()
+
+    try:
+        run(t)
+    finally:
+        runner_mod.tracer = original
+    (span,) = exporter.get_finished_spans()
+    assert span.name.startswith("job test.")
+    assert format(span.context.trace_id, "032x") == trace_id
+    assert format(span.parent.span_id, "016x") == parent_span
