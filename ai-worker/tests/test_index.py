@@ -236,3 +236,41 @@ def test_tei_down_is_retryable():
 
     with pytest.raises(RetryableError):
         asyncio.run(t())
+
+
+@needs_db
+def test_index_fills_item_entities():
+    """S3.1.1: index.items nhận diện entity L1 trong text và nối item_entities cho graph arm."""
+
+    async def t() -> None:
+        pool = await asyncpg.create_pool(DB_URL, init=init_connection)
+        op = f"ge{uuid.uuid4().hex[:8]}"
+        ext = f"city{uuid.uuid4().hex[:6]}"
+        try:
+            await pool.execute("INSERT INTO operators (id, name) VALUES ($1, 'Graph')", op)
+            await pool.execute(
+                """INSERT INTO entities (ext_id, layer, entity_type, name, name_norm, aliases)
+                   VALUES ($1, 1, 'city', 'Vũng Tàu', 'vung tau', ARRAY['VT'])""",
+                ext,
+            )
+            item = await pool.fetchval(
+                """INSERT INTO items (layer, operator_id, kind, topic, key, text, status)
+                   VALUES (2, $1, 'data', 'route', 'route.vt', 'Chuyến VT khởi hành 6h sáng', 'active')
+                   RETURNING id::text""",
+                op,
+            )
+            res = await index_items(pool, FakeEmbedder(), {"operator_id": op})
+            assert res["counts"]["indexed"] >= 1
+            n = await pool.fetchval(
+                """SELECT count(*) FROM item_entities ie
+                   JOIN entities e ON e.id = ie.entity_id
+                   WHERE ie.item_id = $1::uuid AND e.ext_id = $2""",
+                item,
+                ext,
+            )
+            assert n == 1
+        finally:
+            await pool.execute("DELETE FROM operators WHERE id = $1", op)
+            await pool.execute("DELETE FROM entities WHERE ext_id = $1", ext)
+
+    asyncio.run(t())

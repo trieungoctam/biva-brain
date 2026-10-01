@@ -75,7 +75,7 @@ type Hit struct {
 	ValidTo   *time.Time        `json:"valid_to,omitempty"`
 	Source    *Source           `json:"source,omitempty"`
 	Score     float64           `json:"score"`
-	Arms      []string          `json:"arms,omitempty"` // nhánh nào tìm ra: semantic, keyword, browse
+	Arms      []string          `json:"arms,omitempty"` // nhánh tìm ra: semantic, keyword, temporal, graph, browse
 
 	proof     int
 	createdAt time.Time
@@ -163,12 +163,27 @@ func (r *Recaller) Recall(ctx context.Context, q Query) (Result, error) {
 		}()
 	}
 
+	matched := r.Entities.Find(text)
 	if text == "" {
 		// Chỉ có topics: liệt kê theo topic (không xếp hạng ngữ nghĩa).
 		run("browse", func() ([]armHit, error) { return r.browse(ctx, q) })
 	} else {
-		if tsq := tsQuery(r.expand(text)); tsq != "" {
+		tsq := tsQuery(r.expand(text))
+		if tsq != "" {
 			run("keyword", func() ([]armHit, error) { return r.keyword(ctx, q, tsq) })
+			// Temporal arm (S3.1.2): có ngày đi rõ ràng → item có mùa (cửa sổ hiệu lực hẹp chứa
+			// ngày đó, vd giá Tết) được thêm phiếu, vượt item quanh năm trong RRF.
+			if !q.ValidUntil.Equal(q.ValidAt) {
+				run("temporal", func() ([]armHit, error) { return r.temporal(ctx, q, tsq) })
+			}
+		}
+		// Graph arm (S3.1.1): query nhắc thực thể (bến/tỉnh/loại xe) → item cũng nhắc thực thể đó.
+		if len(matched) > 0 {
+			extIDs := make([]string, len(matched))
+			for i, m := range matched {
+				extIDs[i] = m.Entity.ID
+			}
+			run("graph", func() ([]armHit, error) { return r.graph(ctx, q, extIDs) })
 		}
 		if r.Embedder != nil {
 			run("semantic", func() ([]armHit, error) { return r.semantic(ctx, q, text) })
@@ -183,7 +198,7 @@ func (r *Recaller) Recall(ctx context.Context, q Query) (Result, error) {
 
 	scores := map[string]float64{}
 	found := map[string][]string{}
-	for _, name := range []string{"semantic", "keyword", "browse"} {
+	for _, name := range []string{"semantic", "keyword", "temporal", "graph", "browse"} {
 		for _, h := range arms[name] {
 			scores[h.id] += 1.0 / float64(rrfK+h.rank)
 			found[h.id] = append(found[h.id], name)
@@ -315,6 +330,61 @@ func (r *Recaller) iterativeScan(ctx context.Context) bool {
 		}
 	})
 	return r.iterative
+}
+
+// temporal: item có cửa sổ hiệu lực (mùa) chứa ngày đi, khớp text, xếp theo cửa sổ hẹp nhất trước —
+// "giá 28 Tết" phải thắng "giá thường" vốn hiệu lực quanh năm.
+func (r *Recaller) temporal(ctx context.Context, q Query, tsq string) ([]armHit, error) {
+	rows, err := r.DB.Query(ctx, `SELECT id::text FROM items, to_tsquery('simple', $6) tq
+		WHERE `+scopeFilter+` AND tsv @@ tq
+		  AND valid_from IS NOT NULL AND valid_to IS NOT NULL
+		ORDER BY (valid_to - valid_from), ts_rank_cd(tsv, tq) DESC, id LIMIT $7`,
+		q.OperatorID, q.ValidAt, q.Topics, q.Kinds, q.ValidUntil, tsq, q.ArmLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []armHit
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, armHit{id: id, rank: len(out) + 1})
+	}
+	return out, rows.Err()
+}
+
+// graphScopeFilter: scopeFilter với prefix i. (join cùng entities có cột trùng tên).
+const graphScopeFilter = `i.status = 'active'
+	AND (i.layer <= 1 OR i.operator_id = $1)
+	AND (i.valid_from IS NULL OR i.valid_from <= $5) AND (i.valid_to IS NULL OR i.valid_to >= $2)
+	AND (cardinality($3::text[]) = 0 OR i.topic = ANY($3))
+	AND (cardinality($4::text[]) = 0 OR i.kind = ANY($4))`
+
+// graph: item nhắc cùng thực thể với query (qua item_entities; entity theo ext_id của kb/).
+func (r *Recaller) graph(ctx context.Context, q Query, extIDs []string) ([]armHit, error) {
+	rows, err := r.DB.Query(ctx, `SELECT ie.item_id::text, count(DISTINCT e.id) AS n
+		FROM item_entities ie
+		JOIN entities e ON e.id = ie.entity_id
+		JOIN items i ON i.id = ie.item_id AND `+graphScopeFilter+`
+		WHERE e.ext_id = ANY($7::text[])
+		GROUP BY ie.item_id ORDER BY n DESC, ie.item_id LIMIT $6`,
+		q.OperatorID, q.ValidAt, q.Topics, q.Kinds, q.ValidUntil, q.ArmLimit, extIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []armHit
+	for rows.Next() {
+		var id string
+		var n int
+		if err := rows.Scan(&id, &n); err != nil {
+			return nil, err
+		}
+		out = append(out, armHit{id: id, rank: len(out) + 1})
+	}
+	return out, rows.Err()
 }
 
 func (r *Recaller) browse(ctx context.Context, q Query) ([]armHit, error) {

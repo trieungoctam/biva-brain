@@ -432,14 +432,48 @@ func Sync(ctx context.Context, db *pgxpool.Pool, b *Bundle, actor string, dryRun
 		}
 	}
 
+	// industries: ngành có entities hoặc features (dùng cho 2 block dưới).
+	var industries []string
+	seen := map[string]bool{}
+	for industry := range b.Entities {
+		if !seen[industry] {
+			seen[industry] = true
+			industries = append(industries, industry)
+		}
+	}
+	for industry := range b.Features {
+		if !seen[industry] {
+			seen[industry] = true
+			industries = append(industries, industry)
+		}
+	}
+	sort.Strings(industries)
+	for _, industry := range industries {
+		for _, e := range b.Entities[industry] {
+			aliases := append([]string{e.Name}, e.Aliases...)
+			known := 0
+			if err := tx.QueryRow(ctx, `SELECT count(*) FROM entities WHERE ext_id = $1`, e.ID).
+				Scan(&known); err != nil {
+				return rep, err
+			}
+			if _, err := tx.Exec(ctx, `
+				INSERT INTO entities (ext_id, layer, entity_type, name, name_norm, aliases, last_seen)
+				VALUES ($1, 1, $2, $3, $4, $5, now())
+				ON CONFLICT (ext_id) DO UPDATE SET
+					entity_type = EXCLUDED.entity_type, name = EXCLUDED.name,
+					name_norm = EXCLUDED.name_norm, aliases = EXCLUDED.aliases, last_seen = now()`,
+				e.ID, e.Type, e.Name, textnorm.Fold(e.Name), aliases); err != nil {
+				return rep, fmt.Errorf("entity %s: %w", e.ID, err)
+			}
+			if known == 0 {
+				rep.Changes = append(rep.Changes, Change{Action: "entity.add", Key: e.ID, Layer: 1})
+			}
+		}
+	}
+
 	// Danh mục feature → logic_features: upsert theo id; feature rời bundle → deprecated
 	// (không xoá — spec và module có thể còn tham chiếu; operator_count do index.code đếm lại).
 	featIDs := map[string]bool{}
-	var industries []string
-	for industry := range b.Features {
-		industries = append(industries, industry)
-	}
-	sort.Strings(industries)
 	for _, industry := range industries {
 		for _, feat := range b.Features[industry] {
 			featIDs[feat.ID] = true

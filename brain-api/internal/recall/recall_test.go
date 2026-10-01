@@ -49,6 +49,7 @@ type env struct {
 	tag      string // từ riêng của test để lọc khỏi dữ liệu L0/L1 có sẵn trong DB test
 	day      func(s string) time.Time
 	insertIt func(layer int, op any, kind, topic, key, text string, extra map[string]any) string
+	t        *testing.T
 }
 
 func setup(t *testing.T) *env {
@@ -56,7 +57,7 @@ func setup(t *testing.T) *env {
 	ctx := context.Background()
 	pool := testdb.Pool(t)
 	sfx := fmt.Sprintf("%d", time.Now().UnixNano())
-	e := &env{pool: pool, op: "rc" + sfx, opB: "rcb" + sfx, tag: "zq" + sfx}
+	e := &env{pool: pool, op: "rc" + sfx, opB: "rcb" + sfx, tag: "zq" + sfx, t: t}
 	if _, err := pool.Exec(ctx, `INSERT INTO operators (id, name) VALUES ($1, 'Phương Nam'), ($2, 'B')`, e.op, e.opB); err != nil {
 		t.Fatal(err)
 	}
@@ -376,4 +377,84 @@ func TestEntityAliases(t *testing.T) {
 	if err != nil || byID(rec.Hits, dl) == nil || rec.Hits[0].ID != dl {
 		t.Fatalf("recall alias: %v %v", ids(rec.Hits), err)
 	}
+}
+
+// S3.1.1 graph arm + S3.1.2 temporal arm.
+func TestRecallGraphAndTemporalArms(t *testing.T) {
+	e := setup(t)
+	ctx := context.Background()
+	tet, err := time.ParseInLocation("2006-01-02", "2027-02-04", time.FixedZone("ICT", 7*3600))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Hai entity L1 (không dấu test) + liên kết item_entities cho item tuyến.
+	sgID := e.insertEntity("sgx", "Sài Gòn", []string{"SG"})
+	dlID := e.insertEntity("dlx", "Đà Lạt", nil)
+	route := e.insertIt(2, e.op, "data", "route", "route.sg_dl",
+		"Chuyến Sài Gòn đi Đà Lạt khởi hành 21:30 mỗi tối", nil)
+	for _, eid := range []string{sgID, dlID} {
+		if _, err := e.pool.Exec(ctx, `INSERT INTO item_entities (item_id, entity_id)
+			VALUES ($1::uuid, $2::uuid) ON CONFLICT DO NOTHING`, route, eid); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Temporal: giá thường quanh năm và giá Tết (cửa sổ hẹp chứa 04/02/2027).
+	base := e.insertIt(2, e.op, "data", "fare", "fare.sg_dl",
+		"Giá tuyến Sài Gòn Đà Lạt giường nằm 320000", map[string]any{
+			"valid_from": e.day("2026-01-01"), "valid_to": e.day("2027-12-31")})
+	tetFare := e.insertIt(2, e.op, "data", "fare", "fare.sg_dl.tet",
+		"Giá Tết tuyến Sài Gòn Đà Lạt giường nằm 450000", map[string]any{
+			"valid_from": e.day("2027-02-01"), "valid_to": e.day("2027-02-10")})
+
+	resolver, err := entity.New([]entity.Entity{
+		{ID: "sgx", Type: "city", Name: "Sài Gòn", Aliases: []string{"SG"}},
+		{ID: "dlx", Type: "city", Name: "Đà Lạt"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := &Recaller{DB: e.pool, Entities: resolver}
+
+	// Graph: query nhắc thực thể → item tuyến (keyword yếu vì text khác) vẫn được trả qua arm graph.
+	res, err := r.Recall(ctx, Query{OperatorID: e.op, Text: "SG Đà Lạt " + e.tag})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h := byID(res.Hits, route); h == nil || !contains(h.Arms, "graph") {
+		t.Fatalf("graph arm phải tìm ra item tuyến: %+v", res.Hits)
+	}
+
+	// Temporal: hỏi giá ngày 04/02/2027 → giá Tết có phiếu temporal và đứng trên giá thường.
+	res, err = r.Recall(ctx, Query{OperatorID: e.op, Text: "giá giường nằm " + e.tag,
+		ValidAt: tet, ValidUntil: tet.Add(24*time.Hour - time.Microsecond)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tetHit := byID(res.Hits, tetFare)
+	baseHit := byID(res.Hits, base)
+	if tetHit == nil || !contains(tetHit.Arms, "temporal") {
+		t.Fatalf("giá Tết phải được tìm ra qua temporal arm: %+v", res.Hits)
+	}
+	if baseHit != nil && tetHit.Score <= baseHit.Score {
+		t.Fatalf("giá Tết phải trên giá thường: tet=%v base=%v arms=%v",
+			tetHit.Score, baseHit.Score, tetHit.Arms)
+	}
+}
+
+// insertEntity: entity L1 của kb test (ext_id) — trả uuid.
+func (e *env) insertEntity(extID, name string, aliases []string) string {
+	e.t.Helper()
+	if aliases == nil {
+		aliases = []string{}
+	}
+	var id string
+	if err := e.pool.QueryRow(context.Background(), `
+		INSERT INTO entities (ext_id, layer, entity_type, name, name_norm, aliases)
+		VALUES ($1, 1, 'city', $2, $3, $4)
+		ON CONFLICT (ext_id) DO UPDATE SET name = EXCLUDED.name RETURNING id::text`,
+		extID, name, textnorm.Fold(name), aliases).Scan(&id); err != nil {
+		e.t.Fatal(err)
+	}
+	return id
 }
