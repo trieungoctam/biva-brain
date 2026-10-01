@@ -6,6 +6,56 @@ Kế hoạch triển khai BIVA Brain theo **milestone → epic → story**. Bám
 **Theo dõi trên Linear**: project [BIVA Brain](https://linear.app/dpos/project/biva-brain-0c5d0e4d0b0d) (team Build) —
 milestone M0–M5, epic là issue cha `[E…]`, story là sub-issue `[S…]` (DYN-5 → DYN-114).
 
+## Lịch thực thi hiện tại: 1 người + AI coding
+
+> Cập nhật 01/10/2026. Toàn bộ issue trên Linear giao cho **Triệu Ngọc Tâm**. Lịch dưới đây thay cho ước lượng
+> theo team ở §0–§1 (giữ lại làm tham chiếu khi có thêm người).
+
+**Giả định**: 1 người làm chính, dùng AI coding (Claude Code) ở mức cao; ~3 story/tuần; hạn chót mỗi story là thứ Sáu
+của tuần dự kiến; nghỉ Tết 01/02 → 14/02/2027. Đo lại tốc độ sau M0 và M1 rồi chỉnh.
+
+| Mốc | Thời gian | Tuần | Demo kết thúc |
+|---|---|---|---|
+| M0 Nền móng | 05/10 → 16/10/2026 | 1–2 | MCP kết nối từ Claude Code; job đi trọn vòng Go → Postgres → Python |
+| M1 Tri thức + build v1 | 19/10 → 27/11/2026 | 3–8 | AI viết system prompt + FAQ hợp lệ cho pilot #1 |
+| M2 Onboarding, logic, quên | 30/11/2026 → 08/01/2027 | 9–14 | Onboard pilot #2; stale → refresh; tìm nhà xe tương tự theo spec |
+| M3 Trí tuệ | 11/01 → 05/03/2027 (nghỉ Tết 2 tuần) | 15–20 | Pilot #3 chọn đúng điểm xuất phát logic; run_tests + UAT |
+| M4 Phát hành & chất lượng | 08/03 → 26/03/2027 | 21–23 | Bot 3 pilot qua gate và được phát hành |
+| M5 Platform | 29/03 → 16/04/2027 | 24–26 | Promote toàn cục; regression mọi bot |
+
+**Thứ tự theo tuần (rút gọn)**
+
+| Tuần (hạn thứ Sáu) | Việc chính |
+|---|---|
+| 1 (09/10) | monorepo, migration nền, JSON Schema, docker-compose, HTTP server |
+| 2 (16/10) | textnorm Go/Py, queue + runner + scheduler, MCP stub + auth, CI, OTel; **chọn 3 pilot + thu dữ liệu** |
+| 3 (23/10) | thư viện llm/, index search_text + embedding; **soạn L0 + template L1** |
+| 4 (30/10) | parser Zalo, parser Excel; **golden set** |
+| 5 (06/11) | diff, review queue, apply có version |
+| 6 (13/11) | tool MCP ingest/review, recall Go, tool recall/data |
+| 7 (20/11) | knowledge pack (merge tầng + cache), bảng artifact, get_bot_spec |
+| 8 (27/11) | validate tĩnh, server instructions, /process_update + /build_bot → **demo M1** |
+| 9–10 (04–11/12) | coverage, entity + alias, generate_questions, form, /onboard_operator |
+| 11 (18/12) | mark_stale, expire, /refresh_bot |
+| 12–13 (25–31/12) | export_bot, quy ước repo logic, feature catalog seed, index_code, extract_logic_spec |
+| 14 (08/01) | find_similar_operators, plan/propose + ADR, NO_CAPABILITY, /implement_operator_logic → **demo M2** |
+| 15–17 (15–29/01) | graph/temporal/rerank, consolidate, promote tri thức, validate LLM, sandbox |
+| *Tết* | *nghỉ 01/02 → 14/02* |
+| 18–20 (19/02–05/03) | run_examples_against, họ logic, logic test, reference executor, sinh test, run_tests/sandbox → **demo M3** |
+| 21–23 (12–26/03) | release gate, publish/rollback, RLS, 2 người, prompt injection, lessons; console tối thiểu |
+| 24–26 (02–16/04) | /mcp/platform, impact_of_change, regression toàn bộ, vận hành, runbook |
+
+**Cắt giảm để vừa sức 1 người** (đặt ưu tiên Low, làm khi còn thời gian):
+
+- Console (E4.2): duyệt qua MCP + confirm_token trước; console chỉ làm bản tối thiểu ở M4.
+- Dashboard đầy đủ (E-X2): chỉ metrics cơ bản; dashboard Grafana làm sau.
+- Hạ tầng Kubernetes/KEDA (E5.2): chạy docker-compose trên 1 VM đến khi cần scale.
+- Reflect (E3.6), MCP platform (E5.1): sau khi luồng chính ổn định.
+- Quy tắc 2 người (S4.4.2) chỉ có ý nghĩa khi có người thứ hai duyệt; trước đó dùng confirm_token + audit.
+
+**Trên Linear**: mọi issue có assignee, hạn chót theo tuần, mức ưu tiên và quan hệ *blocked by* theo đường găng
+(migration → queue → parser → diff → review → recall → knowledge pack → validate → stale → test → release gate).
+
 ## 0. Giả định
 
 | Mục | Giả định (điều chỉnh khi chốt nhân sự) |
