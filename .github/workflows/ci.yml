@@ -1,0 +1,71 @@
+name: ci
+
+# Push ở mọi nhánh (PR trong repo nhận check từ push); workflow_dispatch để chạy tay.
+on:
+  push:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # Lint + kiểm tra file sinh ra (go.mod/go.sum, uv.lock) không lệch.
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go/go.mod
+          cache-dependency-path: go/go.sum
+      - uses: astral-sh/setup-uv@v6
+        with:
+          working-directory: python
+      - name: go mod tidy không làm thay đổi go.mod/go.sum
+        working-directory: go
+        run: go mod tidy && git diff --exit-code go.mod go.sum
+      - name: uv.lock khớp pyproject.toml
+        working-directory: python
+        run: uv lock --check
+      - run: make lint
+
+  # Unit + contract test (fixture chung Go ⇄ Python) + test cần Postgres thật
+  # (migration up/down/up, queue, scheduler, MCP + auth, runner Python).
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: biva
+          POSTGRES_PASSWORD: biva
+          POSTGRES_DB: biva_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U biva -d biva_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      BIVA_TEST_DATABASE_URL: postgres://biva:biva@localhost:5432/biva_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go/go.mod
+          cache-dependency-path: go/go.sum
+      - uses: astral-sh/setup-uv@v6
+        with:
+          working-directory: python
+      # test-go chạy trước: migrate DB tới bản mới nhất cho test-py.
+      - run: make test
+
+  # Image build được (không push).
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -f go/Dockerfile -t biva/brain-api:ci .
+      - run: docker build -f python/Dockerfile -t biva/ai-worker:ci .

@@ -74,4 +74,6 @@ có backoff. Worker chết → lease hết → scheduler (chỉ instance leader,
 `operations_requeue_expired()` để trả job về hàng đợi. Cấu hình worker: `BIVA_WORKER_CONCURRENCY` (4),
 `BIVA_WORKER_LEASE_SECONDS` (60).
 
+CI (`.github/workflows/ci.yml`) chạy `make lint`, `make test` với Postgres pgvector, kiểm tra `go.mod`/`uv.lock` không lệch và build hai image.
+
 Fixture trong `contracts/fixtures/` được test ở **cả Go và Python**: hai bên phải cho cùng kết quả.
