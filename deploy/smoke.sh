@@ -49,6 +49,11 @@ mcp() {
 mcp '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"smoke","version":"0"}}}' >/dev/null
 out=$(mcp "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"get_operation\",\"arguments\":{\"operation_id\":\"$job\"}}}")
 grep -q '"status":"done"' <<<"$out" && echo "✓ MCP get_operation trả status done" || { echo "✗ MCP: $out"; exit 1; }
+# OAuth (ChatGPT connector): metadata + 401 trỏ tới protected resource metadata.
+curl -fsS "$API/.well-known/oauth-authorization-server" | grep -q '"registration_endpoint"' \
+  && echo "✓ OAuth metadata" || { echo "✗ OAuth metadata"; exit 1; }
+curl -s -D - -o /dev/null -X POST "$API/mcp/operator/smoke$sfx/" | grep -qi 'resource_metadata=' \
+  && echo "✓ 401 có WWW-Authenticate resource_metadata" || { echo "✗ thiếu WWW-Authenticate"; exit 1; }
 code=$(curl -s -o /dev/null -w '%{http_code}' "$API/mcp/operator/khac$sfx/" -H "Authorization: Bearer $token" \
   -H "Content-Type: application/json" -d '{}')
 [[ "$code" == 403 ]] && echo "✓ sai phạm vi → 403" || { echo "✗ sai phạm vi → $code"; exit 1; }

@@ -25,7 +25,16 @@ claude mcp add --transport http biva-phuongnam http://localhost:8080/mcp/operato
   --header "Authorization: Bearer <token cá nhân>"
 ```
 
-**Xác thực & phạm vi** (đã có từ M0):
+**ChatGPT (connector, developer mode)** — xác thực bằng OAuth 2.1 (brain-api là authorization server):
+
+1. Cấu hình `BIVA_PUBLIC_URL` = URL https công khai của brain-api (vd `https://brain.biva.vn`).
+2. ChatGPT → Settings → Apps → Advanced → bật Developer mode → thêm connector với URL
+   `https://brain.biva.vn/mcp/operator/<operator_id>/`, xác thực OAuth.
+3. ChatGPT tự tìm metadata (RFC 9728 / 8414), tự đăng ký client (RFC 7591), mở trang **Kết nối BIVA Brain**:
+   builder dán **token cá nhân** một lần. Quyền của ChatGPT = quyền của builder; thu hồi token cá nhân là cắt luôn.
+4. Access token 1 giờ, refresh token 30 ngày xoay vòng; refresh bị dùng lại → thu hồi cả phiên.
+
+**Xác thực & phạm vi** (token cá nhân từ M0 — coding agent):
 
 - Token cá nhân dạng `biva_…`, luôn có hạn (mặc định 90 ngày), thu hồi có hiệu lực ngay request kế tiếp; DB chỉ lưu SHA-256.
   Trước khi có console, cấp bằng CLI: `brain-api user add …`, `brain-api user grant <user> <operator>`,

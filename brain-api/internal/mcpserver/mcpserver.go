@@ -23,6 +23,7 @@ import (
 
 	"github.com/trieungoctam/biva-brain/brain-api/internal/audit"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/authz"
+	"github.com/trieungoctam/biva-brain/brain-api/internal/oauth"
 )
 
 const principalKey = "principal"
@@ -30,7 +31,8 @@ const principalKey = "principal"
 type Server struct {
 	db      *pgxpool.Pool
 	version string
-	topics  []Topic // bộ topic của template L1 (kb/): kiểm đầu vào và hướng dẫn AI chọn topic
+	oauth   *oauth.Server // nil = chỉ nhận token cá nhân
+	topics  []Topic       // bộ topic của template L1 (kb/): kiểm đầu vào và hướng dẫn AI chọn topic
 
 	mu        sync.Mutex
 	operators map[string]*mcp.Server // MCP server theo nhà xe, dựng một lần
@@ -66,9 +68,28 @@ func New(db *pgxpool.Pool, version string, topics []Topic) *Server {
 	return s
 }
 
+// WithOAuth bật token OAuth (ChatGPT connector) bên cạnh token cá nhân.
+func (s *Server) WithOAuth(o *oauth.Server) *Server {
+	s.oauth = o
+	return s
+}
+
+// bearer: xác thực Bearer; 401 kèm WWW-Authenticate trỏ tới protected resource metadata của đúng endpoint
+// (RFC 9728) để client OAuth tự tìm authorization server.
+func (s *Server) bearer(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var opts *auth.RequireBearerTokenOptions
+		if s.oauth != nil {
+			opts = &auth.RequireBearerTokenOptions{ResourceMetadataURL: s.oauth.ResourceMetadataURL(r.URL.Path),
+				Scopes: nil}
+		}
+		auth.RequireBearerToken(s.verify, opts)(next).ServeHTTP(w, r)
+	})
+}
+
 // Mount gắn các endpoint MCP vào mux.
 func (s *Server) Mount(mux *http.ServeMux) {
-	bearer := auth.RequireBearerToken(s.verify, nil)
+	bearer := s.bearer
 	opts := &mcp.StreamableHTTPOptions{Stateless: true}
 
 	operatorMCP := mcp.NewStreamableHTTPHandler(func(r *http.Request) *mcp.Server {
@@ -80,9 +101,19 @@ func (s *Server) Mount(mux *http.ServeMux) {
 	mux.Handle("/mcp/platform/", bearer(s.requirePlatform(platformMCP)))
 }
 
-// verify chuyển token → TokenInfo cho SDK. Lỗi DB chỉ ghi log, không trả chi tiết ra ngoài.
-func (s *Server) verify(ctx context.Context, token string, _ *http.Request) (*auth.TokenInfo, error) {
-	p, err := authz.Verify(ctx, s.db, token)
+// verify chuyển token → TokenInfo cho SDK: token cá nhân (biva_, coding agent) hoặc token OAuth (boa_, ChatGPT).
+// Lỗi DB chỉ ghi log, không trả chi tiết ra ngoài.
+func (s *Server) verify(ctx context.Context, token string, r *http.Request) (*auth.TokenInfo, error) {
+	var p authz.Principal
+	var err error
+	if s.oauth != nil && strings.HasPrefix(token, oauth.AccessPrefix) {
+		p, err = s.oauth.Verify(ctx, token, s.oauth.Issuer+r.URL.Path)
+		if errors.Is(err, oauth.ErrInvalid) {
+			err = authz.ErrInvalidToken
+		}
+	} else {
+		p, err = authz.Verify(ctx, s.db, token)
+	}
 	if errors.Is(err, authz.ErrInvalidToken) {
 		return nil, fmt.Errorf("%w", auth.ErrInvalidToken)
 	}

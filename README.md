@@ -65,6 +65,9 @@ claude mcp add --transport http biva-phuongnam http://localhost:8080/mcp/operato
 ```
 
 Với compose: `docker compose -f deploy/docker-compose.yml exec brain-api brain-api token issue tam`.
+
+ChatGPT (connector): đặt `BIVA_PUBLIC_URL` là URL https công khai rồi thêm connector
+`<BIVA_PUBLIC_URL>/mcp/operator/<id>/` (OAuth); builder dán token cá nhân ở trang cấp quyền — xem [docs/mcp.md](docs/mcp.md#2-kết-nối).
 Tool hiện có: `list_knowledge`, `submit_knowledge`, `ingest`, `get_operation`, `list_review_queue`, `get_review_item`,
 `propose_item`, `apply_review` (preview → `confirm_token` → thực thi). Danh mục đầy đủ: [docs/mcp.md](docs/mcp.md).
 

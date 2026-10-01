@@ -12,6 +12,7 @@ type Config struct {
 	DatabaseReplicaURL string        // BIVA_DATABASE_REPLICA_URL — đọc; trống thì dùng primary
 	HTTPAddr           string        // BIVA_HTTP_ADDR, mặc định :8080
 	MigrationsDir      string        // BIVA_MIGRATIONS_DIR, mặc định ../contracts/migrations
+	PublicURL          string        // BIVA_PUBLIC_URL: URL công khai (issuer OAuth, resource MCP), mặc định http://localhost:8080
 	KBDir              string        // BIVA_KB_DIR, mặc định ../kb
 	SchemasDir         string        // BIVA_SCHEMAS_DIR, mặc định ../contracts/schemas
 	ShutdownTimeout    time.Duration // thời gian chờ tắt êm
@@ -28,6 +29,7 @@ func Load() (Config, error) {
 		DatabaseReplicaURL: os.Getenv("BIVA_DATABASE_REPLICA_URL"),
 		HTTPAddr:           getenv("BIVA_HTTP_ADDR", ":8080"),
 		MigrationsDir:      getenv("BIVA_MIGRATIONS_DIR", "../contracts/migrations"),
+		PublicURL:          getenv("BIVA_PUBLIC_URL", "http://localhost:8080"),
 		ShutdownTimeout:    10 * time.Second,
 	}
 	c.KBDir, c.SchemasDir = Paths()

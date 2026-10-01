@@ -159,3 +159,16 @@ func RevokeToken(ctx context.Context, db *pgxpool.Pool, tokenID string) error {
 	}
 	return nil
 }
+
+// LoadPrincipal dựng Principal cho một user đang active (dùng khi xác thực bằng token OAuth).
+func LoadPrincipal(ctx context.Context, db *pgxpool.Pool, userID, tokenID string, expiresAt time.Time) (Principal, error) {
+	p := Principal{UserID: userID, TokenID: tokenID, ExpiresAt: expiresAt}
+	err := db.QueryRow(ctx, `
+		SELECT u.role, COALESCE(array_agg(uo.operator_id) FILTER (WHERE uo.operator_id IS NOT NULL), '{}')
+		FROM users u LEFT JOIN user_operators uo ON uo.user_id = u.id
+		WHERE u.id = $1 AND u.status = 'active' GROUP BY u.id`, userID).Scan(&p.Role, &p.Operators)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Principal{}, ErrInvalidToken
+	}
+	return p, err
+}

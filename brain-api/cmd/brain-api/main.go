@@ -25,6 +25,7 @@ import (
 	"github.com/trieungoctam/biva-brain/brain-api/internal/kb"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/mcpserver"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/migrate"
+	"github.com/trieungoctam/biva-brain/brain-api/internal/oauth"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/scheduler"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/store"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/telemetry"
@@ -129,7 +130,9 @@ func serve(cfg config.Config) error {
 	}
 
 	mux := httpapi.NewRouter(db)
-	mcpserver.New(db.Primary, version, topics).Mount(mux)
+	authServer := oauth.New(db.Primary, cfg.PublicURL)
+	authServer.Mount(mux)
+	mcpserver.New(db.Primary, version, topics).WithOAuth(authServer).Mount(mux)
 	// otelhttp: mỗi request (MCP call...) là một span gốc; health không cần trace.
 	handler := otelhttp.NewHandler(mux, "brain-api", otelhttp.WithFilter(func(r *http.Request) bool {
 		return !strings.HasPrefix(r.URL.Path, "/health/")
@@ -159,6 +162,9 @@ func serve(cfg config.Config) error {
 func routeName(path string) string {
 	if rest, ok := strings.CutPrefix(path, "/mcp/operator/"); ok && rest != "" {
 		return "/mcp/operator/{operator_id}/"
+	}
+	if strings.HasPrefix(path, "/.well-known/oauth-protected-resource/") {
+		return "/.well-known/oauth-protected-resource/{path}"
 	}
 	return path
 }

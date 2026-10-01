@@ -66,6 +66,7 @@ services:
     build: { context: .., dockerfile: brain-api/Dockerfile }
     environment:
       BIVA_DATABASE_URL: *db_url
+      BIVA_PUBLIC_URL: ${BIVA_PUBLIC_URL:-http://localhost:8080}   # ChatGPT cần URL https công khai
       OTEL_EXPORTER_OTLP_ENDPOINT: *otel
     ports: ["8080:8080"]
     depends_on:
