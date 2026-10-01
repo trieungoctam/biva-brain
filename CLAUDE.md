@@ -106,5 +106,10 @@ cd ai-worker && uv run pytest -q
   fact (chỉ nhận confident), ghi lỗi CONTRADICTION + dòng + item, hạ valid→invalid, có audit;
   không mâu thuẫn → đánh dấu đã kiểm. Live test Gemini thật (skip CI) đo recall ≥90% trên 10
   case cài sẵn (5 mâu thuẫn / 5 hợp lệ); AC đo đầy đủ cần GEMINI key thật.
+- M3 S3.4.1 sandbox xong: `biva_worker/sandbox.py` — process riêng (`-I`), chặn socket ở bootstrap,
+  import whitelist (chỉ module thuần), purge sys.modules nguy hiểm, `open` bị thay bằng stub,
+  RLIMIT_CPU/AS/NOFILE/NPROC + timeout cha (kill nhóm) + cap output 64KB; kết quả JSON một dòng.
+  Test: chặn socket/urllib/os.system/subprocess/open, timeout vòng lặp vô hạn, RAM (Linux),
+  module cho phép chạy đúng. macOS bỏ qua RLIMIT_AS → test RAM skip trên darwin, Linux (CI) chạy.
 - Linear: workspace dpos, project "BIVA Brain"; mỗi story xong thì comment kết quả + link CI rồi chuyển Done
   (chưa đạt hết AC thì để In Progress và ghi rõ phần thiếu).
