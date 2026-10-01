@@ -3,6 +3,9 @@
 Kế hoạch triển khai BIVA Brain theo **milestone → epic → story**. Bám theo lộ trình M0–M5 trong
 [architecture.md §8](architecture.md#8-lộ-trình). Mỗi milestone kết thúc bằng một **demo trên nhà xe thật (pilot)**.
 
+**Theo dõi trên Linear**: project [BIVA Brain](https://linear.app/dpos/project/biva-brain-0c5d0e4d0b0d) (team Build) —
+milestone M0–M5, epic là issue cha `[E…]`, story là sub-issue `[S…]` (DYN-5 → DYN-114).
+
 ## 0. Giả định
 
 | Mục | Giả định (điều chỉnh khi chốt nhân sự) |
