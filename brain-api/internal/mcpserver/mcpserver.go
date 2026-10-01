@@ -256,6 +256,7 @@ func (s *Server) operatorServer(operatorID string) *mcp.Server {
 	s.addBuildTools(srv, operatorID)
 	s.addGuide(srv, operatorID)
 	s.addOnboardTools(srv, operatorID)
+	s.addLogicTools(srv, operatorID)
 	s.addReviewTools(srv, operatorID)
 	s.operators[operatorID] = srv
 	return srv

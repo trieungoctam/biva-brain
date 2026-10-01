@@ -155,10 +155,10 @@ Cột **Mốc** = mốc dự kiến (xem lộ trình trong [architecture.md](arc
 ### 5.3 Tri thức logic (chi tiết: [logic-knowledge.md](logic-knowledge.md))
 | Tool | Mốc | Cờ | Mô tả |
 |---|---|---|---|
-| `get_operator_logic` | M2 | RO | hồ sơ logic của nhà xe, capability còn thiếu, chỗ stale |
-| `get_logic_spec` | M2 | RO | logic spec theo capability — có cả với khách mới chưa có code |
-| `find_similar_operators` | M2 | RO | ứng viên tương tự kèm điểm, feature trùng/thiếu/khác, họ logic |
-| `compare_logic` | M2 | RO | so hai nhà xe theo spec, tham số, code |
+| `get_operator_logic` | M2 ✅ | RO | hồ sơ logic của nhà xe theo capability template: profile (mode/module/trạng thái), spec (số feature/quy tắc/ví dụ), capability còn thiếu; proposed_features chờ review |
+| `get_logic_spec` | M2 ✅ | RO | logic spec theo capability (feature + tham số, rules_text, implementation nếu có) — dựng bởi job logic.spec, có cả với khách mới chưa có code; chưa có → hướng dẫn chạy job |
+| `find_similar_operators` | M2 ✅ | RO | ứng viên tương tự tầng spec: 50% trùng feature (trọng số IDF) + 30% rules (cosine embedding hoặc bigram keyword) + 20% gần tham số; giải thích trùng / thiếu (mình có họ không) / khác (họ có mình chưa) / tham số lệch |
+| `compare_logic` | M2 ✅ | RO | so hai nhà xe theo capability: điểm + chi tiết như find_similar |
 | `plan_logic_implementation` | M2 | RO | kế hoạch: tái dùng gì, config/hook/custom, phần viết mới |
 | `list_logic_families` | M3 | RO | họ logic theo capability |
 | `run_examples_against` | M3 | | chạy ví dụ của nhà xe này trên code ứng viên (sandbox) → % pass, case fail |

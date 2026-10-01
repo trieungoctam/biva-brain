@@ -77,7 +77,9 @@ cd ai-worker && uv run pytest -q
   (schema kb/features + fixture 2 phía; `kb sync` upsert `logic_features`, rời bundle → deprecated) +
   job `logic.spec` (ai-worker `logic_spec.py`, LLM purpose `logic`): ánh xạ tri thức đã duyệt vào feature
   catalog → `logic_specs` (migration 000016), feature lạ → `proposed_features` chờ review; embedding
-  rules_text qua TEI (optional). Còn: S2.5.4–S2.5.6 (find_similar_operators, compare_logic,
-  get_logic_spec, plan/propose, NO_CAPABILITY), S2.5.7 prompt.
+  rules_text qua TEI (optional). S2.5.4 xong: `internal/logic` + tools MCP `get_operator_logic`,
+  `get_logic_spec`, `find_similar_operators` (0.5 feature IDF + 0.3 rules + 0.2 params, giải thích
+  trùng/thiếu/khác + param lệch), `compare_logic`. Còn: S2.5.5 plan/propose + ADR, S2.5.6 NO_CAPABILITY,
+  S2.5.7 prompt.
 - Linear: workspace dpos, project "BIVA Brain"; mỗi story xong thì comment kết quả + link CI rồi chuyển Done
   (chưa đạt hết AC thì để In Progress và ghi rõ phần thiếu).
