@@ -63,7 +63,7 @@ của tuần dự kiến; nghỉ Tết 01/02 → 14/02/2027. Đo lại tốc đ�
 | Team | 2 Go · 2 Python · 1 Frontend (từ M4) · 1 Tech lead/kiến trúc · 1 vận hành tri thức (soạn L0/L1, làm việc với nhà xe) |
 | Nhịp | sprint 2 tuần; demo cuối mỗi milestone |
 | Pilot | **3 nhà xe** đại diện: 1 nhà xe "cơ bản", 1 nhà xe "có mùa lễ", 1 nhà xe có logic đặc biệt |
-| Môi trường | không GPU; LLM qua thư viện; Postgres + Redis + MinIO + TEI (CPU) |
+| Môi trường | không GPU; LLM qua thư viện; Postgres + Redis + S3-compatible (SeaweedFS ở local) + TEI (CPU) |
 | Ước lượng | tính bằng tuần-người (tw), chỉ để sắp xếp; đo lại sau M1 |
 
 **Ký hiệu**: `Go` / `Py` / `FE` / `Ops` = người phụ trách chính. **AC** = tiêu chí chấp nhận.
@@ -107,7 +107,7 @@ Song song từ M0: E-X1 tri thức L0/L1 + golden set (Ops) · E-X2 quan sát ·
 | **E0.3 brain-api skeleton** | S0.3.1 HTTP server, health/ready, config, pgxpool (primary/replica) | Go | `/health/ready` kiểm DB |
 | | S0.3.2 MCP server stub `/mcp/operator/{id}/` (go-sdk), 1 tool `get_operation` | Go | Claude Code kết nối, gọi được tool |
 | | S0.3.3 Auth: token cá nhân cho MCP, role builder/lead/ops, scope operator theo URL | Go | token sai scope → bị từ chối; audit ghi actor |
-| **E0.4 Dev & CI** | S0.4.1 docker-compose: Postgres(pgvector), Redis, MinIO, TEI CPU, 2 service | Ops | `make up` chạy đủ trên laptop |
+| **E0.4 Dev & CI** | S0.4.1 docker-compose: Postgres(pgvector), Redis, S3 (SeaweedFS), TEI CPU, 2 service | Ops | `make up` chạy đủ trên laptop |
 | | S0.4.2 CI: lint, unit, contract test (fixture chung), migration check | Lead | PR đỏ khi fixture Go/Py lệch |
 | | S0.4.3 OpenTelemetry cơ bản + trace context qua `operations` | Go + Py | 1 trace nối MCP call → job Python |
 

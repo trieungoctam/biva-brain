@@ -30,18 +30,17 @@ services:
       interval: 3s
       retries: 20
 
-  minio:
-    image: minio/minio:latest
-    command: server /data --console-address :9001
-    environment:
-      MINIO_ROOT_USER: biva
-      MINIO_ROOT_PASSWORD: biva-local-only
-    ports: ["9000:9000", "9001:9001"]
-    volumes: [miniodata:/data]
+  # Object storage S3-compatible cho file nhà xe gửi (Excel, ảnh...). Local dùng SeaweedFS
+  # (image minio/minio không còn phát hành công khai trên Docker Hub). S3 API ở cổng 8333.
+  s3:
+    image: chrislusf/seaweedfs:4.48
+    command: server -dir=/data -s3 -s3.port=8333 -ip.bind=0.0.0.0
+    ports: ["8333:8333"]
+    volumes: [s3data:/data]
 
   # Embedding trên CPU (bge-m3). Lần đầu tải model mất vài phút; dữ liệu model giữ trong volume.
   tei-embed:
-    image: ghcr.io/huggingface/text-embeddings-inference:${TEI_TAG:-cpu-latest}
+    image: ghcr.io/huggingface/text-embeddings-inference:${TEI_TAG:-cpu-1.9.4}
     command: --model-id BAAI/bge-m3 --port 80
     ports: ["8081:80"]
     volumes: [teidata:/data]
@@ -49,7 +48,7 @@ services:
   # Rerank chỉ cần từ M3 — bật bằng: docker compose --profile rerank up
   tei-rerank:
     profiles: [rerank]
-    image: ghcr.io/huggingface/text-embeddings-inference:${TEI_TAG:-cpu-latest}
+    image: ghcr.io/huggingface/text-embeddings-inference:${TEI_TAG:-cpu-1.9.4}
     command: --model-id BAAI/bge-reranker-v2-m3 --port 80
     ports: ["8082:80"]
     volumes: [teidata:/data]
@@ -87,5 +86,5 @@ services:
 
 volumes:
   pgdata:
-  miniodata:
+  s3data:
   teidata:

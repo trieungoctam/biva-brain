@@ -225,7 +225,7 @@ Backup: Postgres PITR (WAL archive) + snapshot hằng ngày; object storage bậ
 
 | Môi trường | Mục đích |
 |---|---|
-| `local` | dev — docker-compose: Postgres, Redis, MinIO, TEI (CPU), brain-api, ai-worker, console |
+| `local` | dev — docker-compose: Postgres, Redis, S3 (SeaweedFS), TEI (CPU), brain-api, ai-worker, console |
 | `staging` | test tích hợp, thử MCP với AI client thật, dữ liệu nhà xe mẫu |
 | `production` | Brain thật cho builder; snapshot có stage phát hành riêng (staging · production) |
 
@@ -342,7 +342,7 @@ main ─► deploy staging tự động ──► smoke + /build_bot trên nhà 
 | Embedding / rerank | HF TEI trên CPU: bge-m3, bge-reranker-v2-m3 |
 | Database | PostgreSQL 16 + pgvector, pg_trgm, unaccent; migration bằng golang-migrate |
 | Cache / quota | Redis |
-| Object storage | S3-compatible (MinIO ở local) |
+| Object storage | S3-compatible (SeaweedFS ở local; image MinIO không còn phát hành công khai) |
 | Console | React + Vite + TypeScript, TanStack Query, shadcn/ui |
 | Hạ tầng | Kubernetes, KEDA, Helm; docker-compose cho local |
 | Quan sát | OpenTelemetry → Grafana stack: Prometheus, Tempo, Loki |

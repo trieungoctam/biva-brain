@@ -32,7 +32,7 @@ docs/        thiết kế
 Cần Docker (không cần GPU), Go ≥ 1.25, Python ≥ 3.11 và [uv](https://docs.astral.sh/uv/).
 
 ```bash
-make up        # Postgres(pgvector), Redis, MinIO, TEI (CPU), migrate, brain-api, ai-worker
+make up        # Postgres(pgvector), Redis, S3 (SeaweedFS), TEI (CPU), migrate, brain-api, ai-worker
 curl localhost:8080/health/ready
 make down      # dừng (giữ dữ liệu); make clean để xoá volume
 ```

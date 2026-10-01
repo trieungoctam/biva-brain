@@ -16,11 +16,12 @@ wait_for() { # mô tả, số giây, lệnh...
   echo "✗ $what (quá ${secs}s)"; $C ps; $C logs --tail=50; exit 1
 }
 
-services=(postgres redis minio migrate brain-api ai-worker)
+services=(postgres redis s3 migrate brain-api ai-worker)
 [[ "${SMOKE_SKIP_TEI:-}" == 1 ]] || services+=(tei-embed)
 $C up -d --build "${services[@]}"
 
 wait_for "brain-api /health/ready" 120 curl -fsS "$API/health/ready"
+wait_for "S3 (SeaweedFS) trả lời ListBuckets" 60 bash -c "curl -sS 127.0.0.1:8333/ | grep -q ListAllMyBucketsResult"
 
 # Dữ liệu thử: nhà xe, builder, token.
 sfx=$(date +%s)
