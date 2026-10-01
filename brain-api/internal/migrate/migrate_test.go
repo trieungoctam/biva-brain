@@ -34,7 +34,7 @@ func TestUpDownUp(t *testing.T) {
 		}
 	}
 	v, dirty, err := Version(dir, url)
-	if err != nil || dirty || v != 5 {
+	if err != nil || dirty || v != 6 {
 		t.Fatalf("version = %d dirty=%v err=%v", v, dirty, err)
 	}
 
@@ -44,7 +44,7 @@ func TestUpDownUp(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer conn.Close(ctx)
-	for _, table := range []string{"operators", "bots", "documents", "items", "entities", "operations", "audit_log", "users", "user_operators", "api_tokens", "llm_usage"} {
+	for _, table := range []string{"operators", "bots", "documents", "items", "entities", "operations", "audit_log", "users", "user_operators", "api_tokens", "llm_usage", "review_items"} {
 		var ok bool
 		if err := conn.QueryRow(ctx, "SELECT to_regclass($1) IS NOT NULL", "public."+table).Scan(&ok); err != nil || !ok {
 			t.Errorf("thiếu bảng %s (err=%v)", table, err)

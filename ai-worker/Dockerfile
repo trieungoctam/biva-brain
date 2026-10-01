@@ -7,7 +7,9 @@ RUN uv sync --frozen --no-dev --no-install-project
 COPY ai-worker/ ./
 RUN uv sync --frozen --no-dev
 COPY contracts /contracts
+COPY kb /kb
 ENV BIVA_CONTRACTS_DIR=/contracts \
+    BIVA_KB_DIR=/kb \
     PATH="/app/.venv/bin:$PATH"
 RUN useradd -u 10001 app
 USER app

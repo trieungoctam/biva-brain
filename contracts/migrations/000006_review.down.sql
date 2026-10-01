@@ -1,0 +1,4 @@
+DROP FUNCTION IF EXISTS reject_review(UUID, TEXT, TEXT);
+DROP FUNCTION IF EXISTS apply_review(UUID, TEXT);
+DROP TABLE IF EXISTS review_items;
+ALTER TABLE items DROP CONSTRAINT IF EXISTS items_scope_key_validity;

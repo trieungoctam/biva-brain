@@ -1,6 +1,7 @@
 """Điểm vào ai-worker: chạy Runner tới khi nhận SIGINT/SIGTERM.
 
 Biến môi trường: BIVA_DATABASE_URL (bắt buộc), BIVA_TEI_URL (mặc định http://localhost:8081),
+BIVA_REDIS_URL (quota LLM; trống = không giới hạn), GEMINI_API_KEY (job dùng LLM),
 BIVA_WORKER_CONCURRENCY (mặc định 4), BIVA_WORKER_LEASE_SECONDS (mặc định 60).
 """
 
@@ -12,9 +13,11 @@ import os
 import signal
 
 import asyncpg
+import redis.asyncio as aioredis
 
-from biva_worker import __version__, handlers, telemetry
+from biva_worker import __version__, handlers, llm, telemetry
 from biva_worker.embed import TEIEmbedder
+from biva_worker.llm.usage import PgUsageSink
 from biva_worker.runner import Runner, init_connection
 
 log = logging.getLogger("biva_worker")
@@ -32,7 +35,12 @@ async def main() -> None:
     # +1 kết nối cho LISTEN, +concurrency cho heartbeat chạy song song với handler.
     pool = await asyncpg.create_pool(url, min_size=1, max_size=2 * concurrency + 1, init=init_connection)
     embedder = TEIEmbedder(os.environ.get("BIVA_TEI_URL", "http://localhost:8081"))
-    registry = handlers.build(pool, embedder)
+    redis_url = os.environ.get("BIVA_REDIS_URL")
+    redis = aioredis.from_url(redis_url) if redis_url else None
+    llm_client = llm.LLMClient(
+        llm.load(), quota=llm.RedisQuota(redis) if redis else llm.NoQuota(), usage_sink=PgUsageSink(pool)
+    )
+    registry = handlers.build(pool, embedder, llm_client)
     try:
         runner = Runner(pool, registry, lease_seconds=lease, concurrency=concurrency)
         stop = asyncio.Event()
@@ -51,6 +59,8 @@ async def main() -> None:
         log.info("ai-worker dừng")
     finally:
         await embedder.aclose()
+        if redis is not None:
+            await redis.aclose()
         await pool.close()
         tracing.shutdown()  # flush span còn trong batch
 

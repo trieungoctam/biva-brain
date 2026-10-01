@@ -69,10 +69,14 @@ GIN trên `tsv`; HNSW trên `embedding`.
 ### Duyệt & build
 | Bảng | Vai trò | Cột chính |
 |---|---|---|
-| `review_items` | hàng đợi duyệt | `change_kind` (NEW · CHANGE · REMOVE · DUPLICATE · CONFLICT · OVERRIDE · PROMOTE), `before`, `after`, `risk`, `status`, `decided_by` |
+| `review_items` | hàng đợi duyệt (migration 000006) | `key`, `change_kind` (NEW · CHANGE · REMOVE · DUPLICATE · CONFLICT; OVERRIDE · PROMOTE ở M2+), `item_id` (bản pending), `target_item_id` (bản active), `before`, `after`, `risk` (low · high), `status` (open · applied · rejected · stale), `proposed_by`, `decided_by` |
 | `snapshots` | Bot Definition lắp từ artifact `valid` + hồ sơ logic `active` | `bot_id`, `version`, `built_from` (version từng tầng), `definition`, `artifact_versions`, `status` (assembled · testing · passed · failed · published · retired), `test_report` |
 | `test_cases` | regression theo tầng | `layer`, `operator_id`, `bot_id`, `input`, `expected` (must_call_tool, must_mention, must_not_say…), `source_item_id` |
 | `releases` | yêu cầu và lịch sử **phát hành snapshot** (đánh dấu bản chính thức) | `stage` (staging · production), `status` (requested · approved · published · rolled_back · rejected), `requested_by`, `approved_by` |
+
+Apply/reject bằng SQL `apply_review(id, actor)` → `{"status": "applied" | "stale", ...}` và
+`reject_review(id, actor, reason)`; cả hai ghi `audit_log`. Ràng buộc `items_scope_key_validity` (exclusion, btree_gist):
+các bản `active` cùng (operator, bot, tầng, key) không chồng khoảng `[valid_from, valid_to)`.
 
 ### Artifact của bot (AI viết, Brain kiểm)
 | Bảng | Vai trò | Cột chính |

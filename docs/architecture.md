@@ -72,8 +72,13 @@ Mỗi tầng chứa 5 loại tri thức:
 3. Entity resolution: alias L1 → trigram trên `name_norm` → co-occurrence.
 4. Diff với trạng thái hiện tại của scope: `NEW | CHANGE | REMOVE | DUPLICATE | CONFLICT`.
 5. Classify tầng so với L1: giống thông lệ / override / ứng viên chung.
-6. Review: giá, giờ, chính sách huỷ **bắt buộc người duyệt**; rủi ro thấp tự apply.
-7. Apply trong 1 transaction: bản cũ → `superseded` (`superseded_by`), bản mới → `active`; data vận hành lên version mới.
+6. Review: **tự apply** chỉ khi vô hại — nhắc lại điều đã đúng (DUPLICATE) hoặc thêm mới (NEW) ở topic không
+   đụng tiền/giờ. **Bắt buộc người duyệt**: mọi CHANGE/REMOVE (sửa, bỏ điều đang đúng), CONFLICT, và mọi đề xuất về
+   giá, lịch chạy, huỷ vé, thanh toán.
+7. Apply trong 1 transaction (SQL `apply_review`, dùng chung Go/Python): bản cũ → `superseded` (`superseded_by`),
+   bản mới → `active`; **bản mới có hiệu lực từ ngày tương lai** thì bản cũ vẫn `active` với `valid_to` = ngày đó
+   (job `expire` chuyển sang `expired` khi tới hạn) — DB chặn hai bản active cùng key chồng khoảng hiệu lực.
+   Đề xuất khác đang mở cho cùng key → `stale`. Data vận hành lên version mới.
 8. Enqueue `mark_stale → consolidate → promote → refresh_pages`.
 
 ### 3.2 Job nền
