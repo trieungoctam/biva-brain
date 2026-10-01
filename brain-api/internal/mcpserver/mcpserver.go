@@ -23,7 +23,9 @@ import (
 
 	"github.com/trieungoctam/biva-brain/brain-api/internal/audit"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/authz"
+	"github.com/trieungoctam/biva-brain/brain-api/internal/kb"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/oauth"
+	"github.com/trieungoctam/biva-brain/brain-api/internal/pack"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/recall"
 )
 
@@ -35,6 +37,8 @@ type Server struct {
 	oauth    *oauth.Server // nil = chỉ nhận token cá nhân
 	topics   []Topic       // bộ topic của template L1 (kb/): kiểm đầu vào và hướng dẫn AI chọn topic
 	recaller *recall.Recaller
+	packs    *pack.Builder
+	template kb.Template // template ngành (kb/L1/<ngành>/template.yaml): get_bot_spec, artifact bắt buộc
 
 	mu        sync.Mutex
 	operators map[string]*mcp.Server // MCP server theo nhà xe, dựng một lần
@@ -68,6 +72,11 @@ func (s *Server) topicGuide() string {
 func New(db *pgxpool.Pool, version string, topics []Topic) *Server {
 	s := &Server{db: db, version: version, topics: topics, operators: map[string]*mcp.Server{},
 		recaller: &recall.Recaller{DB: db}}
+	specs := make([]pack.TopicSpec, len(topics))
+	for i, t := range topics {
+		specs[i] = pack.TopicSpec{ID: t.ID, Title: t.Title, Required: t.Required}
+	}
+	s.packs = &pack.Builder{DB: db, Topics: specs}
 	s.platform = s.newPlatformServer()
 	return s
 }
@@ -75,6 +84,12 @@ func New(db *pgxpool.Pool, version string, topics []Topic) *Server {
 // WithOAuth bật token OAuth (ChatGPT connector) bên cạnh token cá nhân.
 func (s *Server) WithOAuth(o *oauth.Server) *Server {
 	s.oauth = o
+	return s
+}
+
+// WithTemplate: template ngành cho get_bot_spec / artifact bắt buộc.
+func (s *Server) WithTemplate(t kb.Template) *Server {
+	s.template = t
 	return s
 }
 
@@ -218,6 +233,7 @@ func (s *Server) operatorServer(operatorID string) *mcp.Server {
 	})
 	addOperatorTools(srv, s.db, operatorID)
 	s.addRecallTools(srv, operatorID)
+	s.addBuildTools(srv, operatorID)
 	s.addReviewTools(srv, operatorID)
 	s.operators[operatorID] = srv
 	return srv

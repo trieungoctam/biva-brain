@@ -370,7 +370,7 @@ func (r *Recaller) load(ctx context.Context, ids []string) ([]Hit, error) {
 			Label  string `json:"label"`
 		}
 		_ = json.Unmarshal(meta, &m)
-		h.Layer, h.Label = layerLabel(int(layer), h.Locked, m.Label)
+		h.Layer, h.Label = LayerLabel(int(layer), h.Locked, m.Label)
 		switch {
 		case docID != nil:
 			h.Source = &Source{DocumentID: *docID, Channel: deref(channel), ReceivedAt: received}
@@ -402,7 +402,8 @@ func Facts(value []byte) map[string]string {
 	return out
 }
 
-func layerLabel(layer int, locked bool, metaLabel string) (string, string) {
+// LayerLabel: nhãn tầng + nhãn hiển thị bắt buộc khi dùng trong artifact.
+func LayerLabel(layer int, locked bool, metaLabel string) (string, string) {
 	switch layer {
 	case 0:
 		return "L0", "quy tắc nền tảng (bắt buộc)"

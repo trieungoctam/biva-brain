@@ -71,7 +71,7 @@ func GetSource(ctx context.Context, db *pgxpool.Pool, operatorID, itemID string)
 	if layer >= 2 && (opID == nil || *opID != operatorID) {
 		return res, ErrNotFound
 	}
-	it.Layer, _ = layerLabel(int(layer), false, "")
+	it.Layer, _ = LayerLabel(int(layer), false, "")
 	it.Key, it.SupersededBy = deref(key), deref(superseded)
 	res.KBFile = meta.Source
 	res.Documents = []Document{}

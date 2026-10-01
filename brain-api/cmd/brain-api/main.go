@@ -133,7 +133,8 @@ func serve(cfg config.Config) error {
 	mux := httpapi.NewRouter(db)
 	authServer := oauth.New(db.Primary, cfg.PublicURL)
 	authServer.Mount(mux)
-	mcpSrv := mcpserver.New(db.Primary, version, topics).WithOAuth(authServer)
+	mcpSrv := mcpserver.New(db.Primary, version, topics).WithOAuth(authServer).
+		WithTemplate(bundle.Templates["xe-khach"])
 	if cfg.TEIURL != "" {
 		mcpSrv.WithEmbedder(recall.NewTEI(cfg.TEIURL))
 	} else {

@@ -14,6 +14,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/trieungoctam/biva-brain/brain-api/internal/authz"
+	"github.com/trieungoctam/biva-brain/brain-api/internal/kb"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/queue"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/testdb"
 )
@@ -57,7 +58,14 @@ func setup(t *testing.T) *fixture {
 	must(err)
 
 	mux := http.NewServeMux()
-	New(pool, "test", []Topic{{"fare", "Giá vé", true}, {"pets", "Thú cưng", false}, {"luggage", "Hành lý", false}, {"children", "Trẻ em", false}}).Mount(mux)
+	tpl := kb.Template{Industry: "xe-khach", Version: 1, Sections: []kb.Section{
+		{Topic: "fare", Level: "required", Title: "Giá vé", Facts: []string{"giá theo tuyến"}, Questions: []string{"Giá vé?"}},
+		{Topic: "pets", Level: "recommended", Title: "Thú cưng", Questions: []string{"Có nhận thú cưng?"}}},
+		Capabilities: []kb.Capability{{ID: "fare", Level: "required", Title: "Tính giá vé"}}}
+	tpl.Artifacts.Required = []string{"system_prompt", "faq"}
+	tpl.Artifacts.Recommended = []string{"flows"}
+	New(pool, "test", []Topic{{"fare", "Giá vé", true}, {"pets", "Thú cưng", false}, {"luggage", "Hành lý", false}, {"children", "Trẻ em", false}}).
+		WithTemplate(tpl).Mount(mux)
 	srv := httptest.NewServer(mux)
 	f.url = srv.URL
 
@@ -185,6 +193,7 @@ func TestGetOperationScopedToOperator(t *testing.T) {
 	}
 	readOnlyWant := map[string]bool{"get_operation": true, "list_review_queue": true, "get_review_item": true,
 		"list_knowledge": true, "recall_knowledge": true, "query_data": true, "get_source": true, "get_operator_overview": true,
+		"get_bot_spec": true, "get_knowledge_pack": true, "get_artifact": true, "list_artifacts": true, "save_artifact": false,
 		"ingest": false, "submit_knowledge": false, "propose_item": false, "apply_review": false}
 	if len(tools.Tools) != len(readOnlyWant) {
 		t.Fatalf("có %d tool, muốn %d", len(tools.Tools), len(readOnlyWant))

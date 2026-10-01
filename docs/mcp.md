@@ -91,7 +91,8 @@ Thứ tự ưu tiên khi AI cần thêm (giống reflect của Hindsight):
 | `tool_spec` | bot được gọi tool nào, khi nào; mỗi tool trỏ tới **capability** trong hồ sơ logic |
 | `fallbacks` | câu trả lời khi thiếu dữ liệu / ngoài phạm vi |
 
-**Hợp đồng trích dẫn**: mỗi câu mang thông tin trong artifact gắn `[[it_xxx]]` trỏ tới item của Brain.
+**Hợp đồng trích dẫn**: mỗi câu mang thông tin trong artifact gắn `[[it_xxx]]` trỏ tới item của Brain
+(id thật là UUID của item, vd `[[1c725bb6-cf77-4e81-bc66-dd29f32536d9]]`; ví dụ dưới viết tắt cho dễ đọc).
 
 ```markdown
 - Nhà xe không nhận chó mèo trên xe. [[it_311]]
@@ -128,7 +129,7 @@ Cột **Mốc** = mốc dự kiến (xem lộ trình trong [architecture.md](arc
 | Tool | Mốc | Cờ | Mô tả |
 |---|---|---|---|
 | `get_operator_overview` | M1 | RO | thông tin nhà xe, coverage theo template (mục bắt buộc còn thiếu), số item theo trạng thái, đề xuất chờ duyệt, job đang chạy/lỗi 24h; artifact/logic stale khi có (M2) |
-| `get_knowledge_pack` | M1 | RO | gói tri thức cho build (§3); tham số `purpose` (build · faq · logic · review), `budget_tokens`, `as_of` |
+| `get_knowledge_pack` | M1 | RO | gói tri thức cho build (§3); tham số `purpose` (build · faq · logic · review — thứ tự ưu tiên khi cắt), `budget_tokens` (mặc định 6000), `as_of`. Rule locked luôn có; L2 thay thông lệ L1 cùng topic (`overrides`); thông lệ dùng khi nhà xe chưa có, mang nhãn; data chỉ tóm tắt (mẫu có id); `gaps`; `omitted` khi bị cắt. Cache theo version tri thức của scope (`knowledge_version`) |
 | `recall_knowledge` | M1 | RO | tìm item L0/L1/L2 theo `query` (semantic + keyword, có dấu hay không đều được), `valid_at` (ngày), `kinds`, `topics`, `max_tokens`; mỗi kết quả có `id` để trích dẫn, tầng, **nhãn** (vd "thông lệ chung"), nguồn; TEI lỗi → chỉ keyword, báo `degraded` |
 | `query_data` | M1 | RO | data vận hành (tuyến, giá, lịch, điểm đón) hiệu lực vào `date`: lọc chính xác theo `topics`, `match` (đủ từ, không dấu), `facts`; `include_upcoming` → bản sẽ có hiệu lực (giá mới đã chốt) |
 | `get_source` | M1 | RO | nguồn của một item (nhận cả `[[id]]`): tin/tài liệu gốc, kênh, ai gửi, ai duyệt, các lần nhà xe nhắc lại; L0/L1 → file `kb/` |
@@ -170,9 +171,9 @@ Cột **Mốc** = mốc dự kiến (xem lộ trình trong [architecture.md](arc
 ### 5.4 Build bot
 | Tool | Mốc | Cờ | Mô tả |
 |---|---|---|---|
-| `get_bot_spec` | M1 | RO | bot cần artifact nào, mục bắt buộc, tool/capability bắt buộc (từ L1 + L0) |
-| `get_artifact` / `list_artifacts` | M1 | RO | artifact hiện có, version, trạng thái |
-| `save_artifact` | M1 | | lưu bản nháp (version mới, không ghi đè) |
+| `get_bot_spec` | M1 | RO | artifact bắt buộc/khuyến nghị kèm trạng thái hiện có, mục tri thức theo template + độ phủ (`operator` · `industry_default` · `missing`, kèm câu hỏi cho nhà xe), capability, `locked_rules` phải có trong system_prompt, hướng dẫn trích dẫn |
+| `get_artifact` / `list_artifacts` | M1 | RO | nội dung + trích dẫn theo dòng + lịch sử version; danh sách bản mới nhất + artifact bắt buộc còn thiếu |
+| `save_artifact` | M1 | | lưu bản nháp (version mới, không ghi đè; y hệt bản hiện tại thì không tạo version); bot theo kênh (`zalo` mặc định), tự tạo; `[[id]]` phải là item của nhà xe/tri thức nền (sai → lỗi theo dòng), item hết hiệu lực → `warnings`; `base_version` chống ghi đè |
 | `validate_artifact` | M1 | RO | kiểm tra theo §4, lỗi có vị trí |
 | `list_stale` | M2 | RO | artifact + hồ sơ logic bị stale, kèm đoạn/tham số và item liên quan |
 | `export_bot` | M2 | RO | `json` · `markdown` · `faq_csv` từ bản đã validate |
