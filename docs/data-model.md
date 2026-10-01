@@ -12,7 +12,8 @@ Thiết kế dữ liệu của BIVA Brain trên PostgreSQL 16 (pgvector, pg_trgm
 4. **Scope bằng cột, không bằng bảng riêng**: `layer` (0–3) + `operator_id` + `bot_id`,
    có CHECK để tầng và scope luôn khớp nhau.
 5. **Data vận hành tách khỏi tri thức mềm**: giá/lịch/điểm đón ở bảng riêng, bot đọc qua tool.
-6. **Không lưu thông tin khách hàng**: log hội thoại có `expires_at`.
+6. **Không lưu thông tin khách hàng**: transcript (sandbox/UAT, sau này từ runtime) ẩn danh và có `expires_at`.
+7. **Mọi thứ AI viết đều truy về tri thức**: `artifact_citations` và `logic_param_sources` là cơ sở để đánh dấu stale.
 
 ## Nhóm bảng
 
@@ -20,12 +21,12 @@ Thiết kế dữ liệu của BIVA Brain trên PostgreSQL 16 (pgvector, pg_trgm
 | Bảng | Vai trò | Cột chính |
 |---|---|---|
 | `operators` | nhà xe | `id`, `name`, `status` (onboarding · live · paused · offboarded) |
-| `bots` | bot theo kênh của nhà xe | `id`, `operator_id`, `channel`, `config` (draft), `active_snapshot_id` |
+| `bots` | bot theo kênh của nhà xe | `id`, `operator_id`, `channel` (zalo · messenger · web), `current_snapshot_id` |
 
 ### Nguồn
 | Bảng | Vai trò | Cột chính |
 |---|---|---|
-| `documents` | nội dung gốc nhà xe/team gửi | `layer`, `operator_id`, `source` (zalo · excel · web · form · call · console), `content`, `content_hash` (chống trùng), `submitted_by`, `received_at` |
+| `documents` | nội dung gốc nhà xe/team gửi | `layer`, `operator_id`, `source` (zalo · excel · form · console), `content`, `content_hash` (chống trùng), `submitted_by`, `received_at` |
 
 ### Tri thức (`items`)
 | Nhóm cột | Cột | Ghi chú |
@@ -69,9 +70,9 @@ GIN trên `tsv`; HNSW trên `embedding`.
 | Bảng | Vai trò | Cột chính |
 |---|---|---|
 | `review_items` | hàng đợi duyệt | `change_kind` (NEW · CHANGE · REMOVE · DUPLICATE · CONFLICT · OVERRIDE · PROMOTE), `before`, `after`, `risk`, `status`, `decided_by` |
-| `snapshots` | Bot Definition đã compile | `bot_id`, `version`, `built_from` (version từng tầng), `definition`, `status` (draft · testing · passed · failed · active · retired), `test_report` |
+| `snapshots` | Bot Definition lắp từ artifact `valid` + hồ sơ logic `active` | `bot_id`, `version`, `built_from` (version từng tầng), `definition`, `artifact_versions`, `status` (assembled · testing · passed · failed · published · retired), `test_report` |
 | `test_cases` | regression theo tầng | `layer`, `operator_id`, `bot_id`, `input`, `expected` (must_call_tool, must_mention, must_not_say…), `source_item_id` |
-| `releases` | yêu cầu và lịch sử **phát hành snapshot** cho runtime | `stage` (staging · production), `status` (requested · approved · published · rolled_back · rejected), `requested_by`, `approved_by` |
+| `releases` | yêu cầu và lịch sử **phát hành snapshot** (đánh dấu bản chính thức) | `stage` (staging · production), `status` (requested · approved · published · rolled_back · rejected), `requested_by`, `approved_by` |
 
 ### Artifact của bot (AI viết, Brain kiểm)
 | Bảng | Vai trò | Cột chính |
@@ -79,7 +80,7 @@ GIN trên `tsv`; HNSW trên `embedding`.
 | `bot_artifacts` | các phần của bot: persona · system_prompt · faq · flows · tool_spec · fallbacks | `bot_id`, `kind`, `version`, `content`, `status` (draft · valid · invalid · stale · published), `author` (ai:<session> / user), `validation` (JSONB lỗi có vị trí) |
 | `artifact_citations` | câu/đoạn trong artifact ↔ item được trích dẫn | `artifact_id`, `item_id`, `location` (dòng/đoạn) — dùng để đánh dấu **stale** khi item rời `active` |
 
-`snapshots` = tập artifact đã `valid` của một bot tại một thời điểm (đầu vào cho `export_bot` và `releases`).
+Snapshot là đầu vào cho `export_bot` và `releases`. Artifact chỉ được lắp vào snapshot khi `valid` và không `stale`.
 
 ### Tri thức logic (xem [logic-knowledge.md](logic-knowledge.md))
 | Bảng | Vai trò | Cột chính |
@@ -93,7 +94,7 @@ GIN trên `tsv`; HNSW trên `embedding`.
 
 Bài học về code dùng chung bảng `items` (`kind=lesson`, `topic=code:<capability>`).
 
-### Runtime (ngoài phạm vi chạy bot, chỉ là điểm nối)
+### Runtime (giai đoạn sau)
 | Bảng | Vai trò | Cột chính |
 |---|---|---|
 | `runtime_clients` | runtime được phép gọi Runtime API | `id`, `name`, `api_key_hash`, `webhook_url`, `webhook_secret_ref`, `bot_ids[]`, `status` |
@@ -101,9 +102,9 @@ Bài học về code dùng chung bảng `items` (`kind=lesson`, `topic=code:<cap
 ### Tín hiệu vận hành (có TTL)
 | Bảng | Vai trò |
 |---|---|
-| `chat_logs` | transcript ẩn danh do runtime gửi qua Runtime API (tuỳ chọn), `expires_at` mặc định 30 ngày |
-| `feedback` | runtime gửi qua Runtime API: thumbs_down · staff_correction · handoff · repeat_question → nguồn cho `learn` |
-| `knowledge_gaps` | câu khách hỏi chưa có dữ liệu, gộp theo `question_norm`, đếm `hits` |
+| `chat_logs` | transcript ẩn danh: sandbox/UAT (hiện tại), runtime qua Runtime API (giai đoạn sau); `expires_at` mặc định 30 ngày |
+| `feedback` | 👎 / sửa trong sandbox/UAT (hiện tại), từ runtime (giai đoạn sau): thumbs_down · staff_correction · handoff · repeat_question → lesson + test case |
+| `knowledge_gaps` | câu bot chưa trả lời được (test, sandbox/UAT; sau này từ runtime), gộp theo `question_norm`, đếm `hits` → câu hỏi cho nhà xe |
 
 ### Queue & audit
 | Bảng | Vai trò | Cột chính |
@@ -122,9 +123,15 @@ documents ──parse──► items(pending) ──diff──► review_items(o
                                                    ▼
         items(active) + bản cũ → superseded ──► routes/trips/fares/pickup_points (version mới)
                 │
+                ├─► mark_stale: artifact_citations / logic_param_sources trỏ tới bản cũ
+                │               → bot_artifacts(stale), logic_profiles(stale)
+                │                     │ AI /refresh_bot (MCP)
+                │                     ▼
+                │               bot_artifacts(draft → valid) ──► snapshots(assembled → passed) ──► releases / export
+                │
                 ▼ consolidate
         items(kind=observation) + observation_sources
-                │ promote                 │ compile
-                ▼                         ▼
-        review_items(PROMOTE)       snapshots(draft → testing → passed) ──► releases ──webhook──► runtime
+                │ promote
+                ▼
+        review_items(PROMOTE)
 ```
