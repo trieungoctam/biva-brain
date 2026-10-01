@@ -1,0 +1,15 @@
+{
+  "industry": "xe-khach",
+  "features": [
+    {
+      "id": "booking.hold_with_ttl",
+      "capability": "booking",
+      "description": "Giữ chỗ có thời hạn",
+      "params_schema": {
+        "ttl_seconds": {
+          "type": "integer"
+        }
+      }
+    }
+  ]
+}

@@ -40,6 +40,7 @@ tiers:
 purposes:
   ingest:      {tier: small,  tokens_per_minute: 400000, requests_per_minute: 120}
   knowledge:   {tier: small,  tokens_per_minute: 400000, requests_per_minute: 120}
+  logic:       {tier: small,  tokens_per_minute: 400000, requests_per_minute: 120}   # extract_logic_spec
   validate:    {tier: strong, tokens_per_minute: 200000, requests_per_minute: 60}
   test:        {tier: strong, tokens_per_minute: 200000, requests_per_minute: 60}
   interactive: {tier: strong, tokens_per_minute: 200000, requests_per_minute: 60}

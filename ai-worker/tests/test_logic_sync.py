@@ -15,6 +15,7 @@ import asyncpg
 import pytest
 
 from biva_worker import logic_sync
+from biva_worker.runner import init_connection
 
 DB_URL = os.environ.get("BIVA_TEST_DATABASE_URL")
 needs_db = pytest.mark.skipif(not DB_URL, reason="đặt BIVA_TEST_DATABASE_URL để chạy test logic_sync")
@@ -101,7 +102,7 @@ def make_repo(path, item: str, calc: str = CALC_PY) -> None:
 @needs_db
 def test_sync_modules_profiles_tests_chunks_and_forget():
     async def t() -> None:
-        pool = await asyncpg.create_pool(DB_URL)
+        pool = await asyncpg.create_pool(DB_URL, init=init_connection)
         op = f"lgx{uuid.uuid4().hex[:8]}"
         try:
             await pool.execute("INSERT INTO operators (id, name) VALUES ($1, 'Logic test')", op)

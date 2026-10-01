@@ -22,7 +22,6 @@ URL thì clone --depth 1 vào thư mục tạm mỗi lần chạy (repo nhỏ); 
 from __future__ import annotations
 
 import ast
-import json
 import os
 import shutil
 import subprocess
@@ -158,7 +157,7 @@ async def sync(pool: asyncpg.Pool, embedder: Embedder, source: str) -> dict[str,
                         """INSERT INTO logic_modules (id, version, layer, operator_id, capability, summary,
                                entrypoint, features, params_schema, hooks, required_tests, deprecated_by,
                                repo, path, commit, synced_at)
-                           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,$11,$12,$13,$14,$15, now())
+                           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15, now())
                            ON CONFLICT (id, version) DO UPDATE SET
                                layer = EXCLUDED.layer, operator_id = EXCLUDED.operator_id,
                                capability = EXCLUDED.capability, summary = EXCLUDED.summary,
@@ -176,8 +175,8 @@ async def sync(pool: asyncpg.Pool, embedder: Embedder, source: str) -> dict[str,
                         doc["summary"],
                         doc["entrypoint"],
                         doc.get("features", []),
-                        json.dumps(doc.get("params_schema", {})),
-                        json.dumps(doc.get("hooks", [])),
+                        doc.get("params_schema", {}),
+                        doc.get("hooks", []),
                         doc.get("required_tests", []),
                         doc.get("deprecated_by"),
                         repo,
@@ -229,8 +228,8 @@ async def sync(pool: asyncpg.Pool, embedder: Embedder, source: str) -> dict[str,
                             cap["mode"],
                             mod_id,
                             int(mod_ver or 1),
-                            json.dumps(params),
-                            json.dumps(cap.get("hooks", {})),
+                            params,
+                            cap.get("hooks", {}),
                             cap.get("entrypoint"),
                             cap.get("decision"),
                             cap.get("derived_from"),
@@ -273,14 +272,14 @@ async def sync(pool: asyncpg.Pool, embedder: Embedder, source: str) -> dict[str,
                     await con.executemany(
                         """INSERT INTO logic_tests (operator_id, module_id, capability, input, expected,
                                note, source_item_id, commit, synced_at)
-                           VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6, $7::text, $8, now())""",
+                           VALUES ($1, $2, $3, $4, $5, $6, $7::text, $8, now())""",
                         [
                             (
                                 operator,
                                 module_id,
                                 doc["capability"],
-                                json.dumps(c["in"]),
-                                json.dumps({"out": c["out"]} if "out" in c else {"error": c.get("error")}),
+                                c["in"],
+                                ({"out": c["out"]} if "out" in c else {"error": c.get("error")}),
                                 c.get("note"),
                                 c.get("source"),
                                 commit,

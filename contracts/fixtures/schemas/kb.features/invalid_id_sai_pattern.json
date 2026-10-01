@@ -1,0 +1,10 @@
+{
+  "industry": "xe-khach",
+  "features": [
+    {
+      "id": "holiday surcharge",
+      "capability": "fare",
+      "description": "x"
+    }
+  ]
+}

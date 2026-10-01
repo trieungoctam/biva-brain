@@ -69,6 +69,22 @@ func writeKB(t *testing.T, l0, l1 string) string {
 	return dir
 }
 
+// writeKBWithFeatures như writeKB + features.yaml của ngành.
+func writeKBWithFeatures(t *testing.T, l0, l1, features string) string {
+	t.Helper()
+	dir := writeKB(t, l0, l1)
+	if err := os.WriteFile(filepath.Join(dir, "L1", "xe-khach", "features.yaml"), []byte(features), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+const featuresOK = `industry: xe-khach
+features:
+  - {id: fare.seed_fare, capability: fare, description: "seed fare"}
+  - {id: booking.hold, capability: booking, description: "giữ chỗ"}
+`
+
 const l0OK = `layer: 0
 rules:
   - {key: l0.test.a, kind: policy, topic: grounding, locked: true, text: "Không bịa thông tin cho khách."}
@@ -189,5 +205,49 @@ func TestSyncLifecycle(t *testing.T) {
 	pool.QueryRow(ctx, `SELECT count(*) FROM audit_log WHERE target LIKE 'kb:l_.test.%' AND actor = 'test'`).Scan(&audits)
 	if audits != 5 { // 3 add + 1 update + 1 retire
 		t.Errorf("audit = %d dòng, muốn 5", audits)
+	}
+}
+
+func TestSyncFeaturesLifecycle(t *testing.T) {
+	ctx := context.Background()
+	pool := testdb.Pool(t)
+	cleanup := func() {
+		pool.Exec(ctx, `DELETE FROM logic_features WHERE id IN ('fare.seed_fare', 'booking.hold')`)
+	}
+	cleanup()
+	t.Cleanup(cleanup)
+
+	sync := func(features string) Report {
+		t.Helper()
+		b, err := Load(writeKBWithFeatures(t, l0OK, l1OK, features), schemas)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rep, err := Sync(ctx, pool, b, "test", false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return rep
+	}
+	status := func(id string) string {
+		var s string
+		pool.QueryRow(ctx, `SELECT status FROM logic_features WHERE id = $1`, id).Scan(&s)
+		return s
+	}
+
+	if rep := sync(featuresOK); rep.Count("feature.add") != 2 || status("fare.seed_fare") != "active" {
+		t.Fatalf("lần đầu: %+v status=%s", rep, status("fare.seed_fare"))
+	}
+	if rep := sync(featuresOK); rep.Count("feature.add") != 0 {
+		t.Fatalf("idempotent: %+v", rep)
+	}
+	// Bỏ booking.hold khỏi kb/ → deprecated (không xoá); fare giữ nguyên.
+	only := strings.Replace(featuresOK, "  - {id: booking.hold, capability: booking, description: \"giữ chỗ\"}\n", "", 1)
+	if rep := sync(only); rep.Count("feature.deprecate") != 1 || status("booking.hold") != "deprecated" {
+		t.Fatalf("deprecate: %+v status=%s", rep, status("booking.hold"))
+	}
+	// Thêm lại → active trở lại.
+	if rep := sync(featuresOK); rep.Count("feature.add") != 0 || status("booking.hold") != "active" {
+		t.Fatalf("hồi phục: %+v status=%s", rep, status("booking.hold"))
 	}
 }

@@ -73,7 +73,11 @@ cd ai-worker && uv run pytest -q
   sync repo → `logic_modules/logic_profiles/logic_param_sources/logic_tests/code_chunks/logic_syncs`
   (migration 000015); chunk theo hàm/lớp gắn commit (commit mới xoá chunk cũ); no-op theo HEAD;
   scheduler tick mỗi phút khi đặt `BIVA_INTEGRATIONS_REPO`; profile/case của nhà xe chưa onboard bị
-  bỏ qua và retry ở tick sau. Còn: S2.5.3 feature catalog seed + `extract_logic_spec`,
-  S2.5.4–S2.5.6 (find_similar_operators, compare_logic, plan/propose, NO_CAPABILITY), S2.5.7 prompt.
+  bỏ qua và retry ở tick sau. S2.5.3 xong: seed 16 feature `kb/L1/xe-khach/features.yaml`
+  (schema kb/features + fixture 2 phía; `kb sync` upsert `logic_features`, rời bundle → deprecated) +
+  job `logic.spec` (ai-worker `logic_spec.py`, LLM purpose `logic`): ánh xạ tri thức đã duyệt vào feature
+  catalog → `logic_specs` (migration 000016), feature lạ → `proposed_features` chờ review; embedding
+  rules_text qua TEI (optional). Còn: S2.5.4–S2.5.6 (find_similar_operators, compare_logic,
+  get_logic_spec, plan/propose, NO_CAPABILITY), S2.5.7 prompt.
 - Linear: workspace dpos, project "BIVA Brain"; mỗi story xong thì comment kết quả + link CI rồi chuyển Done
   (chưa đạt hết AC thì để In Progress và ghi rõ phần thiếu).

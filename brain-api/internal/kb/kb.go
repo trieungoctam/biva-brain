@@ -75,11 +75,20 @@ type Template struct {
 	} `json:"artifacts"`
 }
 
+// Feature: một điểm khác biệt về cách xử lý (logic) dùng so khớp nhà xe — kb/L1/<ngành>/features.yaml.
+type Feature struct {
+	ID           string         `json:"id"`
+	Capability   string         `json:"capability"`
+	Description  string         `json:"description"`
+	ParamsSchema map[string]any `json:"params_schema,omitempty"`
+}
+
 // Bundle là toàn bộ nội dung kb/ đã kiểm tra.
 type Bundle struct {
 	Rules     []Rule
 	Templates map[string]Template        // theo ngành
 	Entities  map[string][]entity.Entity // từ điển thực thể + alias theo ngành (entities.yaml)
+	Features  map[string][]Feature       // danh mục feature logic L1 theo ngành (features.yaml)
 }
 
 // Load đọc và kiểm tra kb/: schema, key duy nhất, prefix key khớp tầng, topic L1 có trong template ngành.
@@ -98,8 +107,13 @@ func Load(kbDir, schemasDir string) (*Bundle, error) {
 	if err != nil {
 		return nil, fmt.Errorf("schema kb/entities: %w", err)
 	}
+	featuresSchema, err := compiler.Compile(filepath.Join(schemasDir, "kb", "features.schema.json"))
+	if err != nil {
+		return nil, fmt.Errorf("schema kb/features: %w", err)
+	}
 
-	b := &Bundle{Templates: map[string]Template{}, Entities: map[string][]entity.Entity{}}
+	b := &Bundle{Templates: map[string]Template{}, Entities: map[string][]entity.Entity{},
+		Features: map[string][]Feature{}}
 	files, err := filepath.Glob(filepath.Join(kbDir, "L0", "*.yaml"))
 	if err != nil {
 		return nil, err
@@ -132,6 +146,35 @@ func Load(kbDir, schemasDir string) (*Bundle, error) {
 				problems = append(problems, fmt.Sprintf("%s: industry %q phải trùng tên thư mục %q", rel, t.Industry, want))
 			}
 			b.Templates[t.Industry] = t
+			continue
+		}
+		if filepath.Base(path) == "features.yaml" {
+			if err := featuresSchema.Validate(doc); err != nil {
+				return nil, fmt.Errorf("%s: %v", rel, err)
+			}
+			var f struct {
+				Industry string    `json:"industry"`
+				Features []Feature `json:"features"`
+			}
+			if err := remarshal(doc, &f); err != nil {
+				return nil, fmt.Errorf("%s: %w", rel, err)
+			}
+			if want := filepath.Base(filepath.Dir(path)); f.Industry != want {
+				problems = append(problems, fmt.Sprintf("%s: industry %q phải trùng tên thư mục %q", rel, f.Industry, want))
+			}
+			// Template đọc sau theo thứ tự tên file — check capability chuyển xuống cuối Load.
+			ids := map[string]bool{}
+			for _, feat := range f.Features {
+				prefix, _, _ := strings.Cut(feat.ID, ".")
+				if prefix != feat.Capability {
+					problems = append(problems, fmt.Sprintf("%s: id %s phải có tiền tố %q.", rel, feat.ID, feat.Capability))
+				}
+				if ids[feat.ID] {
+					problems = append(problems, fmt.Sprintf("%s: id %s trùng", rel, feat.ID))
+				}
+				ids[feat.ID] = true
+			}
+			b.Features[f.Industry] = f.Features
 			continue
 		}
 		if filepath.Base(path) == "entities.yaml" {
@@ -199,6 +242,19 @@ func Load(kbDir, schemasDir string) (*Bundle, error) {
 			problems = append(problems, fmt.Sprintf("%s: %s dùng topic %q không có trong template", r.Source, r.Key, r.Topic))
 		}
 	}
+	// Feature phải thuộc capability của template ngành (template đọc sau features theo thứ tự tên file).
+	for industry, feats := range b.Features {
+		t, ok := b.Templates[industry]
+		if !ok {
+			problems = append(problems, fmt.Sprintf("kb/L1/%s/features.yaml: ngành %s chưa có template.yaml", industry, industry))
+			continue
+		}
+		for _, feat := range feats {
+			if !t.hasCapability(feat.Capability) {
+				problems = append(problems, fmt.Sprintf("kb/L1/%s/features.yaml: capability %s không có trong template", industry, feat.Capability))
+			}
+		}
+	}
 	if len(problems) > 0 {
 		return nil, errors.New(strings.Join(problems, "\n"))
 	}
@@ -208,6 +264,15 @@ func Load(kbDir, schemasDir string) (*Bundle, error) {
 func (t Template) hasTopic(topic string) bool {
 	for _, s := range t.Sections {
 		if s.Topic == topic {
+			return true
+		}
+	}
+	return false
+}
+
+func (t Template) hasCapability(id string) bool {
+	for _, c := range t.Capabilities {
+		if c.ID == id {
 			return true
 		}
 	}
@@ -367,6 +432,64 @@ func Sync(ctx context.Context, db *pgxpool.Pool, b *Bundle, actor string, dryRun
 		}
 	}
 
+	// Danh mục feature → logic_features: upsert theo id; feature rời bundle → deprecated
+	// (không xoá — spec và module có thể còn tham chiếu; operator_count do index.code đếm lại).
+	featIDs := map[string]bool{}
+	var industries []string
+	for industry := range b.Features {
+		industries = append(industries, industry)
+	}
+	sort.Strings(industries)
+	for _, industry := range industries {
+		for _, feat := range b.Features[industry] {
+			featIDs[feat.ID] = true
+			var known bool
+			if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM logic_features WHERE id = $1)`,
+				feat.ID).Scan(&known); err != nil {
+				return rep, err
+			}
+			if _, err := tx.Exec(ctx, `
+				INSERT INTO logic_features (id, capability, description, params_schema, status)
+				VALUES ($1, $2, $3, $4::jsonb, 'active')
+				ON CONFLICT (id) DO UPDATE SET
+					capability = EXCLUDED.capability, description = EXCLUDED.description,
+					params_schema = EXCLUDED.params_schema,
+					status = CASE WHEN logic_features.status = 'deprecated' THEN 'active'
+					              ELSE logic_features.status END`,
+				feat.ID, feat.Capability, feat.Description, paramsSchema(feat)); err != nil {
+				return rep, fmt.Errorf("feature %s: %w", feat.ID, err)
+			}
+			if !known {
+				rep.Changes = append(rep.Changes, Change{Action: "feature.add", Key: feat.ID})
+			}
+		}
+	}
+	depRows, err := tx.Query(ctx, `SELECT id FROM logic_features WHERE status = 'active'`)
+	if err != nil {
+		return rep, err
+	}
+	var toDeprecate []string
+	for depRows.Next() {
+		var id string
+		if err := depRows.Scan(&id); err != nil {
+			depRows.Close()
+			return rep, err
+		}
+		if !featIDs[id] {
+			toDeprecate = append(toDeprecate, id)
+		}
+	}
+	depRows.Close()
+	if err := depRows.Err(); err != nil {
+		return rep, err
+	}
+	for _, id := range toDeprecate {
+		if _, err := tx.Exec(ctx, `UPDATE logic_features SET status = 'deprecated' WHERE id = $1`, id); err != nil {
+			return rep, err
+		}
+		rep.Changes = append(rep.Changes, Change{Action: "feature.deprecate", Key: id})
+	}
+
 	if dryRun {
 		return rep, nil // defer Rollback
 	}
@@ -426,4 +549,12 @@ func auditTx(ctx context.Context, tx pgx.Tx, actor, action, target string, paylo
 	_, err = tx.Exec(ctx, `INSERT INTO audit_log (actor, action, target, payload) VALUES ($1, $2, $3, $4)`,
 		actor, action, target, b)
 	return err
+}
+
+// paramsSchema: nil map → JSON {} (cột NOT NULL, không ghi đè default bằng NULL).
+func paramsSchema(f Feature) map[string]any {
+	if len(f.ParamsSchema) == 0 {
+		return map[string]any{}
+	}
+	return f.ParamsSchema
 }

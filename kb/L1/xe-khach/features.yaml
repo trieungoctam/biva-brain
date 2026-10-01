@@ -1,0 +1,71 @@
+# Danh mục feature logic L1 — ngành xe khách (S2.5.3 seed, DYN-114).
+# Brain nạp vào bảng logic_features qua `brain-api kb sync`; operator_count do job index.code đếm lại.
+# Feature là "điểm khác biệt về cách xử lý" dùng so khớp nhà xe (find_similar_operators): feature nào
+# gần như nhà xe nào cũng có thì trọng số thấp (IDF). Thêm/sửa feature qua PR như mọi tri thức L1.
+industry: xe-khach
+features:
+  # ── fare ──
+  - id: fare.by_route_vehicle
+    capability: fare
+    description: Giá cơ bản theo tuyến × loại ghế — luôn có, lấy từ query_data
+  - id: fare.holiday_surcharge
+    capability: fare
+    description: Phụ thu theo dịp (Tết, 30/4…) áp theo ngày đi
+    params_schema:
+      factors: {type: object, description: "tên dịp → hệ số, vd {tet: 0.20}"}
+  - id: fare.weekend_surcharge
+    capability: fare
+    description: Phụ thu cuối tuần, có/không cộng dồn với phụ thu lễ
+    params_schema:
+      amount: {type: integer, description: "số tiền/vé"}
+      stack_with_holiday: {type: boolean}
+  - id: fare.child_policy
+    capability: fare
+    description: Chính sách vé trẻ em theo tuổi
+    params_schema:
+      policy: {enum: [free_under_6, half_over_4, full]}
+  - id: fare.round_trip_discount
+    capability: fare
+    description: Giảm giá khứ hồi
+    params_schema:
+      factor: {type: number}
+  # ── schedule ──
+  - id: schedule.excel_import
+    capability: schedule
+    description: Đồng bộ lịch chạy từ Excel nhà xe gửi
+  - id: schedule.days_of_week
+    capability: schedule
+    description: Chuyến lặp theo thứ trong tuần (2,4,6 / hằng ngày…)
+  - id: schedule.seasonal_trips
+    capability: schedule
+    description: Chuyến chỉ chạy theo mùa (Tết, hè)
+  # ── booking ──
+  - id: booking.hold_with_ttl
+    capability: booking
+    description: Giữ chỗ có thời hạn, hết hạn tự nhả
+    params_schema:
+      ttl_seconds: {type: integer}
+  - id: booking.hold_first_wins
+    capability: booking
+    description: Người giữ trước thắng; ghế bận thì từ chối thẳng
+  - id: booking.api_adapter
+    capability: booking
+    description: Đặt vé qua API của nhà xe (timeout + retry bắt buộc)
+  - id: booking.handoff
+    capability: booking
+    description: Chưa có API — chuyển nhân viên xử lý
+  # ── pickup ──
+  - id: pickup.by_route_zone
+    capability: pickup
+    description: Gán điểm đón theo tuyến × khu vực
+  - id: pickup.by_hour
+    capability: pickup
+    description: Điểm đón đổi theo giờ khởi hành (vd sau 20h gom về bến)
+  # ── transfer ──
+  - id: transfer.shuttle_cluster
+    capability: transfer
+    description: Trung chuyển theo cụm điểm
+  # ── parcel ──
+  - id: parcel.pricing_by_weight
+    capability: parcel
+    description: Cước gửi hàng theo cân nặng, có bậc miễn phí tối thiểu

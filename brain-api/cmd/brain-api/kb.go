@@ -26,7 +26,11 @@ func kbCheck() error {
 	for _, es := range b.Entities {
 		ents += len(es)
 	}
-	fmt.Printf("kb hợp lệ: %d rule L0, %d rule L1, %d template, %d thực thể\n", l0, len(b.Rules)-l0, len(b.Templates), ents)
+	nFeat := 0
+	for _, fs := range b.Features {
+		nFeat += len(fs)
+	}
+	fmt.Printf("kb hợp lệ: %d rule L0, %d rule L1, %d template, %d thực thể, %d feature\n", l0, len(b.Rules)-l0, len(b.Templates), ents, nFeat)
 	return nil
 }
 

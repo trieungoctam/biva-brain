@@ -1,0 +1,10 @@
+{
+  "industry": "xe-khach",
+  "features": [
+    {
+      "id": "fare.holiday_surcharge",
+      "capability": "fare",
+      "description": "Phụ thu theo dịp"
+    }
+  ]
+}

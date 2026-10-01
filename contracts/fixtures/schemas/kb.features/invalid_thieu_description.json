@@ -1,0 +1,9 @@
+{
+  "industry": "xe-khach",
+  "features": [
+    {
+      "id": "fare.weekend",
+      "capability": "fare"
+    }
+  ]
+}
