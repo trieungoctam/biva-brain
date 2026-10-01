@@ -161,7 +161,7 @@ Cột **Mốc** = mốc dự kiến (xem lộ trình trong [architecture.md](arc
 | `compare_logic` | M2 ✅ | RO | so hai nhà xe theo capability: điểm + chi tiết như find_similar |
 | `plan_logic_implementation` | M2 ✅ | RO | kế hoạch theo capability: module L1 phủ nhiều feature của spec nhất, phần thiếu (viết mới / tái dùng nhà xe tương tự), bậc thấp nhất đủ dùng (config → hook → custom+ADR), params_draft từ spec |
 | `list_logic_families` | M3 ✅ | RO | họ logic theo capability (cụm spec trùng feature ≥ 60%): feature chung, thành viên, triển khai đề xuất; `promote_candidate` = ≥ 3 nhà xe cùng hook/custom — ứng candidate promote lên tham số/hook chuẩn |
-| `run_examples_against` | M3 | | chạy ví dụ của nhà xe này trên code ứng viên (sandbox) → % pass, case fail |
+| `run_examples_against` | M3 ✅ | | async (operation_id): chạy ví dụ thật của nhà xe (logic_tests) trên triển khai của các nhà xe tương tự trong sandbox (config/hook/custom; api/handoff bỏ qua) → từng ứng viên % pass + case fail (input/kỳ vọng/nhận được); ứng viên cao nhất = điểm xuất phát |
 | `search_logic` | M2 | RO | tìm module, feature, pattern, lesson, code chunk |
 | `get_logic_module` | M2 | RO | manifest: interface, params_schema, hooks, version, test bắt buộc |
 | `propose_logic_profile` | M2 ✅ | | gửi profile.yaml (+file hook/custom) → job logic.propose: validate schema, custom bắt buộc ADR (record_decision), có token thì tạo PR vào biva-integrations, chưa có thì trả nội dung để tạo PR tay; trả operation_id |

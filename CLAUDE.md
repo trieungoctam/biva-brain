@@ -111,5 +111,9 @@ cd ai-worker && uv run pytest -q
   RLIMIT_CPU/AS/NOFILE/NPROC + timeout cha (kill nhóm) + cap output 64KB; kết quả JSON một dòng.
   Test: chặn socket/urllib/os.system/subprocess/open, timeout vòng lặp vô hạn, RAM (Linux),
   module cho phép chạy đúng. macOS bỏ qua RLIMIT_AS → test RAM skip trên darwin, Linux (CI) chạy.
+- M3 S3.4.2 xong: job `logic.examples` + tool `run_examples_against` (async, operation_id) —
+  chạy logic_tests của nhà xe trên code ứng viên (repo biva-integrations: module chuẩn + hook/custom
+  + params từ profile) trong sandbox; % pass + case fail từng ứng viên, mode api/handoff bỏ qua;
+  code ghép bằng glue wire hook vào đúng tham số entry.
 - Linear: workspace dpos, project "BIVA Brain"; mỗi story xong thì comment kết quả + link CI rồi chuyển Done
   (chưa đạt hết AC thì để In Progress và ghi rõ phần thiếu).

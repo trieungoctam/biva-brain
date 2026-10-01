@@ -199,7 +199,7 @@ func TestGetOperationScopedToOperator(t *testing.T) {
 		"ingest": false, "submit_knowledge": false, "propose_item": false, "apply_review": false,
 		"get_operator_logic": true, "get_logic_spec": true, "find_similar_operators": true, "compare_logic": true,
 		"plan_logic_implementation": true, "record_decision": false, "propose_logic_profile": false,
-		"list_logic_families": true}
+		"list_logic_families": true, "run_examples_against": false}
 	if len(tools.Tools) != len(readOnlyWant) {
 		names := make([]string, len(tools.Tools))
 		for i, tl := range tools.Tools {

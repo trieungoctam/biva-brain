@@ -288,3 +288,43 @@ func (s *Server) addFamiliesTool(srv *mcp.Server, operatorID string) {
 			return nil, familiesOut{Families: fams, NextActions: next}, nil
 		})
 }
+
+type runExamplesIn struct {
+	Capability string   `json:"capability" jsonschema:"capability cần thử"`
+	Candidates []string `json:"candidates,omitempty" jsonschema:"nhà xe ứng viên (id); bỏ trống = mọi nhà xe có hồ sơ cùng capability"`
+}
+
+const runExamplesDesc = "Chạy ví dụ THẬT của nhà xe này (logic_tests) trên cách triển khai của các nhà xe " +
+	"tương tự trong sandbox (không mạng, giới hạn CPU/RAM): mỗi ứng viên trả % pass và case fail " +
+	"(input, kỳ vọng, nhận được) — ứng viên pass cao nhất là điểm xuất phát triển khai; case fail chỉ " +
+	"đúng phần phải viết thêm. Async: trả operation_id, xem kết quả bằng get_operation."
+
+type runExamplesOut struct {
+	OperationID string   `json:"operation_id"`
+	NextActions []string `json:"next_actions"`
+}
+
+func (s *Server) addRunExamplesTool(srv *mcp.Server, operatorID string) {
+	mcp.AddTool(srv, &mcp.Tool{Name: "run_examples_against", Description: runExamplesDesc,
+		Annotations: &mcp.ToolAnnotations{IdempotentHint: true, DestructiveHint: ptr(false), OpenWorldHint: ptr(false)}},
+		func(ctx context.Context, _ *mcp.CallToolRequest, in runExamplesIn) (*mcp.CallToolResult, runExamplesOut, error) {
+			if in.Capability == "" {
+				return nil, runExamplesOut{}, errors.New("thiếu capability")
+			}
+			if len(in.Candidates) > 5 {
+				return nil, runExamplesOut{}, errors.New("tối đa 5 ứng viên")
+			}
+			payload := map[string]any{"capability": in.Capability}
+			if len(in.Candidates) > 0 {
+				payload["candidates"] = in.Candidates
+			}
+			opID, _, err := queue.Enqueue(ctx, s.db, queue.Job{
+				Kind: "logic.examples", OperatorID: operatorID, Payload: payload})
+			if err != nil {
+				return nil, runExamplesOut{}, internal("run_examples_against", err)
+			}
+			return nil, runExamplesOut{OperationID: opID,
+				NextActions: []string{"get_operation(operation_id=" + opID + ") — % pass từng ứng viên",
+					"plan_logic_implementation khi đã chốt điểm xuất phát"}}, nil
+		})
+}
