@@ -112,7 +112,7 @@ Kết quả luôn mang nhãn tầng + nguồn.
 ## 4. Luồng build bot
 
 ```
-VÒNG BUILD:   ① Khởi tạo → ② Thu thập → ③ Duyệt → ④ Cấu hình → ⑤ Compile+Test → ⑥ Deploy
+VÒNG BUILD:   ① Khởi tạo → ② Thu thập → ③ Duyệt → ④ Cấu hình → ⑤ Compile+Test → ⑥ Publish
 VÒNG VẬN HÀNH: update nhà xe → ③ → ⑤ → ⑥ ;  hội thoại → learn → ⑤ → ⑥ ;  knowledge gap → câu hỏi → ②
 ```
 
