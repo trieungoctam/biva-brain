@@ -83,8 +83,25 @@ class WhitelistImporter(importlib.abc.MetaPathFinder):
             return None  # builtin vô hại: để máy mặc định xử lý
         if root in ALLOWED:
             return None
+        # Tiện ích C nội bộ của stdlib (_decimal, _datetime, _sha256...) — thuần tính toán.
+        if root.startswith("_") and root not in UNDER_DENY:
+            return None
         raise Blocked(f"import {fullname} bị cấm trong sandbox (chỉ cho phép: {', '.join(sorted(ALLOWED))})")
 
+
+# Extension C nội bộ bị từ chối (mạng / hệ thống / luồng).
+UNDER_DENY = {
+    "_socket",
+    "_ssl",
+    "_thread",
+    "_winapi",
+    "_multiprocessing",
+    "_posixsubprocess",
+    "_posixshmem",
+    "_subprocess",
+    "_signal",
+    "_imp",
+}
 
 sys.meta_path.insert(0, WhitelistImporter())
 
