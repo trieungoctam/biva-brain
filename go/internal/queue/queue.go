@@ -36,16 +36,16 @@ type Job struct {
 }
 
 type Operation struct {
-	ID          string          `json:"id"`
-	Kind        string          `json:"kind"`
-	OperatorID  *string         `json:"operator_id,omitempty"`
-	Status      string          `json:"status"`
-	Attempts    int             `json:"attempts"`
-	MaxAttempts int             `json:"max_attempts"`
-	Result      json.RawMessage `json:"result,omitempty"`
-	Error       *string         `json:"error,omitempty"`
-	CreatedAt   time.Time       `json:"created_at"`
-	UpdatedAt   time.Time       `json:"updated_at"`
+	ID          string         `json:"id"`
+	Kind        string         `json:"kind"`
+	OperatorID  *string        `json:"operator_id,omitempty"`
+	Status      string         `json:"status"`
+	Attempts    int            `json:"attempts"`
+	MaxAttempts int            `json:"max_attempts"`
+	Result      map[string]any `json:"result,omitempty"` // operation_result.schema.json
+	Error       *string        `json:"error,omitempty"`
+	CreatedAt   time.Time      `json:"created_at"`
+	UpdatedAt   time.Time      `json:"updated_at"`
 }
 
 // Enqueue thêm job. Cùng IdempotencyKey → trả về id của job đã có, created=false.

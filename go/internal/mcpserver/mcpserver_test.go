@@ -191,6 +191,12 @@ func TestGetOperationScopedToOperator(t *testing.T) {
 	if res.IsError || out["status"] != "queued" || out["id"] != f.jobA {
 		t.Fatalf("job của nhà xe mình: isError=%v out=%v", res.IsError, out)
 	}
+	// Job đã xong (có result dạng object) — output phải khớp output schema của tool.
+	f.pool.Exec(context.Background(), `UPDATE operations SET status = 'done', result = '{"status":"done","summary":"pong"}' WHERE id = $1`, f.jobA)
+	res, out = callGetOperation(t, s, f.jobA)
+	if res.IsError || out["status"] != "done" || out["result"].(map[string]any)["summary"] != "pong" {
+		t.Fatalf("job đã xong: isError=%v content=%v out=%v", res.IsError, res.Content, out)
+	}
 	// Job của nhà xe khác: như không tồn tại.
 	if res, _ := callGetOperation(t, s, f.jobB); !res.IsError {
 		t.Fatal("job của nhà xe khác lẽ ra phải bị ẩn")
