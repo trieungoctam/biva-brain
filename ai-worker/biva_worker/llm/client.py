@@ -186,6 +186,8 @@ class GeminiProvider:
             thinking_config=thinking,
             response_mime_type="application/json" if schema is not None else None,
             response_json_schema=schema,
+            # Brain không truyền tool cho model: tắt automatic function calling của SDK.
+            automatic_function_calling=genai_types.AutomaticFunctionCallingConfig(disable=True),
         )
         contents = [
             genai_types.Content(
