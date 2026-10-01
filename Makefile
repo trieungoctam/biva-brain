@@ -1,6 +1,6 @@
 COMPOSE := docker compose -f deploy/docker-compose.yml
 
-.PHONY: up down clean logs ps migrate test test-go test-py lint fmt
+.PHONY: up down clean logs ps migrate smoke test test-go test-py lint fmt
 
 up:            ## dựng và chạy toàn bộ môi trường local
 	$(COMPOSE) up -d --build
@@ -19,6 +19,9 @@ ps:
 
 migrate:       ## chạy migration lên Postgres của compose
 	$(COMPOSE) run --rm migrate
+
+smoke:         ## make up + kiểm luồng MCP → queue → worker (+ TEI); SMOKE_SKIP_TEI=1 để bỏ TEI
+	deploy/smoke.sh
 
 test: test-go test-py
 

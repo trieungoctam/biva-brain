@@ -62,10 +62,13 @@ jobs:
       # test-go chạy trước: migrate DB tới bản mới nhất cho test-py.
       - run: make test
 
-  # Image build được (không push).
-  docker:
+  # make up thật trên runner (không GPU): build image, migrate, brain-api, ai-worker, TEI CPU;
+  # đi luồng MCP → queue → worker. Thay cho bước build image riêng.
+  compose-smoke:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
-      - run: docker build -f go/Dockerfile -t biva/brain-api:ci .
-      - run: docker build -f python/Dockerfile -t biva/ai-worker:ci .
+      - run: make smoke
+      - if: failure()
+        run: docker compose -f deploy/docker-compose.yml logs --tail=200
