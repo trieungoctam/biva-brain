@@ -15,3 +15,4 @@ Trạng thái: **thiết kế đã chốt**, chưa có code. Trọng tâm: **Bra
 | [docs/mcp.md](docs/mcp.md) | **giao diện chính**: AI dùng tri thức để build bot — knowledge pack, artifact có trích dẫn, validate, tool, prompts |
 | [docs/logic-knowledge.md](docs/logic-knowledge.md) | tri thức logic (code) cho nhà xe: module chung, hồ sơ từng nhà xe, config → hook → custom, ADR |
 | [docs/data-model.md](docs/data-model.md) | data model trên PostgreSQL |
+| [docs/implementation-plan.md](docs/implementation-plan.md) | kế hoạch triển khai: milestone M0–M5, epic, story, AC, rủi ro, chỉ số thành công |

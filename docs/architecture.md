@@ -243,7 +243,7 @@ biva-brain/
 
 ## 8. Lộ trình
 
-Chưa bắt đầu code. Thứ tự dự kiến:
+Chưa bắt đầu code. Thứ tự dự kiến (chi tiết epic/story: [implementation-plan.md](implementation-plan.md)):
 
 | Mốc | Nội dung |
 |---|---|
@@ -279,4 +279,5 @@ Chưa bắt đầu code. Thứ tự dự kiến:
 - [logic-knowledge.md](logic-knowledge.md) — tri thức logic (code) cho nhà xe
 - [build-flow.md](build-flow.md) — luồng build bot chi tiết
 - [data-model.md](data-model.md) — data model
+- [implementation-plan.md](implementation-plan.md) — kế hoạch triển khai theo milestone, epic, story
 - [system-architecture.md](system-architecture.md) — kiến trúc hệ thống (triển khai, độ tin cậy, bảo mật, observability)
