@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://biva.local/schemas/operation_result.schema.json",
+  "title": "Kết quả operation",
+  "description": "Cột operations.result khi job kết thúc (done hoặc failed). ai-worker ghi, brain-api đọc (get_operation).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["status"],
+  "properties": {
+    "status": { "enum": ["done", "failed"] },
+    "summary": { "type": "string" },
+    "counts": {
+      "type": "object",
+      "additionalProperties": { "type": "integer", "minimum": 0 }
+    },
+    "refs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["type", "id"],
+        "properties": {
+          "type": { "enum": ["document", "item", "review_item", "artifact", "snapshot", "operation"] },
+          "id": { "type": "string" }
+        }
+      }
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message"],
+      "properties": {
+        "code": { "type": "string" },
+        "message": { "type": "string" },
+        "retryable": { "type": "boolean" }
+      }
+    },
+    "next_actions": { "type": "array", "items": { "type": "string" } }
+  },
+  "if": { "properties": { "status": { "const": "failed" } } },
+  "then": { "required": ["error"] }
+}

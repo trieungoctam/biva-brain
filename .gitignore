@@ -1,0 +1,13 @@
+# Python
+python/.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+
+# Go
+go/bin/
+
+# Local
+.env
+*.log

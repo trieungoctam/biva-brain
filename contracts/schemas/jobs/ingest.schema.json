@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://biva.local/schemas/jobs/ingest.schema.json",
+  "title": "Payload job ingest",
+  "description": "Payload của operations.kind = 'ingest'. brain-api ghi, ai-worker đọc.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["operator_id", "source", "received_at"],
+  "properties": {
+    "operator_id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{1,62}$" },
+    "source": { "enum": ["zalo", "excel", "form", "console"] },
+    "content": { "type": "string", "minLength": 1, "maxLength": 200000 },
+    "file_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bucket", "key"],
+      "properties": {
+        "bucket": { "type": "string", "minLength": 1 },
+        "key": { "type": "string", "minLength": 1 },
+        "content_type": { "type": "string" }
+      }
+    },
+    "received_at": { "type": "string", "format": "date-time" },
+    "submitted_by": { "type": "string" },
+    "metadata": { "type": "object" }
+  },
+  "oneOf": [
+    { "required": ["content"], "not": { "required": ["file_ref"] } },
+    { "required": ["file_ref"], "not": { "required": ["content"] } }
+  ]
+}

@@ -1,0 +1,87 @@
+# Môi trường local cho BIVA Brain (không cần GPU).
+#   make up      dựng + chạy migration + chạy brain-api, ai-worker
+#   make down    dừng (giữ dữ liệu); make clean để xoá volume
+name: biva-brain
+
+x-db-url: &db_url postgres://biva:biva@postgres:5432/biva?sslmode=disable
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: biva
+      POSTGRES_PASSWORD: biva
+      POSTGRES_DB: biva
+    ports: ["5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U biva -d biva"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      retries: 20
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address :9001
+    environment:
+      MINIO_ROOT_USER: biva
+      MINIO_ROOT_PASSWORD: biva-local-only
+    ports: ["9000:9000", "9001:9001"]
+    volumes: [miniodata:/data]
+
+  # Embedding trên CPU (bge-m3). Lần đầu tải model mất vài phút; dữ liệu model giữ trong volume.
+  tei-embed:
+    image: ghcr.io/huggingface/text-embeddings-inference:${TEI_TAG:-cpu-latest}
+    command: --model-id BAAI/bge-m3 --port 80
+    ports: ["8081:80"]
+    volumes: [teidata:/data]
+
+  # Rerank chỉ cần từ M3 — bật bằng: docker compose --profile rerank up
+  tei-rerank:
+    profiles: [rerank]
+    image: ghcr.io/huggingface/text-embeddings-inference:${TEI_TAG:-cpu-latest}
+    command: --model-id BAAI/bge-reranker-v2-m3 --port 80
+    ports: ["8082:80"]
+    volumes: [teidata:/data]
+
+  migrate:
+    build: { context: .., dockerfile: go/Dockerfile }
+    command: ["migrate", "up"]
+    environment:
+      BIVA_DATABASE_URL: *db_url
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: "no"
+
+  brain-api:
+    build: { context: .., dockerfile: go/Dockerfile }
+    environment:
+      BIVA_DATABASE_URL: *db_url
+    ports: ["8080:8080"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health/ready"]
+      interval: 5s
+      retries: 10
+
+  ai-worker:
+    build: { context: .., dockerfile: python/Dockerfile }
+    environment:
+      BIVA_DATABASE_URL: *db_url
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+volumes:
+  pgdata:
+  miniodata:
+  teidata:

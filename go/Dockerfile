@@ -1,0 +1,18 @@
+# Build context: gốc repo (cần cả go/ và contracts/).
+FROM golang:1.25 AS build
+WORKDIR /src/go
+COPY go/go.mod go/go.sum ./
+RUN go mod download
+COPY go/ ./
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/brain-api ./cmd/brain-api
+
+FROM alpine:3.20
+RUN adduser -D -u 10001 app && apk add --no-cache wget
+COPY --from=build /out/brain-api /usr/local/bin/brain-api
+COPY contracts /contracts
+ENV BIVA_MIGRATIONS_DIR=/contracts/migrations \
+    BIVA_HTTP_ADDR=:8080
+USER app
+EXPOSE 8080
+ENTRYPOINT ["brain-api"]
+CMD ["serve"]
