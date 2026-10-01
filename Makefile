@@ -23,7 +23,7 @@ migrate:       ## chạy migration lên Postgres của compose
 test: test-go test-py
 
 test-go:       ## đặt BIVA_TEST_DATABASE_URL để chạy cả test migration với Postgres thật
-	cd go && go vet ./... && go test ./...
+	cd go && go vet ./... && go test -p 1 ./...   # -p 1: các test dùng chung một DB
 
 test-py:
 	cd python && uv run pytest -q

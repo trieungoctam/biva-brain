@@ -34,7 +34,7 @@ func TestUpDownUp(t *testing.T) {
 		}
 	}
 	v, dirty, err := Version(dir, url)
-	if err != nil || dirty || v != 1 {
+	if err != nil || dirty || v != 2 {
 		t.Fatalf("version = %d dirty=%v err=%v", v, dirty, err)
 	}
 
@@ -55,9 +55,10 @@ func TestUpDownUp(t *testing.T) {
 		t.Error("item L2 không có operator_id lẽ ra phải bị từ chối")
 	}
 	// locked chỉ cho L0/L1.
-	if _, err := conn.Exec(ctx, `INSERT INTO operators (id, name) VALUES ('t_op', 'T')`); err != nil {
+	if _, err := conn.Exec(ctx, `INSERT INTO operators (id, name) VALUES ('t_op', 'T') ON CONFLICT DO NOTHING`); err != nil {
 		t.Fatal(err)
 	}
+	defer conn.Exec(ctx, `DELETE FROM operators WHERE id = 't_op'`) // chạy trước conn.Close (LIFO)
 	if _, err := conn.Exec(ctx, `INSERT INTO items (layer, operator_id, kind, topic, text, locked) VALUES (2, 't_op', 'policy', 'pets', 'x', true)`); err == nil {
 		t.Error("item L2 locked lẽ ra phải bị từ chối")
 	}

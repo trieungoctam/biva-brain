@@ -45,8 +45,17 @@ Lần đầu `tei-embed` tải model bge-m3 nên mất vài phút.
 make test      # go vet + go test, pytest
 make lint      # gofmt, go vet, ruff
 
-# chạy thêm test migration với Postgres thật (DB trống, dùng riêng cho test):
-BIVA_TEST_DATABASE_URL=postgres://user:pass@localhost:5432/biva_test?sslmode=disable make test-go
+# chạy thêm test cần Postgres thật (migration, queue, scheduler, runner) — DB riêng cho test:
+export BIVA_TEST_DATABASE_URL=postgres://user:pass@localhost:5432/biva_test?sslmode=disable
+make test      # test-go chạy migration trước (nên chạy trước test-py)
 ```
+
+## Queue Go ⇄ Python
+
+brain-api ghi job vào bảng `operations` (`queue.Enqueue`, chống trùng bằng `idempotency_key`); trigger phát
+`NOTIFY operations` để đánh thức ai-worker. ai-worker claim bằng `SKIP LOCKED`, giữ lease bằng heartbeat, thử lại
+có backoff. Worker chết → lease hết → scheduler (chỉ instance leader, advisory lock) gọi
+`operations_requeue_expired()` để trả job về hàng đợi. Cấu hình worker: `BIVA_WORKER_CONCURRENCY` (4),
+`BIVA_WORKER_LEASE_SECONDS` (60).
 
 Fixture trong `contracts/fixtures/` được test ở **cả Go và Python**: hai bên phải cho cùng kết quả.

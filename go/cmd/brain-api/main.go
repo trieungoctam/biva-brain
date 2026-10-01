@@ -1,4 +1,4 @@
-// Lệnh brain-api: MCP + REST + scheduler (M0: HTTP health + migrate).
+// Lệnh brain-api: MCP + REST + scheduler (M0: HTTP health, scheduler, migrate).
 //
 //	brain-api serve          chạy HTTP server (mặc định)
 //	brain-api migrate up     áp dụng mọi migration
@@ -19,6 +19,7 @@ import (
 	"github.com/trieungoctam/biva-brain/go/internal/config"
 	"github.com/trieungoctam/biva-brain/go/internal/httpapi"
 	"github.com/trieungoctam/biva-brain/go/internal/migrate"
+	"github.com/trieungoctam/biva-brain/go/internal/scheduler"
 	"github.com/trieungoctam/biva-brain/go/internal/store"
 )
 
@@ -80,6 +81,15 @@ func serve(cfg config.Config) error {
 		return err
 	}
 	defer db.Close()
+
+	// Scheduler chạy ở mọi instance nhưng chỉ leader (advisory lock) thực thi task.
+	schedCtx, stopSched := context.WithCancel(ctx)
+	schedDone := make(chan struct{})
+	go func() {
+		defer close(schedDone)
+		(&scheduler.Scheduler{DB: db.Primary, Tasks: scheduler.DefaultTasks()}).Run(schedCtx)
+	}()
+	defer func() { stopSched(); <-schedDone }()
 
 	srv := &http.Server{Addr: cfg.HTTPAddr, Handler: httpapi.NewRouter(db)}
 	errCh := make(chan error, 1)

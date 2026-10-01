@@ -1,7 +1,7 @@
-"""Điểm vào ai-worker.
+"""Điểm vào ai-worker: chạy Runner tới khi nhận SIGINT/SIGTERM.
 
-M0: chỉ kiểm tra kết nối Postgres rồi chờ. Vòng claim job (SKIP LOCKED, lease, retry)
-thuộc story S0.2.2 và sẽ thay thế phần chờ này.
+Biến môi trường: BIVA_DATABASE_URL (bắt buộc), BIVA_WORKER_CONCURRENCY (mặc định 4),
+BIVA_WORKER_LEASE_SECONDS (mặc định 60).
 """
 
 from __future__ import annotations
@@ -14,6 +14,8 @@ import signal
 import asyncpg
 
 from biva_worker import __version__
+from biva_worker.handlers import HANDLERS
+from biva_worker.runner import Runner, init_connection
 
 log = logging.getLogger("biva_worker")
 
@@ -22,19 +24,29 @@ async def main() -> None:
     url = os.environ.get("BIVA_DATABASE_URL")
     if not url:
         raise SystemExit("thiếu BIVA_DATABASE_URL")
-    conn = await asyncpg.connect(url)
-    try:
-        version = await conn.fetchval("SHOW server_version")
-        log.info("ai-worker %s đã kết nối Postgres %s; chưa bật runner (S0.2.2)", __version__, version)
-    finally:
-        await conn.close()
+    concurrency = int(os.environ.get("BIVA_WORKER_CONCURRENCY", "4"))
+    lease = float(os.environ.get("BIVA_WORKER_LEASE_SECONDS", "60"))
 
-    stop = asyncio.Event()
-    loop = asyncio.get_running_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, stop.set)
-    await stop.wait()
-    log.info("ai-worker dừng")
+    # +1 kết nối cho LISTEN, +concurrency cho heartbeat chạy song song với handler.
+    pool = await asyncpg.create_pool(url, min_size=1, max_size=2 * concurrency + 1, init=init_connection)
+    try:
+        runner = Runner(pool, HANDLERS, lease_seconds=lease, concurrency=concurrency)
+        stop = asyncio.Event()
+        loop = asyncio.get_running_loop()
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            loop.add_signal_handler(sig, stop.set)
+        log.info(
+            "ai-worker %s (%s) chạy; kinds=%s concurrency=%d lease=%.0fs",
+            __version__,
+            runner.worker_id,
+            sorted(HANDLERS),
+            concurrency,
+            lease,
+        )
+        await runner.run(stop)
+        log.info("ai-worker dừng")
+    finally:
+        await pool.close()
 
 
 if __name__ == "__main__":
