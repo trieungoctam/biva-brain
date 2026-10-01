@@ -86,6 +86,7 @@ type Result struct {
 	Total     int      `json:"total_candidates"`    // số ứng viên trước khi cắt theo max_tokens
 	Truncated bool     `json:"truncated,omitempty"` // còn ứng viên bị cắt vì ngân sách token
 	Degraded  []string `json:"degraded,omitempty"`  // nhánh không chạy được (vd semantic khi TEI lỗi)
+	Reranked  bool     `json:"reranked,omitempty"`  // đã xếp lại theo reranker (S3.1.3)
 	TookMS    int64    `json:"took_ms"`
 }
 
@@ -93,6 +94,7 @@ type Recaller struct {
 	DB       *pgxpool.Pool
 	Embedder Embedder         // nil = chỉ keyword
 	Entities *entity.Resolver // nil = không mở rộng alias
+	Reranker Reranker         // nil = không rerank; lỗi/quá 80ms → giữ thứ tự RRF
 
 	once      sync.Once
 	iterative bool
@@ -223,6 +225,25 @@ func (r *Recaller) Recall(ctx context.Context, q Query) (Result, error) {
 		}
 		return hits[i].ID < hits[j].ID
 	})
+
+	// Rerank (S3.1.3): chỉ phần đầu, ngân sách 80ms; lỗi/quá hạn → giữ RRF và báo degraded.
+	res.Reranked = false
+	if r.Reranker != nil && len(hits) > 1 && text != "" {
+		top := min(len(hits), rerankTop)
+		docs := make([]string, top)
+		for i := range top {
+			docs[i] = hits[i].Text
+		}
+		rctx, cancel := context.WithTimeout(ctx, rerankBudget)
+		order, err := r.Reranker.Rerank(rctx, text, docs)
+		cancel()
+		if err != nil {
+			res.Degraded = append(res.Degraded, "rerank: "+err.Error())
+		} else {
+			hits = rerankHits(hits, order)
+			res.Reranked = true
+		}
+	}
 
 	res.Total = len(hits)
 	used := 0

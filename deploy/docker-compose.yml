@@ -71,6 +71,7 @@ services:
       BIVA_S3_PUBLIC_URL: ${BIVA_S3_PUBLIC_URL:-http://localhost:8333}   # cơ sở link tải nhìn từ client ngoài
       BIVA_PUBLIC_URL: ${BIVA_PUBLIC_URL:-http://localhost:8080}   # ChatGPT cần URL https công khai
       BIVA_TEI_URL: http://tei-embed:80   # recall_knowledge nhánh semantic; TEI chưa chạy → chỉ keyword
+      BIVA_RERANK_URL: ${BIVA_RERANK_URL:-}  # bật cùng profile rerank: http://tei-rerank:80
       OTEL_EXPORTER_OTLP_ENDPOINT: *otel
     ports: ["8080:8080"]
     depends_on:

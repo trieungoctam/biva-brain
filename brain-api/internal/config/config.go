@@ -16,6 +16,7 @@ type Config struct {
 	KBDir              string // BIVA_KB_DIR, mặc định ../kb
 	SchemasDir         string // BIVA_SCHEMAS_DIR, mặc định ../contracts/schemas
 	TEIURL             string // BIVA_TEI_URL: TEI embedding cho recall; trống = recall chỉ dùng keyword
+	RerankURL          string // BIVA_RERANK_URL: TEI rerank (bge-reranker-v2-m3); trống = không rerank
 	S3Endpoint         string // BIVA_S3_ENDPOINT: object storage cho bản export (vd http://localhost:8333); trống = trả nội dung, không lưu
 	S3Bucket           string // BIVA_S3_BUCKET, mặc định biva-exports
 	S3PublicURL        string // BIVA_S3_PUBLIC_URL: cơ sở link tải (khác endpoint khi truy cập từ ngoài); trống = dùng endpoint
@@ -38,6 +39,7 @@ func Load() (Config, error) {
 		MigrationsDir:      getenv("BIVA_MIGRATIONS_DIR", "../contracts/migrations"),
 		PublicURL:          getenv("BIVA_PUBLIC_URL", "http://localhost:8080"),
 		TEIURL:             os.Getenv("BIVA_TEI_URL"),
+		RerankURL:          os.Getenv("BIVA_RERANK_URL"),
 		S3Endpoint:         os.Getenv("BIVA_S3_ENDPOINT"),
 		S3Bucket:           getenv("BIVA_S3_BUCKET", "biva-exports"),
 		S3AccessKey:        os.Getenv("BIVA_S3_ACCESS_KEY"),

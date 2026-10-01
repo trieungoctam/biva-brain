@@ -458,3 +458,62 @@ func (e *env) insertEntity(extID, name string, aliases []string) string {
 	}
 	return id
 }
+
+// S3.1.3: rerank đổi thứ tự phần đầu; quá ngân sách → giữ RRF + degraded.
+type fakeReranker struct {
+	order []int
+	delay time.Duration
+}
+
+func (f *fakeReranker) Rerank(ctx context.Context, query string, docs []string) ([]int, error) {
+	if f.delay > 0 {
+		select {
+		case <-time.After(f.delay):
+			return f.order, nil
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	return f.order, nil
+}
+
+func TestRecallRerank(t *testing.T) {
+	e := setup(t)
+	ctx := context.Background()
+	a := e.insertIt(2, e.op, "policy", "fare"+e.tag, "k1", "Nội dung A về giá vé", nil)
+	b := e.insertIt(2, e.op, "policy", "fare"+e.tag, "k2", "Nội dung B về giá vé", nil)
+	r := &Recaller{DB: e.pool}
+
+	// Thứ tự RRF gốc.
+	base, err := r.Recall(ctx, Query{OperatorID: e.op, Text: "giá vé " + e.tag})
+	if err != nil || len(base.Hits) < 2 {
+		t.Fatalf("base = %+v %v", base.Hits, err)
+	}
+	first := base.Hits[0].ID
+
+	// Reranker đảo 2 vị trí đầu → thứ tự mới, Reranked = true.
+	r2 := &Recaller{DB: e.pool, Reranker: &fakeReranker{order: []int{1, 0}}}
+	res, err := r2.Recall(ctx, Query{OperatorID: e.op, Text: "giá vé " + e.tag})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Reranked || res.Hits[0].ID == first {
+		t.Fatalf("rerank phải đổi thứ tự: %+v", ids(res.Hits))
+	}
+	// Không mất hit.
+	if len(res.Hits) != len(base.Hits) {
+		t.Fatalf("mất hit sau rerank: %d vs %d", len(res.Hits), len(base.Hits))
+	}
+	_ = a
+	_ = b
+
+	// Reranker chậm hơn 80ms → timeout: giữ RRF, báo degraded.
+	r3 := &Recaller{DB: e.pool, Reranker: &fakeReranker{order: []int{1, 0}, delay: 300 * time.Millisecond}}
+	res, err = r3.Recall(ctx, Query{OperatorID: e.op, Text: "giá vé " + e.tag})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Reranked || res.Hits[0].ID != first || len(res.Degraded) == 0 {
+		t.Fatalf("timeout phải giữ RRF: reranked=%v degraded=%v", res.Reranked, res.Degraded)
+	}
+}

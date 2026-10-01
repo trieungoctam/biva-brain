@@ -117,6 +117,12 @@ func (s *Server) WithEntities(r *entity.Resolver) *Server {
 	return s
 }
 
+// WithReranker bật rerank của recall_knowledge (TEI bge-reranker-v2-m3, S3.1.3).
+func (s *Server) WithReranker(r recall.Reranker) *Server {
+	s.recaller.Reranker = r
+	return s
+}
+
 // WithEmbedder bật nhánh semantic của recall_knowledge (TEI, cùng model với job index.items).
 func (s *Server) WithEmbedder(e recall.Embedder) *Server {
 	s.recaller.Embedder = e

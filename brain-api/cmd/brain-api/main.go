@@ -201,6 +201,9 @@ func serve(cfg config.Config) error {
 	} else {
 		slog.Warn("chưa đặt BIVA_TEI_URL: recall_knowledge chỉ dùng keyword")
 	}
+	if cfg.RerankURL != "" {
+		mcpSrv.WithReranker(recall.NewTEIRerank(cfg.RerankURL))
+	}
 	mcpSrv.Mount(mux)
 	// otelhttp: mỗi request (MCP call...) là một span gốc; health không cần trace.
 	handler := otelhttp.NewHandler(mux, "brain-api", otelhttp.WithFilter(func(r *http.Request) bool {

@@ -88,6 +88,8 @@ cd ai-worker && uv run pytest -q
 - M3 đã làm (S3.1.1 graph + S3.1.2 temporal): migration 000018 (`entities.ext_id`, `item_entities`);
   `kb sync` điền 39 entity L1; job `index.items` nhận diện entity trong item text (ranh giới token);
   recall thêm 2 nhánh vào RRF — `graph` (query nhắc thực thể) và `temporal` (có valid_at rõ ràng →
-  item mùa hẹp chứa ngày đi thắng item quanh năm). AC đo trên golden set chờ DYN-112. Còn S3.1.3 rerank.
+  item mùa hẹp chứa ngày đi thắng item quanh năm). AC đo trên golden set chờ DYN-112. S3.1.3 rerank xong: `recall.TEIRerank`
+  (/rerank bge-reranker-v2-m3), top ≤50 sau RRF, ngân sách 80ms, quá hạn/lỗi → giữ RRF + `degraded`;
+  bật bằng `BIVA_RERANK_URL` (compose: cùng profile rerank).
 - Linear: workspace dpos, project "BIVA Brain"; mỗi story xong thì comment kết quả + link CI rồi chuyển Done
   (chưa đạt hết AC thì để In Progress và ghi rõ phần thiếu).
