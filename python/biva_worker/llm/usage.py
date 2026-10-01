@@ -28,7 +28,7 @@ class PgUsageSink:
             r.served_model,
             r.ok,
             r.error_code,
-            r.usage.input_tokens + r.usage.cache_write_tokens,
+            r.usage.input_tokens,
             r.usage.output_tokens,
             r.usage.cache_read_tokens,
             round(r.cost_usd, 6),

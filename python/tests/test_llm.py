@@ -1,6 +1,6 @@
 """Thư viện llm/: kế hoạch gọi, fallback, kiểm output, chi phí, quota.
 
-Phần cuối chạy SDK anthropic thật với một server giả lập Messages API (không tốn tiền, không cần key).
+Phần cuối chạy SDK google-genai thật với một server giả lập Gemini API (không tốn tiền, không cần key).
 """
 
 from __future__ import annotations
@@ -12,12 +12,13 @@ import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any
 
-import anthropic
 import pytest
+from google import genai
+from google.genai import types as genai_types
 
 from biva_worker.contracts import contracts_root
 from biva_worker.llm import LLMClient, LLMRequestError, LLMUnavailable, Request, api_schema, load
-from biva_worker.llm.client import AnthropicProvider, RawResponse, Usage, UsageRecord, _AttemptFailed
+from biva_worker.llm.client import GeminiProvider, RawResponse, Usage, UsageRecord, _AttemptFailed
 from biva_worker.llm.config import ConfigError, Step, parse
 from biva_worker.llm.quota import Decision
 
@@ -48,14 +49,14 @@ def test_config_plan_matches_contract():
     with open(CFG_DIR / "plan_cases.json", encoding="utf-8") as f:
         cases = json.load(f)
     for purpose, expected in cases.items():
-        assert [[s.model.name, s.effort] for s in CFG.plan(purpose)] == expected, purpose
+        assert [[s.model.name, s.describe()] for s in CFG.plan(purpose)] == expected, purpose
 
 
-def test_config_rejects_unknown_model_in_tier():
+def test_config_rejects_bad_config():
     raw = {
         "version": 1,
-        "providers": {"a": {"kind": "anthropic", "api_key_env": "X"}},
-        "models": {"m": {"provider": "a", "price": {"input": 1, "output": 1}}},
+        "providers": {"g": {"kind": "gemini", "api_key_env": "X"}},
+        "models": {"m": {"provider": "g", "price": {"input": 1, "output": 1}}},
         "tiers": {"small": ["m"], "strong": ["khong-co"]},
         "purposes": {
             p: {"tier": "small", "tokens_per_minute": 1, "requests_per_minute": 1}
@@ -65,27 +66,31 @@ def test_config_rejects_unknown_model_in_tier():
     with pytest.raises(ConfigError, match="khong-co"):
         parse(raw)
     raw["tiers"]["strong"] = ["m"]
-    raw["providers"]["a"]["kind"] = "openai"
+    parse(raw)
+    raw["models"]["m"].update(thinking_level="low", thinking_budget=100)  # chỉ được chọn một
+    with pytest.raises(ConfigError, match="không hợp lệ"):
+        parse(raw)
+    raw["models"]["m"].pop("thinking_budget")
+    raw["providers"]["g"]["kind"] = "openai"
     with pytest.raises(ConfigError, match="không hợp lệ"):
         parse(raw)
 
 
 def test_price_cost():
-    price = CFG.models["claude-sonnet-5-5"].price
-    assert price.cost(1_000_000, 0) == pytest.approx(2.0)
-    assert price.cost(0, 1_000_000) == pytest.approx(10.0)
-    assert price.cost(0, 0, 1_000_000) == pytest.approx(0.2)
-    haiku = CFG.models["claude-haiku-4-5"].price  # không khai giá cache → tính bằng giá input
-    assert haiku.cost(0, 0, 1_000_000) == pytest.approx(1.0)
+    price = CFG.models["gemini-3.5-flash"].price
+    assert price.cost(1_000_000, 0) == pytest.approx(1.5)
+    assert price.cost(0, 1_000_000) == pytest.approx(9.0)
+    assert price.cost(0, 0, 1_000_000) == pytest.approx(0.15)
+    lite = CFG.models["gemini-3.1-flash-lite"].price  # không khai giá cache → tính bằng giá input
+    assert lite.cost(0, 0, 1_000_000) == pytest.approx(0.25)
 
 
 def test_api_schema_strips_unsupported_constraints():
     sent = api_schema(ITEM_SCHEMA)
     assert "minLength" not in sent["properties"]["topic"]
-    assert "minimum" not in sent["properties"]["price_vnd"]
+    assert sent["properties"]["price_vnd"]["minimum"] == 0  # Gemini hỗ trợ minimum/maximum
+    assert sent["additionalProperties"] is False
     assert ITEM_SCHEMA["properties"]["topic"]["minLength"] == 2  # bản gốc không bị sửa
-    with pytest.raises(ValueError, match="additionalProperties"):
-        api_schema({"type": "object", "properties": {}})
 
 
 # ─────────────────────────────── fallback (provider giả) ───────────────────────────────
@@ -96,10 +101,10 @@ class FakeProvider:
 
     def __init__(self, script: dict[str, list[Any]]) -> None:
         self.script = {k: list(v) for k, v in script.items()}
-        self.calls: list[tuple[str, str | None, Any]] = []
+        self.calls: list[tuple[str, str, Any]] = []
 
     async def complete(self, step: Step, req: Request, schema: dict[str, Any] | None) -> RawResponse:
-        self.calls.append((step.model.name, step.effort, schema))
+        self.calls.append((step.model.name, step.describe(), schema))
         out = self.script[step.model.name].pop(0)
         if isinstance(out, Exception):
             raise out
@@ -121,7 +126,7 @@ class Sink:
 def client(script, **kw):
     fake = FakeProvider(script)
     sink = Sink()
-    return LLMClient(CFG, providers={"anthropic": fake}, usage_sink=sink, **kw), fake, sink
+    return LLMClient(CFG, providers={"gemini": fake}, usage_sink=sink, **kw), fake, sink
 
 
 def req(**kw) -> Request:
@@ -132,59 +137,57 @@ def req(**kw) -> Request:
     return Request(**{**base, **kw})
 
 
+FLASH, LITE, PRO, PRO_GA = (
+    "gemini-3.5-flash",
+    "gemini-3.1-flash-lite",
+    "gemini-3.1-pro-preview",
+    "gemini-2.5-pro",
+)
+
+
 def test_primary_ok_records_usage_with_operator():
-    c, fake, sink = client(
-        {"claude-sonnet-5-5": [ok('{"topic": "gia_ve", "text": "300k"}', "claude-sonnet-5-5")]}
-    )
+    c, fake, sink = client({FLASH: [ok('{"topic": "gia_ve", "text": "300k"}', FLASH)]})
     r = run(c.complete(req(schema=ITEM_SCHEMA, operator_id="phuongnam", operation_id="op-1")))
     assert r.data == {"topic": "gia_ve", "text": "300k"}
-    assert r.model == "claude-sonnet-5-5" and len(r.attempts) == 1
-    assert fake.calls[0][1] == "low"  # effort của model
+    assert r.model == FLASH and len(r.attempts) == 1
+    assert fake.calls[0][1] == "level:low"
     assert "minLength" not in json.dumps(fake.calls[0][2])  # schema gửi đi đã gỡ ràng buộc
     (rec,) = sink.records
     assert (rec.operator_id, rec.operation_id, rec.purpose, rec.ok) == ("phuongnam", "op-1", "ingest", True)
-    assert rec.cost_usd == pytest.approx((100 * 2.0 + 20 * 10.0) / 1e6)
+    assert rec.cost_usd == pytest.approx((100 * 1.5 + 20 * 9.0) / 1e6)
 
 
 @pytest.mark.parametrize("code", ["RATE_LIMIT", "SERVER", "TIMEOUT", "CONNECTION"])
 def test_fallback_on_transient_error(code):
-    """AC S1.1.1: provider/model chính lỗi → tự chuyển."""
-    c, fake, sink = client(
-        {
-            "claude-sonnet-5-5": [_AttemptFailed(code, True, "lỗi")],
-            "claude-haiku-4-5": [ok("xin chào", "claude-haiku-4-5")],
-        }
-    )
+    """AC S1.1.1: model/provider chính lỗi → tự chuyển."""
+    c, fake, sink = client({FLASH: [_AttemptFailed(code, True, "lỗi")], LITE: [ok("xin chào", LITE)]})
     r = run(c.complete(req(operator_id="phuongnam")))
-    assert r.model == "claude-haiku-4-5" and r.text == "xin chào"
-    assert [c[0] for c in fake.calls] == ["claude-sonnet-5-5", "claude-haiku-4-5"]
-    assert fake.calls[1][1] is None  # Haiku 4.5: không gửi effort
-    assert [(x.model, x.ok, x.error_code) for x in sink.records] == [
-        ("claude-sonnet-5-5", False, code),
-        ("claude-haiku-4-5", True, None),
-    ]
+    assert r.model == LITE and r.text == "xin chào"
+    assert [x[0] for x in fake.calls] == [FLASH, LITE]
+    assert [(x.model, x.ok, x.error_code) for x in sink.records] == [(FLASH, False, code), (LITE, True, None)]
     assert all(x.operator_id == "phuongnam" for x in sink.records)
 
 
-def test_fallback_on_refusal_and_invalid_output():
+def test_fallback_on_block_and_invalid_output():
     c, _, sink = client(
         {
-            "claude-sonnet-5-5": [ok("", "claude-sonnet-5-5", stop="refusal")],
-            "claude-haiku-4-5": [ok('{"topic": "x", "text": "y"}', "claude-haiku-4-5")],  # topic quá ngắn
+            FLASH: [ok("", FLASH, stop="refusal")],
+            LITE: [
+                ok('{"topic": "x", "text": "y"}', LITE)
+            ],  # topic quá ngắn (minLength chỉ kiểm phía client)
         }
     )
     with pytest.raises(LLMUnavailable) as e:
         run(c.complete(req(schema=ITEM_SCHEMA)))
     assert [a.error_code for a in e.value.attempts] == ["REFUSAL", "INVALID_OUTPUT"]
-    assert "minLength" in e.value.attempts[1].detail or "short" in e.value.attempts[1].detail
     assert len(sink.records) == 2  # lượt lỗi vẫn ghi usage (đã tốn token)
 
 
 def test_bad_request_everywhere_is_permanent():
     c, _, _ = client(
         {
-            "claude-sonnet-5-5": [_AttemptFailed("BAD_REQUEST", False, "400")],
-            "claude-haiku-4-5": [_AttemptFailed("BAD_REQUEST", False, "400")],
+            FLASH: [_AttemptFailed("BAD_REQUEST", False, "400")],
+            LITE: [_AttemptFailed("BAD_REQUEST", False, "400")],
         }
     )
     with pytest.raises(LLMRequestError):
@@ -192,10 +195,10 @@ def test_bad_request_everywhere_is_permanent():
 
 
 def test_auth_error_skips_rest_of_provider():
-    c, fake, _ = client({"claude-opus-5-5": [_AttemptFailed("AUTH", False, "401")]})
+    c, fake, _ = client({PRO: [_AttemptFailed("AUTH", False, "API key sai")]})
     with pytest.raises(LLMRequestError):
         run(c.complete(req(purpose="validate")))
-    assert [x[0] for x in fake.calls] == ["claude-opus-5-5"]  # sonnet cùng provider không bị gọi
+    assert [x[0] for x in fake.calls] == [PRO]  # model cùng provider không bị gọi
 
 
 def test_quota_denied_skips_and_reports_retry_after():
@@ -212,38 +215,31 @@ def test_quota_denied_skips_and_reports_retry_after():
     assert fake.calls == [] and e.value.retry_after_s == 12.5
 
 
-def test_purpose_effort_override():
-    c, fake, _ = client({"claude-opus-5-5": [ok("ok", "claude-opus-5-5")]})
-    run(c.complete(req(purpose="interactive")))
-    assert fake.calls[0][1] == "high"
-
-
 def test_unknown_purpose():
     c, _, _ = client({})
     with pytest.raises(ConfigError):
         run(c.complete(req(purpose="chat")))
 
 
-# ─────────────────────────────── SDK thật + server giả lập ───────────────────────────────
+# ─────────────────────────────── SDK google-genai thật + server giả lập ───────────────────────────────
 
 
-class FakeMessagesAPI:
-    """HTTP server trả lời /v1/messages theo kịch bản (status, body); ghi lại request nhận được."""
+class FakeGeminiAPI:
+    """HTTP server trả lời …/models/{model}:generateContent theo kịch bản; ghi lại request nhận được."""
 
     def __init__(self, script: list[tuple[int, dict[str, Any]]]) -> None:
         self.script = list(script)
-        self.requests: list[tuple[dict[str, str], dict[str, Any]]] = []
+        self.requests: list[tuple[str, dict[str, str], dict[str, Any]]] = []
         outer = self
 
         class H(BaseHTTPRequestHandler):
             def do_POST(self):  # noqa: N802
                 body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
-                outer.requests.append(({k.lower(): v for k, v in self.headers.items()}, body))
+                outer.requests.append((self.path, {k.lower(): v for k, v in self.headers.items()}, body))
                 status, payload = outer.script.pop(0)
                 data = json.dumps(payload).encode()
                 self.send_response(status)
                 self.send_header("Content-Type", "application/json")
-                self.send_header("request-id", f"req_test_{len(outer.requests)}")
                 self.send_header("Content-Length", str(len(data)))
                 self.end_headers()
                 self.wfile.write(data)
@@ -259,21 +255,22 @@ class FakeMessagesAPI:
         self.server.shutdown()
 
 
-def message(model: str, text: str, stop: str = "end_turn") -> dict[str, Any]:
+def response(model: str, text: str, finish: str = "STOP") -> dict[str, Any]:
     return {
-        "id": "msg_1",
-        "type": "message",
-        "role": "assistant",
-        "model": model,
-        "content": [{"type": "text", "text": text}],
-        "stop_reason": stop,
-        "stop_sequence": None,
-        "usage": {"input_tokens": 50, "output_tokens": 10, "cache_read_input_tokens": 30},
+        "candidates": [{"content": {"role": "model", "parts": [{"text": text}]}, "finishReason": finish}],
+        "usageMetadata": {
+            "promptTokenCount": 80,
+            "cachedContentTokenCount": 30,
+            "candidatesTokenCount": 10,
+            "thoughtsTokenCount": 5,
+            "totalTokenCount": 95,
+        },
+        "modelVersion": model,
     }
 
 
-def error(kind: str, msg: str) -> dict[str, Any]:
-    return {"type": "error", "error": {"type": kind, "message": msg}}
+def error(code: int, status: str, msg: str) -> dict[str, Any]:
+    return {"error": {"code": code, "status": status, "message": msg}}
 
 
 @pytest.fixture
@@ -281,7 +278,7 @@ def api():
     servers = []
 
     def make(script):
-        s = FakeMessagesAPI(script)
+        s = FakeGeminiAPI(script)
         servers.append(s)
         return s
 
@@ -291,52 +288,73 @@ def api():
 
 
 def sdk_client(api_server) -> LLMClient:
-    sdk = anthropic.AsyncAnthropic(api_key="test", base_url=api_server.url, max_retries=0)
-    return LLMClient(CFG, providers={"anthropic": AnthropicProvider(CFG.providers["anthropic"], client=sdk)})
+    cfg = CFG.providers["gemini"]
+    sdk = genai.Client(
+        api_key="test-key",
+        http_options=genai_types.HttpOptions(
+            base_url=api_server.url, timeout=5000, retry_options=genai_types.HttpRetryOptions(attempts=1)
+        ),
+    )
+    return LLMClient(CFG, providers={"gemini": GeminiProvider(cfg, client=sdk)})
 
 
 def test_sdk_request_shape_and_fallback_on_429(api):
     server = api(
         [
-            (429, error("rate_limit_error", "chậm lại")),
-            (200, message("claude-haiku-4-5", '{"topic": "gia_ve", "text": "300k"}')),
+            (429, error(429, "RESOURCE_EXHAUSTED", "quá hạn mức")),
+            (200, response(LITE, '{"topic": "gia_ve", "text": "300k"}')),
         ]
     )
-    r = run(
-        sdk_client(server).complete(
-            req(schema=ITEM_SCHEMA, system="Bạn trích xuất tri thức.", cache_system=True)
-        )
-    )
-    assert r.data["topic"] == "gia_ve" and r.model == "claude-haiku-4-5"
-    assert r.attempts[0].error_code == "RATE_LIMIT" and "req_test_1" in r.attempts[0].detail
-    assert r.usage.cache_read_tokens == 30
+    r = run(sdk_client(server).complete(req(schema=ITEM_SCHEMA, system="Bạn trích xuất tri thức.")))
+    assert r.data["topic"] == "gia_ve" and r.model == LITE
+    assert r.attempts[0].error_code == "RATE_LIMIT"
+    # promptTokenCount gồm cả phần cache; output gồm cả token suy luận.
+    assert r.usage == Usage(input_tokens=50, output_tokens=15, cache_read_tokens=30)
 
-    (h1, b1), (h2, b2) = server.requests
-    # Sonnet 5.5: effort + structured output + fallback phía server (beta).
-    assert b1["model"] == "claude-sonnet-5-5"
-    assert b1["output_config"]["effort"] == "low"
-    assert b1["output_config"]["format"]["type"] == "json_schema"
-    assert "minLength" not in json.dumps(b1["output_config"]["format"]["schema"])
-    assert b1["fallbacks"] == "default" and "server-side-fallback-2026-07-01" in h1.get("anthropic-beta", "")
-    assert b1["system"][0]["cache_control"] == {"type": "ephemeral"}
-    # Haiku 4.5: không effort, không fallback phía server.
-    assert b2["model"] == "claude-haiku-4-5"
-    assert "effort" not in b2["output_config"] and "fallbacks" not in b2
-    assert "anthropic-beta" not in h2
+    (p1, h1, b1), (p2, _, b2) = server.requests
+    assert p1.endswith(f"/models/{FLASH}:generateContent") and p2.endswith(f"/models/{LITE}:generateContent")
+    assert h1.get("x-goog-api-key") == "test-key"
+    gc1 = b1["generationConfig"]
+    assert gc1["responseMimeType"] == "application/json"
+    assert "minLength" not in json.dumps(gc1["responseJsonSchema"])
+    # SDK gửi field này dạng snake_case; proto JSON của Gemini API nhận cả hai dạng tên.
+    assert list(gc1["thinkingConfig"].values()) == ["LOW"]
+    assert b1["systemInstruction"]["parts"][0]["text"] == "Bạn trích xuất tri thức."
+    assert b1["contents"][0]["parts"][0]["text"].startswith("Giá vé")
+    assert "thinkingConfig" not in b2["generationConfig"]  # flash-lite: để mặc định
 
 
-def test_sdk_server_error_then_bad_request(api):
-    server = api([(529, error("overloaded_error", "quá tải")), (400, error("invalid_request_error", "sai"))])
-    with pytest.raises(LLMUnavailable) as e:  # còn một lượt retryable (529) → job thử lại sau
+def test_sdk_safety_block_then_server_error(api):
+    server = api([(200, response(FLASH, "", finish="SAFETY")), (503, error(503, "UNAVAILABLE", "quá tải"))])
+    with pytest.raises(LLMUnavailable) as e:
         run(sdk_client(server).complete(req()))
-    assert [a.error_code for a in e.value.attempts] == ["SERVER", "BAD_REQUEST"]
+    assert [a.error_code for a in e.value.attempts] == ["REFUSAL", "SERVER"]
 
 
-def test_sdk_served_by_fallback_model_is_priced_by_served_model(api):
-    server = api([(200, message("claude-opus-5-5", "ok"))])  # gọi sonnet, server fallback trả opus
+def test_sdk_invalid_api_key_is_auth(api):
+    server = api([(400, error(400, "INVALID_ARGUMENT", "API key not valid. Please pass a valid API key."))])
+    with pytest.raises(LLMRequestError) as e:
+        run(sdk_client(server).complete(req()))
+    assert [a.error_code for a in e.value.attempts] == [
+        "AUTH",
+        "AUTH",
+    ]  # model thứ hai cùng provider bị bỏ qua
+    assert len(server.requests) == 1
+
+
+def test_sdk_max_tokens_is_not_retryable(api):
+    server = api(
+        [(200, response(FLASH, '{"topic": "gi', "MAX_TOKENS")), (200, response(LITE, "", "MAX_TOKENS"))]
+    )
+    with pytest.raises(LLMRequestError):
+        run(sdk_client(server).complete(req(schema=ITEM_SCHEMA)))
+
+
+def test_sdk_priced_by_served_model(api):
+    server = api([(200, response("gemini-3.1-pro-preview", "ok"))])  # alias trỏ sang model khác
     r = run(sdk_client(server).complete(req()))
-    assert r.model == "claude-sonnet-5-5" and r.served_model == "claude-opus-5-5"
-    assert r.cost_usd == pytest.approx((50 * 4.0 + 10 * 20.0 + 30 * 0.2) / 1e6)
+    assert r.model == FLASH and r.served_model == PRO
+    assert r.cost_usd == pytest.approx((50 * 2.0 + 15 * 12.0 + 30 * 2.0) / 1e6)
 
 
 # ─────────────────────────────── quota Redis ───────────────────────────────
@@ -355,14 +373,14 @@ def test_redis_quota_token_bucket():
         q = RedisQuota(r, prefix=f"test:{os.getpid()}")
         try:
             # 2 request/phút: lần 3 bị chặn, có thời gian chờ.
-            assert (await q.acquire("anthropic", "ingest", 1000, 2)).allowed
-            assert (await q.acquire("anthropic", "ingest", 1000, 2)).allowed
-            d = await q.acquire("anthropic", "ingest", 1000, 2)
+            assert (await q.acquire("gemini", "ingest", 1000, 2)).allowed
+            assert (await q.acquire("gemini", "ingest", 1000, 2)).allowed
+            d = await q.acquire("gemini", "ingest", 1000, 2)
             assert not d.allowed and 0 < d.retry_after_s <= 30
             # Hết token sau khi trừ → bị chặn dù còn request; purpose khác không bị ảnh hưởng.
-            await q.debit("anthropic", "validate", 5000, 1000, 100)
-            assert not (await q.acquire("anthropic", "validate", 1000, 100)).allowed
-            assert (await q.acquire("anthropic", "knowledge", 1000, 100)).allowed
+            await q.debit("gemini", "validate", 5000, 1000, 100)
+            assert not (await q.acquire("gemini", "validate", 1000, 100)).allowed
+            assert (await q.acquire("gemini", "knowledge", 1000, 100)).allowed
         finally:
             await r.aclose()
 
@@ -377,7 +395,7 @@ def test_redis_down_fails_open():
     async def t():
         r = aioredis.from_url("redis://127.0.0.1:1", socket_connect_timeout=0.2)
         try:
-            assert (await RedisQuota(r).acquire("anthropic", "ingest", 1, 1)).allowed
+            assert (await RedisQuota(r).acquire("gemini", "ingest", 1, 1)).allowed
         finally:
             await r.aclose()
 

@@ -264,7 +264,7 @@ Chưa bắt đầu code. Thứ tự dự kiến (chi tiết epic/story: [impleme
 | 3 | Định dạng update của nhà xe (v1) | **tin nhắn Zalo (text) + file Excel**; form ở M2; ảnh/ghi âm sau | hai nguồn phổ biến nhất |
 | 4 | API đặt vé của nhà xe | **giả định chưa có**: bot tư vấn + handoff; capability `check_seats` sẵn sàng cho nhà xe có API | không chặn tiến độ |
 | 5 | Quy mô thiết kế | **≤ 50 nhà xe, ≤ 30 builder** năm đầu; ngưỡng promote **N = 3** nhà xe | hạ tầng gọn, đo rồi tăng |
-| 6 | LLM | **gọi qua thư viện, không phụ thuộc provider**; hạng *nhỏ* (ingest, consolidate, eval) và *mạnh* (validate LLM, reflect, reference executor); luôn có provider dự phòng | tránh khoá nhà cung cấp; chi phí nền thấp |
+| 6 | LLM | **Gemini** (chốt 10/2026), gọi qua thư viện `llm/` (adapter theo provider); hạng *nhỏ* (ingest, consolidate, eval) và *mạnh* (validate LLM, reflect, reference executor); fallback giữa các model trong tier; thêm provider dự phòng = thêm adapter | thư viện không khoá nhà cung cấp; chi phí nền thấp |
 | 7 | Release gate | như mục 4 | điều chỉnh sau khi có dữ liệu thật |
 | 8 | Hạ tầng tính toán | **không có GPU** — TEI chạy CPU; rerank giới hạn | |
 | 9 | Kênh v1 | **Zalo, Messenger, web**; **không có hotline (voice)** | giảm phạm vi |

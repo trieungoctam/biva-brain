@@ -52,8 +52,8 @@ class Model:
     name: str
     provider: str
     price: Price
-    effort: str | None = None
-    server_fallback: bool = False
+    thinking_level: str | None = None  # Gemini 3.x
+    thinking_budget: int | None = None  # Gemini 2.5
 
 
 @dataclass(frozen=True)
@@ -62,16 +62,25 @@ class Purpose:
     tier: str
     tokens_per_minute: int
     requests_per_minute: int
-    effort: str | None = None
+    thinking_level: str | None = None
 
 
 @dataclass(frozen=True)
 class Step:
-    """Một lượt thử trong kế hoạch gọi: model + provider + effort đã áp dụng override của purpose."""
+    """Một lượt thử trong kế hoạch gọi: model + provider + mức suy luận đã áp dụng override của purpose."""
 
     model: Model
     provider: Provider
-    effort: str | None
+    thinking_level: str | None
+    thinking_budget: int | None
+
+    def describe(self) -> str:
+        """Dạng ngắn cho hợp đồng plan_cases.json: "level:low", "budget:1024" hoặc "default"."""
+        if self.thinking_level:
+            return f"level:{self.thinking_level}"
+        if self.thinking_budget is not None:
+            return f"budget:{self.thinking_budget}"
+        return "default"
 
 
 @dataclass(frozen=True)
@@ -89,9 +98,16 @@ class LLMConfig:
         steps = []
         for name in self.tiers[p.tier]:
             m = self.models[name]
-            # Override effort của purpose chỉ áp dụng cho model có hỗ trợ effort (đã khai báo effort).
-            effort = (p.effort or m.effort) if m.effort else None
-            steps.append(Step(model=m, provider=self.providers[m.provider], effort=effort))
+            # Override của purpose chỉ áp dụng cho model khai báo thinking_level (Gemini 3.x).
+            level = (p.thinking_level or m.thinking_level) if m.thinking_level else None
+            steps.append(
+                Step(
+                    model=m,
+                    provider=self.providers[m.provider],
+                    thinking_level=level,
+                    thinking_budget=m.thinking_budget,
+                )
+            )
         return steps
 
 
@@ -112,8 +128,8 @@ def parse(raw: dict[str, Any]) -> LLMConfig:
             name=n,
             provider=v["provider"],
             price=Price(**v["price"]),
-            effort=v.get("effort"),
-            server_fallback=v.get("server_fallback", False),
+            thinking_level=v.get("thinking_level"),
+            thinking_budget=v.get("thinking_budget"),
         )
     for tier, names in raw["tiers"].items():
         for n in names:

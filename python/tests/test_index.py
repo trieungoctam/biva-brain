@@ -131,17 +131,17 @@ def test_pg_usage_sink():
         pool = await asyncpg.create_pool(DB_URL, init=init_connection)
         op = f"usage{uuid.uuid4().hex[:8]}"
         try:
-            model = "claude-sonnet-5-5"
+            model = "gemini-3.5-flash"
             record = UsageRecord(
                 op,
                 None,
                 "ingest",
-                "anthropic",
+                "gemini",
                 model,
                 model,
                 True,
                 None,
-                Usage(1000, 200, 300, 50),
+                Usage(1000, 200, 300),
                 0.0042,
                 850,
             )
@@ -150,7 +150,7 @@ def test_pg_usage_sink():
             assert (row["purpose"], row["ok"], row["input_tokens"], row["cache_read_tokens"]) == (
                 "ingest",
                 True,
-                1050,
+                1000,
                 300,
             )
             assert float(row["cost_usd"]) == pytest.approx(0.0042)

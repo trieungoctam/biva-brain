@@ -1,4 +1,6 @@
-"""Thư viện llm/: gọi model theo purpose, fallback, quota, đo chi phí — docs/system-architecture.md §3.4.
+"""Thư viện llm/: gọi model Gemini theo purpose, fallback, quota, đo chi phí.
+
+Spec: docs/system-architecture.md §3.4.
 
     client = LLMClient(config.load(), quota=RedisQuota(redis), usage_sink=PgUsageSink(pool))
     result = await client.complete(Request(purpose="ingest", messages=[...], schema=ITEM_SCHEMA,
@@ -8,9 +10,9 @@
 Kế hoạch gọi = danh sách model của tier (config.plan). Mỗi lượt:
 quota → gọi → kiểm output → ghi usage. Lượt lỗi được ghi lại rồi chuyển lượt kế tiếp:
 
-- 429, ≥ 500, timeout, mất kết nối, hết quota, model từ chối, output sai schema → model kế tiếp;
+- 429, ≥ 500, timeout, mất kết nối, hết quota, bị chặn (safety), output sai schema → model kế tiếp;
   mọi lượt đều vậy → ``LLMUnavailable`` (retryable: job thử lại theo backoff).
-- 401/403 → bỏ mọi model cùng provider.
+- 401/403, API key sai → bỏ mọi model cùng provider.
 - 400/404/422, hết ``max_tokens`` → model kế tiếp (có thể do tham số riêng của model);
   không lượt nào retryable → ``LLMRequestError`` (không retry).
 """
@@ -25,7 +27,10 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
-import anthropic
+import httpx
+from google import genai
+from google.genai import errors as genai_errors
+from google.genai import types as genai_types
 from jsonschema import Draft202012Validator, FormatChecker
 from opentelemetry import metrics, trace
 
@@ -40,7 +45,7 @@ _tokens = meter.create_counter("biva.llm.tokens", unit="{token}", description="t
 _cost = meter.create_counter("biva.llm.cost", unit="USD", description="chi phí LLM ước tính")
 _latency = meter.create_histogram("biva.llm.latency", unit="ms", description="thời gian một lượt gọi model")
 
-DEFAULT_MAX_TOKENS = 16000  # non-streaming: đủ chỗ cho output, dưới ngưỡng timeout HTTP của SDK
+DEFAULT_MAX_TOKENS = 16000  # gồm cả token suy luận (thinking) của Gemini
 
 
 # ─────────────────────────────── kiểu dữ liệu ───────────────────────────────
@@ -53,17 +58,15 @@ class Request:
     system: str | None = None
     schema: dict[str, Any] | None = None  # JSON Schema → structured output, kết quả ở Result.data
     max_tokens: int = DEFAULT_MAX_TOKENS
-    cache_system: bool = False  # đánh dấu cache cho system prompt dài, dùng lặp lại (prompt caching)
     operator_id: str | None = None
     operation_id: str | None = None
 
 
 @dataclass(frozen=True)
 class Usage:
-    input_tokens: int = 0
-    output_tokens: int = 0
+    input_tokens: int = 0  # input không tính phần đọc từ cache
+    output_tokens: int = 0  # gồm cả token suy luận (tính giá như output)
     cache_read_tokens: int = 0
-    cache_write_tokens: int = 0
 
 
 @dataclass(frozen=True)
@@ -146,116 +149,120 @@ class ProviderAdapter(Protocol):
     async def complete(self, step: Step, req: Request, schema: dict[str, Any] | None) -> RawResponse: ...
 
 
-class AnthropicProvider:
-    """Claude API qua SDK ``anthropic`` (AsyncAnthropic)."""
+class GeminiProvider:
+    """Gemini Developer API qua SDK ``google-genai`` (client.aio)."""
 
-    SERVER_FALLBACK_BETA = "server-side-fallback-2026-07-01"
+    # finish_reason / block_reason coi như "bị chặn" → thử model kế tiếp.
+    BLOCKED = {
+        "SAFETY",
+        "BLOCKLIST",
+        "PROHIBITED_CONTENT",
+        "SPII",
+        "RECITATION",
+        "LANGUAGE",
+        "JAILBREAK",
+        "MODEL_ARMOR",
+    }
 
-    def __init__(self, cfg: Provider, client: anthropic.AsyncAnthropic | None = None) -> None:
+    def __init__(self, cfg: Provider, client: genai.Client | None = None) -> None:
         if client is None:
-            kwargs: dict[str, Any] = {"timeout": cfg.timeout_s, "max_retries": cfg.max_retries}
-            if cfg.api_key:
-                kwargs["api_key"] = cfg.api_key
-            if cfg.base_url:
-                kwargs["base_url"] = cfg.base_url
-            client = anthropic.AsyncAnthropic(**kwargs)
+            http = genai_types.HttpOptions(
+                timeout=int(cfg.timeout_s * 1000),  # mili giây
+                retry_options=genai_types.HttpRetryOptions(attempts=cfg.max_retries + 1),
+                base_url=cfg.base_url,
+            )
+            client = genai.Client(api_key=cfg.api_key, http_options=http)
         self.client = client
 
     async def complete(self, step: Step, req: Request, schema: dict[str, Any] | None) -> RawResponse:
-        kwargs: dict[str, Any] = {
-            "model": step.model.name,
-            "max_tokens": req.max_tokens,
-            "messages": req.messages,
-        }
-        if req.system:
-            block: dict[str, Any] = {"type": "text", "text": req.system}
-            if req.cache_system:
-                block["cache_control"] = {"type": "ephemeral"}
-            kwargs["system"] = [block]
-        output_config: dict[str, Any] = {}
-        if step.effort:
-            output_config["effort"] = step.effort
-        if schema is not None:
-            output_config["format"] = {"type": "json_schema", "schema": schema}
-        if output_config:
-            kwargs["output_config"] = output_config
-
-        try:
-            if step.model.server_fallback:
-                msg = await self.client.beta.messages.create(
-                    betas=[self.SERVER_FALLBACK_BETA], fallbacks="default", **kwargs
-                )
-            else:
-                msg = await self.client.messages.create(**kwargs)
-        except (anthropic.AuthenticationError, anthropic.PermissionDeniedError) as exc:
-            raise _AttemptFailed("AUTH", False, _err(exc)) from exc
-        except (
-            anthropic.BadRequestError,
-            anthropic.NotFoundError,
-            anthropic.UnprocessableEntityError,
-        ) as exc:
-            raise _AttemptFailed("BAD_REQUEST", False, _err(exc)) from exc
-        except anthropic.RateLimitError as exc:
-            raise _AttemptFailed("RATE_LIMIT", True, _err(exc)) from exc
-        except anthropic.APITimeoutError as exc:
-            raise _AttemptFailed("TIMEOUT", True, _err(exc)) from exc
-        except anthropic.APIConnectionError as exc:
-            raise _AttemptFailed("CONNECTION", True, _err(exc)) from exc
-        except anthropic.APIStatusError as exc:
-            raise _AttemptFailed(
-                "SERVER" if exc.status_code >= 500 else "HTTP", exc.status_code >= 500, _err(exc)
-            ) from exc
-
-        u = msg.usage
-        usage = Usage(
-            input_tokens=u.input_tokens or 0,
-            output_tokens=u.output_tokens or 0,
-            cache_read_tokens=getattr(u, "cache_read_input_tokens", None) or 0,
-            cache_write_tokens=getattr(u, "cache_creation_input_tokens", None) or 0,
+        thinking = None
+        if step.thinking_level:
+            thinking = genai_types.ThinkingConfig(thinking_level=step.thinking_level.upper())
+        elif step.thinking_budget is not None:
+            thinking = genai_types.ThinkingConfig(thinking_budget=step.thinking_budget)
+        config = genai_types.GenerateContentConfig(
+            system_instruction=req.system,
+            max_output_tokens=req.max_tokens,
+            thinking_config=thinking,
+            response_mime_type="application/json" if schema is not None else None,
+            response_json_schema=schema,
         )
-        text = next((b.text for b in msg.content if b.type == "text"), "")
-        return RawResponse(text=text, stop_reason=msg.stop_reason, served_model=msg.model, usage=usage)
+        contents = [
+            genai_types.Content(
+                role="model" if m["role"] == "assistant" else "user",
+                parts=[genai_types.Part(text=m["content"])],
+            )
+            for m in req.messages
+        ]
+        try:
+            resp = await self.client.aio.models.generate_content(
+                model=step.model.name, contents=contents, config=config
+            )
+        except genai_errors.APIError as exc:
+            raise _AttemptFailed(*_classify(exc)) from exc
+        except httpx.TimeoutException as exc:
+            raise _AttemptFailed("TIMEOUT", True, f"{type(exc).__name__}: {exc}") from exc
+        except httpx.TransportError as exc:
+            raise _AttemptFailed("CONNECTION", True, f"{type(exc).__name__}: {exc}") from exc
+
+        u = resp.usage_metadata
+        cached = (u.cached_content_token_count or 0) if u else 0
+        usage = Usage(
+            input_tokens=max(0, ((u.prompt_token_count or 0) if u else 0) - cached),
+            output_tokens=((u.candidates_token_count or 0) + (u.thoughts_token_count or 0)) if u else 0,
+            cache_read_tokens=cached,
+        )
+        served = resp.model_version or step.model.name
+        block = resp.prompt_feedback.block_reason if resp.prompt_feedback else None
+        if block is not None:
+            return RawResponse(text="", stop_reason="refusal", served_model=served, usage=usage)
+        finish = resp.candidates[0].finish_reason if resp.candidates else None
+        name = getattr(finish, "value", finish) or "STOP"
+        if name in self.BLOCKED:
+            stop = "refusal"
+        elif name == "MAX_TOKENS":
+            stop = "max_tokens"
+        elif name in ("STOP", "FINISH_REASON_UNSPECIFIED"):
+            stop = "end_turn"
+        else:
+            stop = "error"
+        text = "" if stop == "refusal" else (resp.text or "")
+        return RawResponse(text=text, stop_reason=stop, served_model=served, usage=usage)
 
 
-def _err(exc: Exception) -> str:
-    req_id = (
-        getattr(getattr(exc, "response", None), "headers", {}).get("request-id", "")
-        if hasattr(exc, "response")
-        else ""
-    )
-    msg = getattr(exc, "message", None) or str(exc)
-    return f"{type(exc).__name__}: {msg}" + (f" (request-id {req_id})" if req_id else "")
+def _classify(exc: genai_errors.APIError) -> tuple[str, bool, str]:
+    """Lỗi HTTP của Gemini → (mã, retryable, mô tả)."""
+    detail = f"{exc.code} {exc.status or ''}: {exc.message or ''}".strip()
+    if exc.code in (401, 403) or "API_KEY_INVALID" in str(exc) or "API key not valid" in str(exc):
+        return "AUTH", False, detail
+    if exc.code == 429:
+        return "RATE_LIMIT", True, detail
+    if exc.code >= 500:
+        return "SERVER", True, detail
+    return "BAD_REQUEST", False, detail
 
 
 # ─────────────────────────────── schema ───────────────────────────────
 
-# Ràng buộc structured output của Claude API không hỗ trợ: gỡ khỏi schema gửi đi, kiểm lại phía client.
+# Gemini (response_json_schema) hỗ trợ một tập con JSON Schema; các từ khoá dưới đây được gỡ khi gửi,
+# còn schema đầy đủ vẫn được kiểm lại phía client bằng jsonschema.
 _UNSUPPORTED = {
-    "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf",
-    "minLength", "maxLength", "pattern", "minItems", "maxItems", "uniqueItems",
-    "minProperties", "maxProperties", "$schema", "$id",
+    "pattern", "minLength", "maxLength", "uniqueItems", "minProperties", "maxProperties",
+    "multipleOf", "exclusiveMinimum", "exclusiveMaximum", "$schema", "$id",
 }  # fmt: skip
-_FORMATS = {"date-time", "time", "date", "duration", "email", "hostname", "uri", "ipv4", "ipv6", "uuid"}
 
 
 def api_schema(schema: dict[str, Any]) -> dict[str, Any]:
-    """Bản schema gửi cho API: bỏ ràng buộc không hỗ trợ; object phải có additionalProperties: false."""
+    """Bản schema gửi cho API: bỏ ràng buộc API không hỗ trợ (bản gốc không bị sửa)."""
 
-    def walk(node: Any, path: str) -> Any:
+    def walk(node: Any) -> Any:
         if isinstance(node, list):
-            return [walk(x, path) for x in node]
+            return [walk(x) for x in node]
         if not isinstance(node, dict):
             return node
-        out = {}
-        for k, v in node.items():
-            if k in _UNSUPPORTED or (k == "format" and v not in _FORMATS):
-                continue
-            out[k] = walk(v, f"{path}/{k}")
-        if out.get("type") == "object" and out.get("additionalProperties") is not False:
-            raise ValueError(f"schema {path or '/'}: object phải có additionalProperties: false")
-        return out
+        return {k: walk(v) for k, v in node.items() if k not in _UNSUPPORTED}
 
-    return walk(copy.deepcopy(schema), "")
+    return walk(copy.deepcopy(schema))
 
 
 # ─────────────────────────────── client ───────────────────────────────
@@ -274,7 +281,7 @@ class LLMClient:
         self.quota = quota or NoQuota()
         self.usage_sink = usage_sink
         self.providers: dict[str, ProviderAdapter] = providers or {
-            name: AnthropicProvider(p) for name, p in config.providers.items() if p.kind == "anthropic"
+            name: GeminiProvider(p) for name, p in config.providers.items() if p.kind == "gemini"
         }
 
     async def complete(self, req: Request) -> Result:
@@ -387,23 +394,22 @@ class LLMClient:
         usage: Usage,
         latency_ms: int,
     ) -> float:
-        # Giá theo model thực sự trả lời (fallback phía server có thể đổi model).
+        # Giá theo model thực sự trả lời (alias như *-latest có thể trỏ sang model khác).
         priced = self.config.models.get(served or "", step.model)
         cost = priced.price.cost(usage.input_tokens, usage.output_tokens, usage.cache_read_tokens)
-        cost += usage.cache_write_tokens * priced.price.input * 1.25 / 1e6  # ghi cache 5 phút = 1.25× input
         attrs = {
             "purpose": req.purpose,
             "model": served or step.model.name,
             "operator_id": req.operator_id or "",
         }
         _tokens.add(
-            usage.input_tokens + usage.cache_read_tokens + usage.cache_write_tokens,
+            usage.input_tokens + usage.cache_read_tokens,
             {**attrs, "direction": "in"},
         )
         _tokens.add(usage.output_tokens, {**attrs, "direction": "out"})
         _cost.add(cost, attrs)
         _latency.record(latency_ms, {**attrs, "ok": ok})
-        total = usage.input_tokens + usage.output_tokens + usage.cache_read_tokens + usage.cache_write_tokens
+        total = usage.input_tokens + usage.output_tokens + usage.cache_read_tokens
         if total:
             p = self.config.purposes[req.purpose]
             await self.quota.debit(

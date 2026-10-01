@@ -132,18 +132,22 @@ LLM được gọi trực tiếp từ service qua thư viện `llm/` — bản P
 
 Hiện trạng (M1): bản Python ở `python/biva_worker/llm/`, cấu hình `contracts/llm/llm.yaml`
 (schema `contracts/schemas/llm_config.schema.json`, thứ tự thử theo purpose ở `contracts/llm/plan_cases.json`).
+Provider: **Gemini** (Gemini Developer API, SDK `google-genai`, khoá `GEMINI_API_KEY`).
 
 | Tier | Thứ tự thử | Dùng cho |
 |---|---|---|
-| *nhỏ* | `claude-sonnet-5-5` (effort `low`) → `claude-haiku-4-5` | ingest, knowledge (consolidate, eval) |
-| *mạnh* | `claude-opus-5-5` (effort `medium`) → `claude-sonnet-5-5` | validate, test, interactive (effort `high`) |
+| *nhỏ* | `gemini-3.5-flash` (thinking `low`) → `gemini-3.1-flash-lite` | ingest, knowledge (consolidate, eval) |
+| *mạnh* | `gemini-3.1-pro-preview` → `gemini-2.5-pro` (GA) | validate, test, interactive |
 
-- Gọi qua SDK `anthropic`, structured output bằng `output_config.format` (JSON Schema; ràng buộc API chưa hỗ trợ được
-  gỡ khi gửi và kiểm lại phía client bằng jsonschema).
-- Hai lớp fallback: phía server (`fallbacks: "default"` khi model từ chối) và phía thư viện (model kế tiếp trong tier).
-  Provider hiện chỉ có Claude API; thêm provider khác = thêm adapter + khai báo trong `llm.yaml`.
+- Structured output bằng `response_json_schema` (JSON Schema; từ khoá API chưa hỗ trợ như `pattern`, `minLength`
+  được gỡ khi gửi và kiểm lại phía client bằng jsonschema).
+- Fallback phía thư viện: lỗi tạm thời, 429, bị chặn (safety), output sai schema → model kế tiếp trong tier.
+  Mọi model hiện cùng một nhà cung cấp: sự cố toàn Gemini API thì job chờ retry; thêm provider khác = thêm adapter
+  + khai báo trong `llm.yaml`.
+- Token suy luận (thinking) tính như output; token đọc từ cache tính giá cache.
 - Mỗi lượt gọi (kể cả lỗi) ghi một dòng `llm_usage` + metric OTel `biva.llm.tokens`/`biva.llm.cost` có `operator_id`.
 - Quota Redis fail-open: Redis lỗi thì vẫn cho gọi (ghi cảnh báo).
+- Giá trong `llm.yaml` là giá tham khảo — đối chiếu bảng giá chính thức trước khi dùng cho báo cáo chi phí.
 
 Lưu ý: phần lớn LLM của quy trình build chạy **ở phía AI client của builder** (AI viết artifact). LLM của Brain chỉ dùng
 cho ingest, consolidate, validate phần mâu thuẫn, reflect và reference executor.

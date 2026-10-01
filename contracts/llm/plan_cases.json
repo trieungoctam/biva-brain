@@ -1,52 +1,52 @@
 {
   "ingest": [
     [
-      "claude-sonnet-5-5",
-      "low"
+      "gemini-3.5-flash",
+      "level:low"
     ],
     [
-      "claude-haiku-4-5",
-      null
+      "gemini-3.1-flash-lite",
+      "default"
     ]
   ],
   "knowledge": [
     [
-      "claude-sonnet-5-5",
-      "low"
+      "gemini-3.5-flash",
+      "level:low"
     ],
     [
-      "claude-haiku-4-5",
-      null
+      "gemini-3.1-flash-lite",
+      "default"
     ]
   ],
   "validate": [
     [
-      "claude-opus-5-5",
-      "medium"
+      "gemini-3.1-pro-preview",
+      "default"
     ],
     [
-      "claude-sonnet-5-5",
-      "low"
+      "gemini-2.5-pro",
+      "default"
     ]
   ],
   "test": [
     [
-      "claude-opus-5-5",
-      "medium"
+      "gemini-3.1-pro-preview",
+      "default"
     ],
     [
-      "claude-sonnet-5-5",
-      "low"
+      "gemini-2.5-pro",
+      "default"
     ]
   ],
   "interactive": [
     [
-      "claude-opus-5-5",
-      "high"
+      "gemini-3.1-pro-preview",
+      "default"
     ],
     [
-      "claude-sonnet-5-5",
-      "high"
+      "gemini-2.5-pro",
+      "default"
     ]
   ]
 }

@@ -4,22 +4,49 @@
   "title": "Cấu hình thư viện llm/ (contracts/llm/llm.yaml)",
   "type": "object",
   "additionalProperties": false,
-  "required": ["version", "providers", "models", "tiers", "purposes"],
+  "required": [
+    "version",
+    "providers",
+    "models",
+    "tiers",
+    "purposes"
+  ],
   "properties": {
-    "version": {"const": 1},
+    "version": {
+      "const": 1
+    },
     "providers": {
       "type": "object",
       "minProperties": 1,
       "additionalProperties": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["kind", "api_key_env"],
+        "required": [
+          "kind",
+          "api_key_env"
+        ],
         "properties": {
-          "kind": {"enum": ["anthropic"]},
-          "api_key_env": {"type": "string", "minLength": 1},
-          "base_url_env": {"type": "string"},
-          "timeout_s": {"type": "number", "exclusiveMinimum": 0},
-          "max_retries": {"type": "integer", "minimum": 0, "maximum": 5}
+          "kind": {
+            "enum": [
+              "gemini"
+            ]
+          },
+          "api_key_env": {
+            "type": "string",
+            "minLength": 1
+          },
+          "base_url_env": {
+            "type": "string"
+          },
+          "timeout_s": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "max_retries": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 5
+          }
         }
       }
     },
@@ -29,41 +56,112 @@
       "additionalProperties": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["provider", "price"],
+        "required": [
+          "provider",
+          "price"
+        ],
         "properties": {
-          "provider": {"type": "string"},
-          "effort": {"enum": ["low", "medium", "high", "xhigh", "max"]},
-          "server_fallback": {"type": "boolean"},
+          "provider": {
+            "type": "string"
+          },
           "price": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["input", "output"],
+            "required": [
+              "input",
+              "output"
+            ],
             "properties": {
-              "input": {"type": "number", "minimum": 0},
-              "output": {"type": "number", "minimum": 0},
-              "cache_read": {"type": "number", "minimum": 0}
+              "input": {
+                "type": "number",
+                "minimum": 0
+              },
+              "output": {
+                "type": "number",
+                "minimum": 0
+              },
+              "cache_read": {
+                "type": "number",
+                "minimum": 0
+              }
             }
+          },
+          "thinking_level": {
+            "enum": [
+              "minimal",
+              "low",
+              "medium",
+              "high"
+            ],
+            "description": "Gemini 3.x: mức suy luận"
+          },
+          "thinking_budget": {
+            "type": "integer",
+            "minimum": -1,
+            "description": "Gemini 2.5: số token suy luận (-1 = động, 0 = tắt nếu model cho phép)"
           }
+        },
+        "not": {
+          "required": [
+            "thinking_level",
+            "thinking_budget"
+          ]
         }
       }
     },
     "tiers": {
       "type": "object",
-      "required": ["small", "strong"],
-      "additionalProperties": {"type": "array", "minItems": 1, "items": {"type": "string"}, "uniqueItems": true}
+      "required": [
+        "small",
+        "strong"
+      ],
+      "additionalProperties": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "type": "string"
+        },
+        "uniqueItems": true
+      }
     },
     "purposes": {
       "type": "object",
-      "required": ["ingest", "knowledge", "validate", "test", "interactive"],
+      "required": [
+        "ingest",
+        "knowledge",
+        "validate",
+        "test",
+        "interactive"
+      ],
       "additionalProperties": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["tier", "tokens_per_minute", "requests_per_minute"],
+        "required": [
+          "tier",
+          "tokens_per_minute",
+          "requests_per_minute"
+        ],
         "properties": {
-          "tier": {"type": "string"},
-          "tokens_per_minute": {"type": "integer", "minimum": 1},
-          "requests_per_minute": {"type": "integer", "minimum": 1},
-          "effort": {"enum": ["low", "medium", "high", "xhigh", "max"]}
+          "tier": {
+            "type": "string"
+          },
+          "tokens_per_minute": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "requests_per_minute": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "thinking_level": {
+            "enum": [
+              "minimal",
+              "low",
+              "medium",
+              "high"
+            ],
+            "description": "ghi đè thinking_level cho model có khai báo thinking_level"
+          }
         }
       }
     }
