@@ -1,9 +1,9 @@
-"""Sinh contracts/textnorm/cases.jsonl (chạy từ gốc repo: python/.venv/bin/python contracts/textnorm/gen_cases.py).
+"""Sinh contracts/textnorm/cases.jsonl (chạy từ gốc repo: ai-worker/.venv/bin/python contracts/textnorm/gen_cases.py).
 
 Kết quả kỳ vọng tính bằng bản Python; bản Go kiểm độc lập. Thêm câu → chạy lại → đọc kỹ diff trước khi commit.
 """
 import json, sys, unicodedata
-sys.path.insert(0, "python")
+sys.path.insert(0, "ai-worker")
 from biva_worker.textnorm import fold, search_text
 
 base = """Xe giường nằm 40 chỗ chạy tuyến Sài Gòn – Đà Lạt mỗi ngày.

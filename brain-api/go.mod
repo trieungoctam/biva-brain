@@ -1,4 +1,4 @@
-module github.com/trieungoctam/biva-brain/go
+module github.com/trieungoctam/biva-brain/brain-api
 
 go 1.25.11
 

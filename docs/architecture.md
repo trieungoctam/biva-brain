@@ -226,16 +226,19 @@ Go chỉ chuẩn hoá query theo cùng thuật toán (`textnorm`, kiểm bằng 
 
 Data model: [data-model.md](data-model.md). Hệ thống, triển khai, bảo mật: [system-architecture.md](system-architecture.md).
 
-## 7. Cấu trúc repo (dự kiến)
+## 7. Cấu trúc repo
+
+Thư mục đặt theo **thành phần** (service), không theo ngôn ngữ.
 
 ```
 biva-brain/
-├── contracts/            migrations · schemas · fixtures
-├── go/
-│   ├── cmd/brain-api/    MCP + REST + scheduler
-│   └── internal/         mcp · recall · pack · artifacts · logic · store · queue · textnorm
-├── python/
-│   └── biva_worker/      jobs/ · prompts/ · nlp/ · llm/ · executor/
+├── contracts/            migrations · schemas · fixtures · llm.yaml · textnorm (dùng chung Go ⇄ Python)
+├── brain-api/            service Go
+│   ├── cmd/brain-api/    MCP + REST + scheduler + CLI quản trị
+│   └── internal/         mcpserver · authz · queue · scheduler · kb · textnorm · store · recall · pack…
+├── ai-worker/            service Python
+│   └── biva_worker/      runner · llm/ · index · textnorm · (ingest, consolidate, executor…)
+├── kb/                   tri thức nền L0/L1 (YAML, review bằng PR)
 ├── console/              React + Vite
 ├── deploy/               docker-compose, helm
 └── docs/

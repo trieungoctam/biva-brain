@@ -15,7 +15,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/trieungoctam/biva-brain/go/internal/migrate"
+	"github.com/trieungoctam/biva-brain/brain-api/internal/migrate"
 )
 
 var (

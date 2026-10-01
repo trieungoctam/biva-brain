@@ -9,7 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/trieungoctam/biva-brain/go/internal/testdb"
+	"github.com/trieungoctam/biva-brain/brain-api/internal/testdb"
 )
 
 func testPool(t *testing.T) *pgxpool.Pool { return testdb.Pool(t) }

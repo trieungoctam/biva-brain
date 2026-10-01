@@ -26,15 +26,15 @@ smoke:         ## make up + kiểm luồng MCP → queue → worker (+ TEI); SMO
 test: test-go test-py
 
 test-go:       ## đặt BIVA_TEST_DATABASE_URL để chạy cả test migration với Postgres thật
-	cd go && go vet ./... && go test -p 1 ./...   # -p 1: các test dùng chung một DB
+	cd brain-api && go vet ./... && go test -p 1 ./...   # -p 1: các test dùng chung một DB
 
 test-py:
-	cd python && uv run pytest -q
+	cd ai-worker && uv run pytest -q
 
 lint:
-	cd go && test -z "$$(gofmt -l .)" && go vet ./... && go run ./cmd/brain-api kb check
-	cd python && uv run ruff check . && uv run ruff format --check .
+	cd brain-api && test -z "$$(gofmt -l .)" && go vet ./... && go run ./cmd/brain-api kb check
+	cd ai-worker && uv run ruff check . && uv run ruff format --check .
 
 fmt:
-	cd go && gofmt -w .
-	cd python && uv run ruff format . && uv run ruff check --fix .
+	cd brain-api && gofmt -w .
+	cd ai-worker && uv run ruff format . && uv run ruff check --fix .

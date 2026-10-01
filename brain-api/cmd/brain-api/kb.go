@@ -5,9 +5,9 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/trieungoctam/biva-brain/go/internal/config"
-	"github.com/trieungoctam/biva-brain/go/internal/kb"
-	"github.com/trieungoctam/biva-brain/go/internal/store"
+	"github.com/trieungoctam/biva-brain/brain-api/internal/config"
+	"github.com/trieungoctam/biva-brain/brain-api/internal/kb"
+	"github.com/trieungoctam/biva-brain/brain-api/internal/store"
 )
 
 func kbCheck() error {

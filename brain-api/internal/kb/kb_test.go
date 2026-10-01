@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/trieungoctam/biva-brain/go/internal/testdb"
+	"github.com/trieungoctam/biva-brain/brain-api/internal/testdb"
 )
 
 const (

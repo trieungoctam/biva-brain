@@ -25,7 +25,7 @@ import (
 	"github.com/santhosh-tekuri/jsonschema/v6"
 	"go.yaml.in/yaml/v3"
 
-	"github.com/trieungoctam/biva-brain/go/internal/queue"
+	"github.com/trieungoctam/biva-brain/brain-api/internal/queue"
 )
 
 type Rule struct {

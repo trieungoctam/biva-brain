@@ -1,12 +1,12 @@
 # Python
-python/.venv/
+ai-worker/.venv/
 __pycache__/
 *.pyc
 .pytest_cache/
 .ruff_cache/
 
 # Go
-go/bin/
+brain-api/bin/
 
 # Local
 .env

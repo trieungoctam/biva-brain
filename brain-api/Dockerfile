@@ -1,9 +1,9 @@
-# Build context: gốc repo (cần cả go/ và contracts/).
+# Build context: gốc repo (cần cả brain-api/, contracts/ và kb/).
 FROM golang:1.25 AS build
-WORKDIR /src/go
-COPY go/go.mod go/go.sum ./
+WORKDIR /src/brain-api
+COPY brain-api/go.mod brain-api/go.sum ./
 RUN go mod download
-COPY go/ ./
+COPY brain-api/ ./
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/brain-api ./cmd/brain-api
 
 FROM alpine:3.20

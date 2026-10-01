@@ -21,8 +21,8 @@ Trạng thái: **thiết kế đã chốt**, đang làm **M0 — Nền móng** (
 
 ```
 contracts/   migrations (golang-migrate) · schemas (JSON Schema) · fixtures dùng chung Go ⇄ Python
-go/          brain-api (Go): HTTP health, migrate; MCP, recall… ở các mốc sau
-python/      ai-worker (Python): job dùng LLM/NLP
+brain-api/   service Go: MCP, REST, scheduler, migrate, kb sync; recall… ở các mốc sau
+ai-worker/   service Python: job nền dùng LLM/NLP (index, ingest…)
 kb/         tri thức nền L0/L1 (YAML, review bằng PR) → brain-api kb sync
 deploy/      docker-compose cho local
 docs/        thiết kế
@@ -70,7 +70,7 @@ Tool hiện có (M0): `get_operation`. Danh mục đầy đủ: [docs/mcp.md](do
 ## LLM và index
 
 - `contracts/llm/llm.yaml`: model Gemini theo tier (*nhỏ* 3.5 Flash → 3.1 Flash-Lite, *mạnh* 3.1 Pro → 2.5 Pro),
-  quota theo purpose, bảng giá. Thư viện: `python/biva_worker/llm/` (fallback, quota Redis, structured output,
+  quota theo purpose, bảng giá. Thư viện: `ai-worker/biva_worker/llm/` (fallback, quota Redis, structured output,
   ghi `llm_usage`). Cần `GEMINI_API_KEY` khi chạy job dùng LLM.
 - Job `index.items`: ghi `search_text` (tìm được cả có dấu và không dấu) + embedding qua TEI cho item còn thiếu.
 

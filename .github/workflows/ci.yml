@@ -20,16 +20,16 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version-file: go/go.mod
-          cache-dependency-path: go/go.sum
+          go-version-file: brain-api/go.mod
+          cache-dependency-path: brain-api/go.sum
       - uses: astral-sh/setup-uv@v6
         with:
-          working-directory: python
+          working-directory: ai-worker
       - name: go mod tidy không làm thay đổi go.mod/go.sum
-        working-directory: go
+        working-directory: brain-api
         run: go mod tidy && git diff --exit-code go.mod go.sum
       - name: uv.lock khớp pyproject.toml
-        working-directory: python
+        working-directory: ai-worker
         run: uv lock --check
       - run: make lint
 
@@ -59,11 +59,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version-file: go/go.mod
-          cache-dependency-path: go/go.sum
+          go-version-file: brain-api/go.mod
+          cache-dependency-path: brain-api/go.sum
       - uses: astral-sh/setup-uv@v6
         with:
-          working-directory: python
+          working-directory: ai-worker
       # test-go chạy trước: migrate DB tới bản mới nhất cho test-py.
       - run: make test
 

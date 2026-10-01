@@ -130,7 +130,7 @@ LLM được gọi trực tiếp từ service qua thư viện `llm/` — bản P
 | Đo chi phí | mỗi lời gọi ghi metrics `tokens_in/out`, `cost`, nhãn `operator_id`, `purpose`, `model` |
 | Kiểm thử | test hợp đồng chung: cùng cấu hình → cùng lựa chọn provider ở Go và Python |
 
-Hiện trạng (M1): bản Python ở `python/biva_worker/llm/`, cấu hình `contracts/llm/llm.yaml`
+Hiện trạng (M1): bản Python ở `ai-worker/biva_worker/llm/`, cấu hình `contracts/llm/llm.yaml`
 (schema `contracts/schemas/llm_config.schema.json`, thứ tự thử theo purpose ở `contracts/llm/plan_cases.json`).
 Provider: **Gemini** (Gemini Developer API, SDK `google-genai`, khoá `GEMINI_API_KEY`).
 

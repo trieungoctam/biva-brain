@@ -38,7 +38,7 @@ Mục `required` phải phủ 100% trước phát hành, `recommended` ≥ 80% (
 ## Quy trình
 
 ```bash
-cd go
+cd brain-api
 go run ./cmd/brain-api kb check            # kiểm schema, key trùng, prefix tầng, topic ∈ template (CI chạy trong make lint)
 brain-api kb sync --dry-run                # xem sẽ thêm / sửa / bỏ gì
 brain-api kb sync                          # ghi: idempotent theo key

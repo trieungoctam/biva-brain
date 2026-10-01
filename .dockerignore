@@ -3,7 +3,7 @@
 **/__pycache__
 **/.pytest_cache
 **/.ruff_cache
-go/bin
+brain-api/bin
 docs
 *.log
 .env

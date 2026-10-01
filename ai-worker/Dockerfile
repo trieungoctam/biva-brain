@@ -1,10 +1,10 @@
-# Build context: gốc repo (cần cả python/ và contracts/).
+# Build context: gốc repo (cần cả ai-worker/ và contracts/).
 FROM python:3.12-slim
 COPY --from=ghcr.io/astral-sh/uv:0.8 /uv /usr/local/bin/uv
 WORKDIR /app
-COPY python/pyproject.toml python/uv.lock ./
+COPY ai-worker/pyproject.toml ai-worker/uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
-COPY python/ ./
+COPY ai-worker/ ./
 RUN uv sync --frozen --no-dev
 COPY contracts /contracts
 ENV BIVA_CONTRACTS_DIR=/contracts \

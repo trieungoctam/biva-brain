@@ -1,6 +1,6 @@
 """Chuẩn hoá tiếng Việt cho tìm kiếm — spec: contracts/textnorm/README.md.
 
-Phải cho kết quả giống hệt bản Go (go/internal/textnorm); kiểm bằng contracts/textnorm/cases.jsonl.
+Phải cho kết quả giống hệt bản Go (brain-api/internal/textnorm); kiểm bằng contracts/textnorm/cases.jsonl.
 """
 
 from __future__ import annotations

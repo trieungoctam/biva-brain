@@ -9,10 +9,10 @@ import (
 	"os/user"
 	"time"
 
-	"github.com/trieungoctam/biva-brain/go/internal/audit"
-	"github.com/trieungoctam/biva-brain/go/internal/authz"
-	"github.com/trieungoctam/biva-brain/go/internal/config"
-	"github.com/trieungoctam/biva-brain/go/internal/store"
+	"github.com/trieungoctam/biva-brain/brain-api/internal/audit"
+	"github.com/trieungoctam/biva-brain/brain-api/internal/authz"
+	"github.com/trieungoctam/biva-brain/brain-api/internal/config"
+	"github.com/trieungoctam/biva-brain/brain-api/internal/store"
 )
 
 const adminUsage = `quản trị (M0, trước khi có console):

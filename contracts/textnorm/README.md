@@ -1,6 +1,6 @@
 # textnorm — chuẩn hoá tiếng Việt cho tìm kiếm (spec)
 
-Go (`go/internal/textnorm`) chuẩn hoá **query**, Python (`biva_worker/textnorm.py`) ghi **`search_text`** cho item.
+Go (`brain-api/internal/textnorm`) chuẩn hoá **query**, Python (`biva_worker/textnorm.py`) ghi **`search_text`** cho item.
 Hai bên phải cho kết quả **giống hệt từng byte**: kiểm bằng `cases.jsonl` (≥ 200 câu) ở cả hai test suite.
 Đổi thuật toán = đổi spec này + fixture + cả hai bản cài đặt + re-index `search_text`.
 
@@ -34,5 +34,5 @@ không dấu, và bigram giúp ưu tiên cụm âm tiết đúng thứ tự ("gi
 `cases.jsonl`: mỗi dòng `{"input": …, "fold": …, "search_text": …}`. Có cả input dạng NFC và NFD, chữ hoa có dấu,
 số tiền, giờ, emoji, full-width, ký tự không phải Latin, chuỗi rỗng.
 
-Thêm câu: sửa `gen_cases.py` → `python/.venv/bin/python contracts/textnorm/gen_cases.py` → đọc kỹ diff của
+Thêm câu: sửa `gen_cases.py` → `ai-worker/.venv/bin/python contracts/textnorm/gen_cases.py` → đọc kỹ diff của
 `cases.jsonl` (kết quả phải đúng theo spec ở trên, không chỉ "đúng theo code") → chạy test cả hai bên.

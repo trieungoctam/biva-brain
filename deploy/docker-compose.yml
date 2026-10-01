@@ -54,7 +54,7 @@ services:
     volumes: [teidata:/data]
 
   migrate:
-    build: { context: .., dockerfile: go/Dockerfile }
+    build: { context: .., dockerfile: brain-api/Dockerfile }
     command: ["migrate", "up"]
     environment:
       BIVA_DATABASE_URL: *db_url
@@ -63,7 +63,7 @@ services:
     restart: "no"
 
   brain-api:
-    build: { context: .., dockerfile: go/Dockerfile }
+    build: { context: .., dockerfile: brain-api/Dockerfile }
     environment:
       BIVA_DATABASE_URL: *db_url
       OTEL_EXPORTER_OTLP_ENDPOINT: *otel
@@ -77,7 +77,7 @@ services:
       retries: 10
 
   ai-worker:
-    build: { context: .., dockerfile: python/Dockerfile }
+    build: { context: .., dockerfile: ai-worker/Dockerfile }
     environment:
       BIVA_DATABASE_URL: *db_url
       BIVA_TEI_URL: http://tei-embed:80

@@ -20,8 +20,8 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/auth"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/trieungoctam/biva-brain/go/internal/audit"
-	"github.com/trieungoctam/biva-brain/go/internal/authz"
+	"github.com/trieungoctam/biva-brain/brain-api/internal/audit"
+	"github.com/trieungoctam/biva-brain/brain-api/internal/authz"
 )
 
 const principalKey = "principal"

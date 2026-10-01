@@ -20,7 +20,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-var tracer = otel.Tracer("github.com/trieungoctam/biva-brain/go/internal/queue")
+var tracer = otel.Tracer("github.com/trieungoctam/biva-brain/brain-api/internal/queue")
 
 var ErrNotFound = errors.New("operation không tồn tại")
 

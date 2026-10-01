@@ -20,13 +20,13 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/trieungoctam/biva-brain/go/internal/config"
-	"github.com/trieungoctam/biva-brain/go/internal/httpapi"
-	"github.com/trieungoctam/biva-brain/go/internal/mcpserver"
-	"github.com/trieungoctam/biva-brain/go/internal/migrate"
-	"github.com/trieungoctam/biva-brain/go/internal/scheduler"
-	"github.com/trieungoctam/biva-brain/go/internal/store"
-	"github.com/trieungoctam/biva-brain/go/internal/telemetry"
+	"github.com/trieungoctam/biva-brain/brain-api/internal/config"
+	"github.com/trieungoctam/biva-brain/brain-api/internal/httpapi"
+	"github.com/trieungoctam/biva-brain/brain-api/internal/mcpserver"
+	"github.com/trieungoctam/biva-brain/brain-api/internal/migrate"
+	"github.com/trieungoctam/biva-brain/brain-api/internal/scheduler"
+	"github.com/trieungoctam/biva-brain/brain-api/internal/store"
+	"github.com/trieungoctam/biva-brain/brain-api/internal/telemetry"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 

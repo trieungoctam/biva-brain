@@ -97,7 +97,7 @@ Song song từ M0: E-X1 tri thức L0/L1 + golden set (Ops) · E-X2 quan sát ·
 
 | Epic | Story | Phụ trách | AC |
 |---|---|---|---|
-| **E0.1 Repo & contracts** | S0.1.1 Monorepo `contracts/ go/ python/ console/ deploy/ docs/` | Lead | cấu trúc như architecture.md §7; README chạy local |
+| **E0.1 Repo & contracts** | S0.1.1 Monorepo `contracts/ brain-api/ ai-worker/ console/ deploy/ docs/` | Lead | cấu trúc như architecture.md §7; README chạy local |
 | | S0.1.2 Migration nền (golang-migrate): operators, bots, documents, items, entities, operations, audit_log | Go | `migrate up/down` sạch trên DB trống |
 | | S0.1.3 JSON Schema đầu tiên: payload job `ingest`, kết quả operation | Lead | schema có test ở cả Go và Py |
 | | S0.1.4 Fixture chung `textnorm` (chuẩn hoá tiếng Việt, không dấu, bigram) | Go + Py | Go và Py cho kết quả **giống hệt** trên ≥ 200 câu fixture |
