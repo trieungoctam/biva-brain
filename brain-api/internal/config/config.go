@@ -19,6 +19,7 @@ type Config struct {
 	S3Endpoint         string // BIVA_S3_ENDPOINT: object storage cho bản export (vd http://localhost:8333); trống = trả nội dung, không lưu
 	S3Bucket           string // BIVA_S3_BUCKET, mặc định biva-exports
 	S3PublicURL        string // BIVA_S3_PUBLIC_URL: cơ sở link tải (khác endpoint khi truy cập từ ngoài); trống = dùng endpoint
+	IntegrationsRepo   string // BIVA_INTEGRATIONS_REPO: repo biva-integrations (URL git hoặc path checkout) cho job index.code; trống = tắt
 	S3AccessKey        string // BIVA_S3_ACCESS_KEY / BIVA_S3_SECRET_KEY — trống = anonymous (SeaweedFS local)
 	S3SecretKey        string
 	ShutdownTimeout    time.Duration // thời gian chờ tắt êm
@@ -41,6 +42,7 @@ func Load() (Config, error) {
 		S3Bucket:           getenv("BIVA_S3_BUCKET", "biva-exports"),
 		S3AccessKey:        os.Getenv("BIVA_S3_ACCESS_KEY"),
 		S3PublicURL:        os.Getenv("BIVA_S3_PUBLIC_URL"),
+		IntegrationsRepo:   os.Getenv("BIVA_INTEGRATIONS_REPO"),
 		S3SecretKey:        os.Getenv("BIVA_S3_SECRET_KEY"),
 		ShutdownTimeout:    10 * time.Second,
 	}

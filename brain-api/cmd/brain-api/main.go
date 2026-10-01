@@ -32,6 +32,7 @@ import (
 	"github.com/trieungoctam/biva-brain/brain-api/internal/oauth"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/pack"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/pages"
+	"github.com/trieungoctam/biva-brain/brain-api/internal/queue"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/recall"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/scheduler"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/storage"
@@ -173,6 +174,24 @@ func serve(cfg config.Config) error {
 				return err
 			},
 		})
+		// index_code (S2.5.2): mỗi phút enqueue job đồng bộ repo logic; job tự no-op khi HEAD không đổi
+		// → merge PR được Brain cập nhật trong ≤ 1 phút.
+		if cfg.IntegrationsRepo != "" {
+			tasks = append(tasks, scheduler.Task{
+				Name: "index_code", Every: time.Minute,
+				Run: func(taskCtx context.Context, taskDB *pgxpool.Pool) error {
+					key := fmt.Sprintf("index_code:%d", time.Now().Unix()/60)
+					_, created, err := queue.Enqueue(taskCtx, taskDB, queue.Job{
+						Kind: "index.code", IdempotencyKey: key,
+						Payload: map[string]string{"repo": cfg.IntegrationsRepo},
+					})
+					if err == nil && created {
+						slog.Info("index_code: enqueue đồng bộ repo logic", "repo", cfg.IntegrationsRepo)
+					}
+					return err
+				},
+			})
+		}
 		(&scheduler.Scheduler{DB: db.Primary, Tasks: tasks}).Run(schedCtx)
 	}()
 	defer func() { stopSched(); <-schedDone }()

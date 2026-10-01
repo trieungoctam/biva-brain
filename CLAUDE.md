@@ -69,8 +69,11 @@ cd ai-worker && uv run pytest -q
 - E2.5 tri thức logic v1 **đã chốt: repo riêng `github.com/trieungoctam/biva-integrations`** (clone ở
   `../biva-integrations`). S2.5.1 xong: schema hợp đồng `contracts/schemas/logic/{module,profile,cases}.schema.json`
   (fixture test cả Go ⇄ Python) + 3 module chuẩn đầu tiên (`fare.standard`, `booking.hold`,
-  `schedule.sync_excel`, CI riêng chạy cases). Còn: S2.5.2 `index_code` (sync git → logic_modules/
-  logic_profiles/logic_tests/code_chunks), S2.5.3 feature catalog seed + `extract_logic_spec`,
+  `schedule.sync_excel`, CI riêng chạy cases). S2.5.2 xong: job `index.code` (ai-worker `logic_sync.py`)
+  sync repo → `logic_modules/logic_profiles/logic_param_sources/logic_tests/code_chunks/logic_syncs`
+  (migration 000015); chunk theo hàm/lớp gắn commit (commit mới xoá chunk cũ); no-op theo HEAD;
+  scheduler tick mỗi phút khi đặt `BIVA_INTEGRATIONS_REPO`; profile/case của nhà xe chưa onboard bị
+  bỏ qua và retry ở tick sau. Còn: S2.5.3 feature catalog seed + `extract_logic_spec`,
   S2.5.4–S2.5.6 (find_similar_operators, compare_logic, plan/propose, NO_CAPABILITY), S2.5.7 prompt.
 - Linear: workspace dpos, project "BIVA Brain"; mỗi story xong thì comment kết quả + link CI rồi chuyển Done
   (chưa đạt hết AC thì để In Progress và ghi rõ phần thiếu).

@@ -103,15 +103,16 @@ Code nằm ở git; các bảng dưới **đồng bộ từ repo** (`module.yaml
 | Bảng | Vai trò | Cột chính |
 |---|---|---|
 | `logic_modules` | module L1 (chuẩn) hoặc L2 (custom), từ `module.yaml` | `id`, `layer`, `operator_id`, `capability`, `version`, `summary`, `entrypoint`, `features[]`, `params_schema`, `hooks`, `repo`, `path`, `commit`, `status` (active · deprecated · retired), `proof_count` |
-| `logic_profiles` | hồ sơ logic của nhà xe theo capability, từ `profile.yaml` | `operator_id`, `capability`, `mode` (config · hook · custom), `module_id`, `params`, `hooks`, `decision_id`, `derived_from` (operator), `commit`, `status` (pending · active · stale · retired) |
+| `logic_profiles` | hồ sơ logic của nhà xe theo capability, từ `profile.yaml` | `operator_id`, `capability`, `mode` (config · hook · custom), `module_id` + `module_version`, `params`, `hooks`, `decision_id`, `derived_from` (operator), `commit`, `status` (pending · active · stale · retired) |
 | `logic_param_sources` | tham số ↔ item tri thức là nguồn | `profile_id`, `param_path`, `item_id` |
 | `logic_features` | **danh mục feature** L1 | `id` (vd `fare.holiday_surcharge`), `capability`, `description`, `params_schema`, `operator_count`, `status` (proposed · active · deprecated) |
 | `logic_specs` | **logic spec** của nhà xe theo capability (có cả khi chưa có code) | `operator_id`, `capability`, `features` (JSONB: feature + tham số), `rules_text[]`, `embedding`, `implementation` (nullable), `family_id`, `status` |
 | `logic_families` | **họ logic** (cụm spec) | `id`, `capability`, `name`, `centroid_features`, `members[]`, `recommended_implementation`, `promote_candidate` |
 | `logic_similarity` | cache điểm tương đồng giữa hai nhà xe theo capability | `capability`, `operator_a`, `operator_b`, `spec_score`, `code_score`, `behavior_pass_rate`, `computed_at` |
-| `logic_tests` | ví dụ input → output (từ `tests/cases.yaml` và ví dụ nhà xe gửi) | `operator_id`, `capability`, `input`, `expected`, `note`, `source_item_id` |
+| `logic_tests` | ví dụ input → output (từ `tests/cases.yaml` và ví dụ nhà xe gửi) | `operator_id`, `module_id`, `capability`, `input`, `expected`, `note`, `source_item_id` (không FK — case module L1 có thể trỏ item chưa có trong Brain) |
 | `logic_decisions` | ADR: vì sao hook/custom | `operator_id`, `capability`, `context`, `options`, `decision`, `author`, `approved_by` |
 | `code_chunks` | index code theo hàm/lớp, gắn commit | `repo`, `path`, `commit`, `symbol`, `text`, `summary`, `search_text`, `embedding`, `module_id`, `operator_id` |
+| `logic_syncs` | HEAD repo logic đã đồng bộ (job `index_code` no-op khi commit không đổi) | `repo`, `commit`, `synced_at` |
 
 Bài học về code dùng chung bảng `items` (`kind=lesson`, `topic=code:<capability>`).
 

@@ -137,7 +137,7 @@ cases:
 ### 3.3 Đồng bộ từ git
 
 ```
-push lên nhánh chính ──webhook──► Brain: job index_code
+push nhánh chính ──tick mỗi phút của scheduler──► Brain: enqueue job index_code
   1. module.yaml       → logic_modules
   2. profile.yaml      → logic_profiles + logic_param_sources (đối chiếu item id)
   3. tests/cases.yaml  → logic_tests
@@ -147,6 +147,11 @@ push lên nhánh chính ──webhook──► Brain: job index_code
 ```
 
 Chunk gắn commit: commit mới → chunk cũ không còn được trả về (cơ chế "quên" cho code).
+
+Job tự no-op khi HEAD đã đồng bộ (bảng `logic_syncs`) → merge PR được Brain cập nhật trong ≤ 1 phút.
+Nhà xe chưa onboard trong Brain thì profile và case của nhà xe đó bị bỏ qua và mốc HEAD **không** được
+ghi — tick kế thử lại tới khi onboard. Embedding qua TEI; TEI lỗi → chunk vẫn vào (search keyword dùng
+được), embedding để NULL và lần sync sau bù.
 
 ## 4. Logic spec — "dấu vân tay" logic của nhà xe
 
