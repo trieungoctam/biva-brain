@@ -36,6 +36,13 @@ Giá/lịch là topic rủi ro cao (fare/schedule) → vào **review queue chờ
 `get_coverage` xem độ phủ mục bắt buộc → đủ thì chạy prompt `build_bot` → `run_tests` →
 `check_release_gate` → `request_publish`.
 
+## File Excel/CSV "bẩn" cũng ăn
+
+Loader chịu được: BOM, CRLF, delimiter `;` (Excel locale Việt Nam), khoảng trắng thừa,
+cột thừa bị bỏ, giá dạng `320000` · `320.000đ` · `350,000 VNĐ` (tự bỏ chữ/sep).
+Giá không đọc được sẽ báo dòng thân thiện thay vì traceback. Đã test bằng file có đủ
+thứ bẩn trên đó nạp thật vào stack.
+
 ## Lưu ý vận hành (kiểm chứng trên stack local)
 
 - **Idempotency 2 tầng**: nạp lại file có nội dung y hệt là no-op (documents trùng bị

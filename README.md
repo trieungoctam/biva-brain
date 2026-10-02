@@ -129,6 +129,12 @@ deploy/demo.sh                   # demo promote toàn cục (3 nhà xe → L1), 
 Baseline 10/2026 trên stack local: recall p95 14ms (< 150), pack p95 3ms (< 800), validate tĩnh 4ms (< 300),
 stale < 2ms — mọi SLO đạt.
 
+## Nạp dữ liệu nhà xe (pilot)
+
+`deploy/pilot-kit/` — 3 template CSV (giá · lịch chạy · chính sách) + loader nạp qua MCP
+`submit_knowledge` (không cần key LLM), kèm `--coverage` xem độ phủ mục bắt buộc và thiếu gì.
+Chi tiết: `deploy/pilot-kit/README.md`.
+
 ## Đang chờ (ngoài code)
 
 | Cần | Mở khóa |

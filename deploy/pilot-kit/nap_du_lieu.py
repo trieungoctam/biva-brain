@@ -74,11 +74,35 @@ def policy_items(rows: list[dict]) -> list[dict]:
 
 
 def _read_csv(path: Path) -> list[dict]:
-    with path.open(encoding="utf-8-sig", newline="") as f:  # BOM từ Excel
-        rows = [r for r in csv.DictReader(f) if any((v or "").strip() for v in r.values())]
+    """Đọc CSV từ Excel Việt Nam: BOM, CRLF, delimiter ',' hoặc ';' (locale), cột thừa."""
+    raw = path.read_bytes()
+    text = raw.decode("utf-8-sig", errors="replace").lstrip("\ufeff")
+    lines = [ln for ln in text.splitlines() if ln.strip()]
+    if not lines:
+        sys.exit(f"{path}: file rỗng")
+    # Locale Excel VN hay xuất ';' — đánh giá bằng dòng đầu, mặc định ','
+    delim = ";" if lines[0].count(";") > lines[0].count(",") else ","
+    header = [h.strip().lower() for h in lines[0].split(delim)]
+    rows = []
+    for ln in lines[1:]:
+        vals = [v.strip() for v in ln.split(delim)]
+        row = dict(zip(header, vals))  # cột thừa bị bỏ, cột thiếu rỗng
+        if any(row.values()):
+            rows.append(row)
     if not rows:
         sys.exit(f"{path}: không có dòng dữ liệu")
     return rows
+
+
+def _money(v: str) -> int:
+    """'320.000đ' / '350,000 VNĐ' / '320000' → int VND; sai định dạng → sys.exit thân thiện."""
+    cleaned = (str(v or "").strip()
+               .replace("\u00a0", " ")
+               .lower().replace("vnđ", "").replace("vnd", "").replace("đ", "")
+               .replace(" ", "").replace(".", "").replace(",", ""))
+    if not cleaned.isdigit():
+        sys.exit(f"giá vé {v!r} không đọc được — ghi số thuần, vd 320000 (hoặc 320.000đ)")
+    return int(cleaned)
 
 
 def fare_items(rows: list[dict]) -> list[dict]:
@@ -86,7 +110,10 @@ def fare_items(rows: list[dict]) -> list[dict]:
     for r in rows:
         tuyen = (r["tuyen"] or "").strip()
         loai = (r["loai_ghe"] or "").strip().lower()
-        gia = int(str(r["gia_ve"] or "0").replace(".", "").replace(",", ""))
+        try:
+            gia = _money(r["gia_ve"])
+        except SystemExit:
+            raise
         if not tuyen or gia <= 0:
             continue
         key = f"fare.{_fold(tuyen)}.{_fold(loai)}"
