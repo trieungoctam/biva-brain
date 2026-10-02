@@ -180,6 +180,7 @@ Cột **Mốc** = mốc dự kiến (xem lộ trình trong [architecture.md](arc
 | `export_bot` | M2 | | lắp snapshot (bảng `snapshots`) từ bản mới nhất của các artifact — chỉ khi đủ artifact bắt buộc và tất cả `valid` (draft/invalid/stale → lỗi nêu cách xử lý); cùng bộ version → dùng lại snapshot. Trả nội dung `json` (Bot Definition, giữ danh sách trích dẫn) · `markdown` (system prompt ghép sẵn) · `faq_csv`; `[[id]]` bị bỏ khỏi nội dung. Có `BIVA_S3_ENDPOINT` → lưu bản xuất lên object storage (SeaweedFS) và trả thêm `download_url` (path công khai `exports/<nhà xe>/<kênh>/v<n>/<file>`) |
 | `run_tests` | M3 ✅ | | async: sinh test từ tri thức nhà xe (policy → must_mention, data → must_call_tool) rồi chạy toàn bộ qua reference executor (LLM + tool query_data thật của Brain) → % pass + case fail (kỳ vọng vs nhận được), ghi test_runs |
 | `sandbox_chat` | M3 ✅ | | async: chat thử 1 lượt với snapshot mới nhất qua reference executor — UAT thủ công, không phục vụ khách thật |
+| `check_release_gate` | M4 ✅ | RO | kiểm trước khi phát hành: coverage mục bắt buộc 100%, artifact bắt buộc valid + 0 stale, đã có snapshot, test bot pass 100%, không đề xuất đang mở — chặn thì liệt kê lý do cụ thể kèm cách sửa (refresh_bot/export_bot/run_tests…) |
 | `request_publish` | M4 | C | đánh dấu bản phát hành; production cần lead duyệt |
 
 ### 5.5 Platform (`/mcp/platform/`)

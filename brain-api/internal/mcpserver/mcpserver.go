@@ -269,6 +269,7 @@ func (s *Server) operatorServer(operatorID string) *mcp.Server {
 	s.addLogicTestsTools(srv, operatorID)
 	s.addTestTools(srv, operatorID)
 	s.addReflectTools(srv, operatorID)
+	s.addReleaseTools(srv, operatorID)
 	s.addReviewTools(srv, operatorID)
 	s.operators[operatorID] = srv
 	return srv

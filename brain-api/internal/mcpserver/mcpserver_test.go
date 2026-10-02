@@ -202,7 +202,7 @@ func TestGetOperationScopedToOperator(t *testing.T) {
 		"list_logic_families": true, "run_examples_against": false,
 		"add_logic_test": false, "list_logic_tests": true,
 		"run_tests": false, "sandbox_chat": false,
-		"reflect": false, "compare_with_industry": true}
+		"reflect": false, "compare_with_industry": true, "check_release_gate": true}
 	if len(tools.Tools) != len(readOnlyWant) {
 		names := make([]string, len(tools.Tools))
 		for i, tl := range tools.Tools {

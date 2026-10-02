@@ -14,6 +14,7 @@ import (
 	"github.com/trieungoctam/biva-brain/brain-api/internal/kb"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/pack"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/queue"
+	"github.com/trieungoctam/biva-brain/brain-api/internal/release"
 )
 
 // ─────────────────────────────── kiểu vào/ra ───────────────────────────────
@@ -460,5 +461,36 @@ func (s *Server) addTestTools(srv *mcp.Server, operatorID string) {
 			}
 			return nil, testJobOut{OperationID: opID, NextActions: []string{
 				"get_operation(operation_id=" + opID + ") — câu trả lời + tool đã gọi"}}, nil
+		})
+}
+
+type gateOut struct {
+	release.Report
+	NextActions []string `json:"next_actions"`
+}
+
+const gateDesc = "Kiểm cổng phát hành cho bot của kênh: coverage mục bắt buộc 100%, artifact bắt buộc " +
+	"đều valid và 0 stale, đã có snapshot, test bot pass 100%, không đề xuất đang mở. Chặn thì liệt kê " +
+	"lý do cụ thể kèm cách sửa. Đạt → request_publish."
+
+func (s *Server) addReleaseTools(srv *mcp.Server, operatorID string) {
+	mcp.AddTool(srv, &mcp.Tool{Name: "check_release_gate", Description: gateDesc, Annotations: readOnly},
+		func(ctx context.Context, _ *mcp.CallToolRequest, in exportIn) (*mcp.CallToolResult, gateOut, error) {
+			channel := in.Channel
+			if channel == "" {
+				channel = "zalo"
+			}
+			rep, err := release.Gate(ctx, s.db, operatorID, channel,
+				s.template.Artifacts.Required, s.topicIDs())
+			if err != nil {
+				return nil, gateOut{}, internal("check_release_gate", err)
+			}
+			next := []string{}
+			if rep.Passed {
+				next = append(next, "request_publish — gate đã đạt")
+			} else {
+				next = append(next, "sửa từng mục trong blocked rồi kiểm lại")
+			}
+			return nil, gateOut{Report: rep, NextActions: next}, nil
 		})
 }
