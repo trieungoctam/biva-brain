@@ -75,7 +75,7 @@ Hai đầu vào, chung một pipeline: **AI phía builder** (ChatGPT, coding age
 2. Item có cấu trúc `{kind, topic, key, value, text, valid_from, valid_to}`: từ AI client, hoặc LLM tách từ nội dung thô.
 3. Entity resolution: alias L1 → trigram trên `name_norm` → co-occurrence. **Bản M2**: từ điển `kb/L1/<ngành>/entities.yaml` (thành phố, bến, loại xe; một alias chỉ thuộc một
    thực thể) — recall mở rộng query theo mọi cách viết, `query_data` so khớp theo thực thể (`SG` = `Sài Gòn` = `TP.HCM`).
-   Trigram/co-occurrence và `item_entities` (graph arm): M3.
+   `item_entities` (graph arm) đã có từ M3 — job index.items điền; trigram/co-occurrence: M3 muộn.
 4. Diff với trạng thái hiện tại của scope: `NEW | CHANGE | REMOVE | DUPLICATE | CONFLICT`.
 5. Classify tầng so với L1: giống thông lệ / override / ứng viên chung.
 6. Review: **tự apply** chỉ khi vô hại — nhắc lại điều đã đúng (DUPLICATE) hoặc thêm mới (NEW) ở topic không
@@ -137,7 +137,8 @@ Kết quả luôn mang nhãn tầng + nguồn.
 (giá mới từ 01/11 khớp ngày 01/11, bản cũ hết hạn 31/10 thì không). Nhánh semantic: query nhúng bằng TEI (cùng
 bge-m3 với job `index.items`), ngưỡng cosine 0.45, `hnsw.ef_search` 200 + iterative scan (pgvector ≥ 0.8) để lọc theo
 nhà xe không bị thiếu ứng viên; TEI lỗi/chậm (> 800 ms) → chỉ keyword, kết quả báo `degraded`. Đo trên 3 × 300 item:
-p95 ≈ 12 ms (chưa tính TEI). Graph/temporal arm, rerank: M3.
+p95 ≈ 12 ms (chưa tính TEI). M3: graph arm (item_entities), temporal arm (valid_at), rerank TEI
+(top ≤ 50, ngân sách 80 ms, lỗi → giữ RRF + `degraded`).
 
 ## 4. Luồng build bot
 

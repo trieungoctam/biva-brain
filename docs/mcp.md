@@ -216,7 +216,7 @@ dựng sẵn bởi job `refresh_pages` (scheduler leader, mỗi phút theo versi
 |---|---|
 | `/onboard_operator` | (M2) overview → `get_coverage` → đưa tài liệu có sẵn vào (process_update) → `generate_questions` → gửi message hoặc `create_form` → khi nhà xe trả lời: review → gợi ý `build_bot` |
 | `/process_update` | (M1, tham số `content`, `source`) `list_knowledge` → `submit_knowledge` (hoặc `ingest` nếu thô) → `get_operation` → review + preview → builder đồng ý mới `apply_review` → `validate_artifact` → sửa đúng dòng STALE_CITATION |
-| `/implement_operator_logic` | ✅ `get_operator_logic` → `get_logic_spec` → `find_similar_operators`/`compare_logic` → `plan_logic_implementation` → custom: `record_decision` (ADR) → viết profile/hook → `propose_logic_profile` → `get_operation` (PR/patch) → merge: index_code đồng bộ ≤ 1 phút (`run_examples_against`: M3) |
+| `/implement_operator_logic` | ✅ `get_operator_logic` → `get_logic_spec` → `find_similar_operators`/`compare_logic` → `plan_logic_implementation` → custom: `record_decision` (ADR) → viết profile/hook → `propose_logic_profile` → `get_operation` (PR/patch) → merge: index_code đồng bộ ≤ 1 phút (kèm `run_examples_against` — sandbox) |
 | `/build_bot` | (M1, tham số `channel`) `get_bot_spec` → `get_knowledge_pack` → viết từng artifact có trích dẫn → `save_artifact` → `validate_artifact` → sửa đến khi sạch → (M2) `export_bot` |
 | `/refresh_bot` | (M2) `list_stale` → sửa đúng dòng bị ảnh hưởng → `save_artifact(base_version)` → validate; artifact không stale giữ nguyên version → export |
 | `/review_quality` | đọc artifact + coverage + lessons → chỉ ra chỗ yếu, đề xuất lesson/test |

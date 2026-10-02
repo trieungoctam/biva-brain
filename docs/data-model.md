@@ -52,12 +52,18 @@ GIN trên `tsv`; HNSW trên `embedding`.
 | Bảng | Vai trò | Cột chính |
 |---|---|---|
 | `entities` | bến, tỉnh, tuyến, loại xe, chủ đề chính sách… | `entity_type`, `name`, `name_norm` (trigram index), `aliases[]`, `layer`, `operator_id` |
-| `item_entities` | item nhắc tới entity nào | |
-| `entity_cooccurrences` | đếm cặp entity xuất hiện cùng nhau | dùng cho entity resolution |
-| `item_links` | cạnh giữa item | `link_type`: entity · temporal · semantic · caused_by · **overrides** · **supersedes**; `weight` 0–1 |
+| `item_entities` (M3, migration 000018) | item nhắc tới entity nào — graph arm của recall | |
+| `entity_cooccurrences` (kế hoạch, chưa migrate) | đếm cặp entity xuất hiện cùng nhau | dùng cho entity resolution |
+| `item_links` (kế hoạch, chưa migrate) | cạnh giữa item | `link_type`: entity · temporal · semantic · caused_by · **overrides** · **supersedes**; `weight` 0–1 |
 
 ### Data vận hành (bot đọc qua tool)
-| Bảng | Cột chính |
+
+**Bản M2–M3**: data vận hành sống trong `items` (`kind='data'`, topic `fare`/`schedule`/`pickup`…,
+có `valid_from/to`) — `query_data` (MCP + reference executor) truy vấn trực tiếp, đủ cho pilot.
+Bảng tách dưới là thiết kế khi cần index riêng (truy vấn nhanh theo tuyến/giờ, join entity) —
+**chưa migrate**, làm khi dữ liệu vận hành lớn:
+
+| Bảng (kế hoạch) | Cột chính |
 |---|---|
 | `routes` | `operator_id`, `origin_entity_id`, `destination_entity_id`, `name`, `status` |
 | `trips` | `route_id`, `depart_time`, `days_of_week[]`, `vehicle_type`, `valid_from/to`, `status`, `source_item_id` |
@@ -71,7 +77,8 @@ GIN trên `tsv`; HNSW trên `embedding`.
 |---|---|---|
 | `review_items` | hàng đợi duyệt (migration 000006) | `key`, `change_kind` (NEW · CHANGE · REMOVE · DUPLICATE · CONFLICT; OVERRIDE · PROMOTE ở M2+), `item_id` (bản pending), `target_item_id` (bản active), `before`, `after`, `risk` (low · high), `status` (open · applied · rejected · stale), `proposed_by`, `decided_by` |
 | `snapshots` | Bot Definition lắp từ artifact `valid` + hồ sơ logic `active` | `bot_id`, `version`, `built_from` (version từng tầng), `definition`, `artifact_versions`, `status` (assembled · testing · passed · failed · published · retired), `test_report` |
-| `test_cases` | regression theo tầng | `layer`, `operator_id`, `bot_id`, `input`, `expected` (must_call_tool, must_mention, must_not_say…), `source_item_id` |
+| `test_cases` | test bot (migration 000021): sinh từ policy/data, regression, 👎 | `layer`, `operator_id`, `bot_channel`, `name`, `input` (câu khách), `expected` (must_mention · must_not_say · must_call_tool), `source_item_id`, `origin` (generated · policy · data · regression · thumbs_down · manual), `status` |
+| `test_runs` | mỗi lần run_tests qua reference executor | `total`, `passed`, `report` (per-case: expected vs got) |
 | `releases` | yêu cầu và lịch sử **phát hành snapshot** (đánh dấu bản chính thức, migration 000022) | `snapshot_id` + `snapshot_ver`, `stage` (staging · production), `status` (requested · approved · published · rolled_back · rejected), `requested_by`, `approved_by`, `published_at`, `rolled_back_at` |
 
 Apply/reject bằng SQL `apply_review(id, actor)` → `{"status": "applied" | "stale", ...}` và
@@ -85,6 +92,11 @@ các bản `active` cùng (operator, bot, tầng, key) không chồng khoảng `
 | `artifact_citations` | câu/đoạn trong artifact ↔ item được trích dẫn | `artifact_id`, `item_id`, `location` (dòng/đoạn) — dùng để đánh dấu **stale** khi item rời `active` |
 
 Snapshot là đầu vào cho `export_bot` và `releases`. Artifact chỉ được lắp vào snapshot khi `valid` và không `stale`.
+
+### Form hỏi nhà xe (S2.1.3)
+| Bảng | Vai trò | Cột chính |
+|---|---|---|
+| `forms` | link `/f/<token>` nhà xe trả lời trên điện thoại → job ingest (`source=form`) → review | `operator_id`, `token_hash` (chỉ lưu SHA-256, dùng 1 lần), `questions`/`answers` (JSONB), `status` (open · submitted · closed), `operation_id`, `expires_at` |
 
 ### Operator Profile pages (refresh_pages, M2)
 
@@ -121,7 +133,7 @@ Bài học về code dùng chung bảng `items` (`kind=lesson`, `topic=code:<cap
 |---|---|---|
 | `runtime_clients` | runtime được phép gọi Runtime API | `id`, `name`, `api_key_hash`, `webhook_url`, `webhook_secret_ref`, `bot_ids[]`, `status` |
 
-### Tín hiệu vận hành (có TTL)
+### Tín hiệu vận hành (có TTL — bảng dựng khi có runtime/UAT thật, chưa migrate)
 | Bảng | Vai trò |
 |---|---|
 | `chat_logs` | transcript ẩn danh: sandbox/UAT (hiện tại), runtime qua Runtime API (giai đoạn sau); `expires_at` mặc định 30 ngày |
@@ -132,6 +144,8 @@ Bài học về code dùng chung bảng `items` (`kind=lesson`, `topic=code:<cap
 | Bảng | Vai trò | Cột chính |
 |---|---|---|
 | `operations` | queue job Go ⇄ Python | `kind`, `payload`, `status` (queued · running · done · failed · cancelled), `priority`, `attempts/max_attempts`, `idempotency_key`, `locked_by`, `lease_until`, `run_after`, `parent_id`, `trace_context` |
+| `knowledge_versions` | version tri thức mỗi scope (trigger 000010 tăng khi item active đổi) — cache pack/observation theo version | `scope` (`*` = L0/L1, hoặc operator_id), `version` |
+| `confirm_tokens` | token xác nhận thao tác ghi (SHA-256, gắn người + nhà xe + hành động, 1 lần, TTL) | `token_hash`, `user_id`, `operator_id`, `action`, `subject`, `expires_at`, `used_at` |
 | `audit_log` | mọi thao tác ghi, mọi lần bị từ chối vì vượt quyền | `actor` (user:… · ai:<session> · system:<job> · cli:<os user>), `approved_by`, `action`, `target`, `payload` |
 
 Queue: worker claim bằng `SELECT … FOR UPDATE SKIP LOCKED`, giữ lease; trigger `pg_notify('biva_operations')`
@@ -151,7 +165,8 @@ khi insert để đánh thức worker ngay; scheduler (Go) requeue job hết lea
 | Bảng | Vai trò | Trường chính |
 |---|---|---|
 | `users` | builder · lead · ops | `id`, `email`, `name`, `role`, `status` (active · disabled) |
-| `user_operators` | builder được gán nhà xe nào | `user_id`, `operator_id`, `granted_by` |
+| `user_operators` | builder được gán nhà xe nào |
+| `oauth_clients` / `oauth_codes` / `oauth_tokens` | OAuth 2.1 (ChatGPT connector): client động ký (RFC 7591), code ngắn hạn, access 1h + refresh 30 ngày xoay vòng (dùng lại → thu hồi cả family) |  `user_id`, `operator_id`, `granted_by` |
 | `api_tokens` | token cá nhân cho MCP | `token_hash` (SHA-256, không lưu token gốc), `prefix`, `expires_at` (bắt buộc), `revoked_at`, `last_used_at` |
 
 ## Luồng dữ liệu của một update
@@ -160,7 +175,8 @@ khi insert để đánh thức worker ngay; scheduler (Go) requeue job hết lea
 documents ──parse──► items(pending) ──diff──► review_items(open)
                                                    │ approve
                                                    ▼
-        items(active) + bản cũ → superseded ──► routes/trips/fares/pickup_points (version mới)
+        items(active) + bản cũ → superseded ──► data vận hành ở items(kind=data) có version mới
+                                              (routes/trips/…: bảng tách — kế hoạch)
                 │
                 ├─► mark_stale: artifact_citations / logic_param_sources trỏ tới bản cũ
                 │               → bot_artifacts(stale), logic_profiles(stale)
