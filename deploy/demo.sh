@@ -54,7 +54,7 @@ review_id=$(echo "$cand" | python3 -c '
 import json,sys
 d=json.load(sys.stdin)
 print(next((c["review_id"] for c in d.get("candidates",[]) if c.get("kind")=="knowledge"), ""))')
-[[ -n "$review_id" ]] || { echo "Không có ứng viên promote — kiểm tra consolidate ở bước 2"; exit 1; }
+[[ -n "$review_id" ]] || { echo "Không có ứng viên promote — kiểm tra consolidate ở bước 2, HOẶC thông lệ này đã được promote từ lần chạy trước (idempotent: key l1.promoted.* đã active) — xoá item L1 + review PROMOTE cũ để chạy lại"; exit 1; }
 
 echo "== 4) Lead duyệt qua apply_review (preview → confirm_token → apply)"
 prev=$(mcp demoa "$OPS_TOKEN" apply_review "{\"review_id\":\"$review_id\",\"decision\":\"approve\"}")
