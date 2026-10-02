@@ -474,8 +474,8 @@ type pendingRelease struct {
 }
 
 const approvePublishDesc = "Lead duyệt bản phát hành production đang chờ (request_publish stage=production). " +
-	"Bỏ trống release_id → xem danh sách chờ duyệt + confirm_token; gửi lại kèm release_id để duyệt " +
-	"— bản cũ tự rolled_back."
+	"Bỏ trống release_id → liệt kê bản chờ (không phát token); gọi với release_id → xem chi tiết bản đó " +
+	"và nhận confirm_token gắn ĐÚNG bản — gửi lại kèm token để duyệt; bản cũ cùng kênh tự rolled_back."
 
 type approvePublishOut struct {
 	Pending     []pendingRelease `json:"pending,omitempty"`

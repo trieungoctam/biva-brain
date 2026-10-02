@@ -30,6 +30,13 @@ snapshot_id, gate chỉ nhận test của đúng snapshot mới nhất (snapshot
 (d) lỗi DB khi ghi kết quả job từng giết slot worker vĩnh viễn — giờ bắt ở ranh giới slot;
 (e) run_code/git-clone đồng bộ từng chặn event loop → hết lease 60s bị claim lại — sang to_thread;
 (f) clone lỗi để lộ tmpdir; (g) goroutine ticker scheduler tích luỹ qua từng phiên leader.
+Vòng 8–9 (verify + drift): demo E2E pass trên stack code hiện tại (migrate 24/25 trên DB sống);
+test concurrency thật (8 publish song song → đúng 1 published; 2 consolidate song song → 0 câu mất);
+review repo biva-integrations (sửa alias columns không strip, lỗi child_policy rõ ràng). Vòng 10 (drift
+docs/tool-desc): approve_publish + check_release_gate mô tả lại đúng flow hiện tại (token gắn release,
+test phải của đúng snapshot); list_stale BỔ SUNG logic_profiles — docs hứa từ E2.5 mà code chưa trả:
+giờ mỗi tham số stale hiện capability/param/item/replaced_by/new_item_text kèm next_actions.
+
 Vòng 7 (2 mục cuối của 22 finding review chất lượng — chủ dự án "tiếp tục" = chốt hướng bảo thủ):
 migration 000025 — propose_l1_change giờ GÁN target_item_id khi key L1 đang có bản active,
 apply_review supersede bản cũ như nhánh CHANGE của L2 (trước đây apply đụng unique

@@ -87,9 +87,19 @@ type getArtifactIn struct {
 	Version int    `json:"version,omitempty" jsonschema:"bỏ trống = bản mới nhất"`
 }
 
+type staleLogicParam struct {
+	Capability  string `json:"capability"`
+	Param       string `json:"param"`
+	ItemID      string `json:"item_id"`
+	ItemStatus  string `json:"item_status"`
+	ReplacedBy  string `json:"replaced_by,omitempty"`
+	NewItemText string `json:"new_item_text,omitempty"`
+}
+
 type listStaleOut struct {
-	Artifacts   []artifact.StaleArtifact `json:"artifacts"`
-	NextActions []string                 `json:"next_actions"`
+	Artifacts     []artifact.StaleArtifact `json:"artifacts"`
+	LogicProfiles []staleLogicParam        `json:"logic_profiles,omitempty"`
+	NextActions   []string                 `json:"next_actions"`
 }
 
 type exportIn struct {
@@ -230,12 +240,42 @@ func (s *Server) addBuildTools(srv *mcp.Server, operatorID string) {
 			if err != nil {
 				return nil, listStaleOut{}, internal("list_stale", err)
 			}
+			// Hồ sơ logic stale (item nguồn của tham số đã bị thay/hết hạn/rút): builder cần
+			// biết CHỖ NÀO của profile.yaml phải cập nhật, không chỉ trạng thái stale.
+			lp := []staleLogicParam{}
+			rows, err := s.db.Query(ctx, `
+				SELECT lp.capability, lps.param_path, i.id::text, i.status,
+				       COALESCE(i.superseded_by::text, ''), COALESCE(n.text, '')
+				FROM logic_profiles lp
+				JOIN logic_param_sources lps ON lps.profile_id = lp.id
+				JOIN items i ON i.id = lps.item_id
+				LEFT JOIN items n ON n.id = i.superseded_by
+				WHERE lp.operator_id = $1 AND lp.status = 'stale'
+				ORDER BY lp.capability, lps.param_path`, operatorID)
+			if err != nil {
+				return nil, listStaleOut{}, internal("list_stale", err)
+			}
+			for rows.Next() {
+				var p staleLogicParam
+				if err := rows.Scan(&p.Capability, &p.Param, &p.ItemID, &p.ItemStatus, &p.ReplacedBy, &p.NewItemText); err != nil {
+					rows.Close()
+					return nil, listStaleOut{}, internal("list_stale", err)
+				}
+				lp = append(lp, p)
+			}
+			if err := rows.Err(); err != nil {
+				return nil, listStaleOut{}, internal("list_stale", err)
+			}
 			next := []string{}
 			if len(list) > 0 {
 				next = []string{"với từng artifact: get_artifact → sửa đúng các dòng trong reasons → " +
 					"save_artifact(base_version=version) → validate_artifact"}
 			}
-			return nil, listStaleOut{Artifacts: list, NextActions: next}, nil
+			if len(lp) > 0 {
+				next = append(next, "hồ sơ logic: cập nhật tham số theo tri thức mới trong profile.yaml "+
+					"rồi tạo PR — merge xong index_code tự hồi phục active")
+			}
+			return nil, listStaleOut{Artifacts: list, LogicProfiles: lp, NextActions: next}, nil
 		})
 
 	mcp.AddTool(srv, &mcp.Tool{Name: "export_bot", Description: exportDesc,
@@ -471,7 +511,8 @@ type gateOut struct {
 }
 
 const gateDesc = "Kiểm cổng phát hành cho bot của kênh: coverage mục bắt buộc 100%, artifact bắt buộc " +
-	"đều valid và 0 stale, đã có snapshot, test bot pass 100%, không đề xuất đang mở. Chặn thì liệt kê " +
+	"đều valid và 0 stale, đã có snapshot, test bot pass 100% cho ĐÚNG snapshot sẽ phát hành " +
+	"(xuất snapshot mới thì phải run_tests lại), không đề xuất đang mở. Chặn thì liệt kê " +
 	"lý do cụ thể kèm cách sửa. Đạt → request_publish."
 
 func (s *Server) addReleaseTools(srv *mcp.Server, operatorID string) {

@@ -373,3 +373,66 @@ func TestProposeL1ChangeModifiesExistingKey(t *testing.T) {
 		t.Fatalf("sau sửa: bản cũ=%s bản mới=%s, muốn superseded/active", st1, st2)
 	}
 }
+
+// list_stale phải trả hồ sơ logic stale kèm CHÍNH XÁC tham số + item nguồn (docs hứa từ E2.5;
+// migration 000024 đánh stale — vòng này bổ nốt phần hiển thị).
+func TestListStaleShowsStaleLogicParams(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	// Item nguồn + profile + tham số.
+	var item string
+	if err := f.pool.QueryRow(ctx, `INSERT INTO items (layer, operator_id, kind, topic, key, text, status)
+		VALUES (2, $1, 'data', 'fare', 'fare.sg_dl.base', 'Giá cơ sở 320k', 'active') RETURNING id::text`,
+		f.opA).Scan(&item); err != nil {
+		t.Fatal(err)
+	}
+	var prof string
+	if err := f.pool.QueryRow(ctx, `INSERT INTO logic_profiles (operator_id, capability, mode, module_id, commit)
+		VALUES ($1, 'fare.standard', 'config', 'fare.standard', 'deadbeef') RETURNING id::text`,
+		f.opA).Scan(&prof); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		f.pool.Exec(ctx, `DELETE FROM logic_profiles WHERE operator_id = $1`, f.opA)
+		f.pool.Exec(ctx, `DELETE FROM items WHERE id = $1::uuid`, item)
+	})
+	if _, err := f.pool.Exec(ctx, `INSERT INTO logic_param_sources (profile_id, param_path, item_id)
+		VALUES ($1::uuid, 'base_fare', $2::uuid)`, prof, item); err != nil {
+		t.Fatal(err)
+	}
+	// Supersede item nguồn trong 1 transaction (EXCLUDE immediate: pending → supersede → active).
+	var repl string
+	if err := f.pool.QueryRow(ctx, `INSERT INTO items (layer, operator_id, kind, topic, key, text, status)
+		VALUES (2, $1, 'data', 'fare', 'fare.sg_dl.base', 'Giá cơ sở 350k', 'pending')
+		RETURNING id::text`, f.opA).Scan(&repl); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { f.pool.Exec(ctx, `DELETE FROM items WHERE id = $1::uuid`, repl) })
+	if _, err := f.pool.Exec(ctx, `UPDATE items SET status='superseded', superseded_by=$2::uuid
+		WHERE id=$1::uuid`, item, repl); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.pool.Exec(ctx, `UPDATE items SET status='active' WHERE id=$1::uuid`, repl); err != nil {
+		t.Fatal(err)
+	}
+	s, err := connect(t, f.url+"/mcp/operator/"+f.opA+"/", f.builderTok)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	isErr, out, raw := call(t, s, "list_stale", map[string]any{})
+	if isErr {
+		t.Fatalf("list_stale lỗi: %v", raw)
+	}
+	lps, _ := out["logic_profiles"].([]any)
+	if len(lps) != 1 {
+		t.Fatalf("logic_profiles = %v", out["logic_profiles"])
+	}
+	got := lps[0].(map[string]any)
+	if got["capability"] != "fare.standard" || got["param"] != "base_fare" || got["item_status"] != "superseded" {
+		t.Fatalf("param stale = %v", got)
+	}
+	if got["replaced_by"] != repl || got["new_item_text"] != "Giá cơ sở 350k" {
+		t.Fatalf("thay thế = %v", got)
+	}
+}

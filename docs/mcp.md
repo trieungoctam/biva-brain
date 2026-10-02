@@ -180,7 +180,7 @@ Cột **Mốc** = mốc dự kiến (xem lộ trình trong [architecture.md](arc
 | `export_bot` | M2 | | lắp snapshot (bảng `snapshots`) từ bản mới nhất của các artifact — chỉ khi đủ artifact bắt buộc và tất cả `valid` (draft/invalid/stale → lỗi nêu cách xử lý); cùng bộ version → dùng lại snapshot. Trả nội dung `json` (Bot Definition, giữ danh sách trích dẫn) · `markdown` (system prompt ghép sẵn) · `faq_csv`; `[[id]]` bị bỏ khỏi nội dung. Có `BIVA_S3_ENDPOINT` → lưu bản xuất lên object storage (SeaweedFS) và trả thêm `download_url` (path công khai `exports/<nhà xe>/<kênh>/v<n>/<file>`) |
 | `run_tests` | M3 ✅ | | async: sinh test từ tri thức nhà xe (policy → must_mention, data → must_call_tool) rồi chạy toàn bộ qua reference executor (LLM + tool query_data thật của Brain) → % pass + case fail (kỳ vọng vs nhận được), ghi test_runs |
 | `sandbox_chat` | M3 ✅ | | async: chat thử 1 lượt với snapshot mới nhất qua reference executor — UAT thủ công, không phục vụ khách thật |
-| `check_release_gate` | M4 ✅ | RO | kiểm trước khi phát hành: coverage mục bắt buộc 100%, artifact bắt buộc valid + 0 stale, đã có snapshot, test bot pass 100%, không đề xuất đang mở — chặn thì liệt kê lý do cụ thể kèm cách sửa (refresh_bot/export_bot/run_tests…) |
+| `check_release_gate` | M4 ✅ | RO | kiểm trước khi phát hành: coverage mục bắt buộc 100%, artifact bắt buộc valid + 0 stale, đã có snapshot, test bot pass 100% cho đúng snapshot sẽ phát hành (snapshot mới phải run_tests lại), không đề xuất đang mở — chặn thì liệt kê lý do cụ thể kèm cách sửa (refresh_bot/export_bot/run_tests…) |
 | `request_publish` | M4 ✅ | C | phát hành snapshot mới nhất sau khi gate đạt (preview + confirm_token): staging → published ngay; production → requested, chờ lead duyệt (approve_publish / console) |
 | `rollback_release` | M4 ✅ | C | quay về bản production trước đó (< 1 phút): bản đang chạy → rolled_back, bản trước phát hành lại |
 
@@ -191,7 +191,7 @@ Cột **Mốc** = mốc dự kiến (xem lộ trình trong [architecture.md](arc
 | `list_promotion_candidates` | M5 ✅ | RO | ứng viên promote: tri thức (review PROMOTE đang mở — observation ≥ 3 nhà xe) + logic (họ ≥ 3 nhà xe hook/custom), kèm danh sách nhà xe |
 | `propose_l1_change` | M5 ✅ | C | lead đề xuất thêm/sửa thông lệ L1 (preview + confirm_token) → item L1 pending + review chờ duyệt như mọi đề xuất |
 | `run_regression_all` | M5 ✅ | | platform-only: enqueue bot.tests cho mọi nhà xe có snapshot (chạy song song qua queue) — trả operation_id theo nhà xe |
-| `approve_publish` | M5 ✅ | C | platform-only (lead): duyệt bản production đang requested — bỏ trống release_id xem danh sách chờ + confirm_token; duyệt xong bản cũ tự rolled_back (kết nối `release.Approve` cho luồng request_publish) |
+| `approve_publish` | M5 ✅ | C | platform-only (lead): duyệt bản production đang requested — bỏ trống release_id liệt kê bản chờ (không phát token); có release_id xem chi tiết + nhận confirm_token gắn đúng bản đó; duyệt xong bản cũ tự rolled_back |
 
 ## 6. Resources
 
