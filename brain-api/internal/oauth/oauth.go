@@ -164,6 +164,10 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request) {
 		internalError(w, "register", err)
 		return
 	}
+	_ = audit.Write(r.Context(), s.DB, audit.Entry{Actor: "anonymous", Action: "oauth.register",
+		Target: "client:" + clientID,
+		Payload: map[string]any{"client_name": truncate(m.ClientName, 200),
+			"redirect_uris": m.RedirectURIs, "auth_method": method}})
 	// Tự dựng response: RFC 7591 §3.2.1 yêu cầu client_id_issued_at / client_secret_expires_at là SỐ giây
 	// (kiểu oauthex.ClientRegistrationResponse serialize thành chuỗi thời gian).
 	resp := map[string]any{
@@ -441,6 +445,9 @@ func (s *Server) exchangeCode(w http.ResponseWriter, r *http.Request, clientID s
 		internalError(w, "token", err)
 		return
 	}
+	_ = audit.Write(ctx, s.DB, audit.Entry{Actor: userID, Action: "oauth.token",
+		Target:  "client:" + clientID,
+		Payload: map[string]any{"user": userID, "resource": resource, "scope": scope}})
 	writeTokens(w, resp)
 }
 
@@ -481,6 +488,9 @@ func (s *Server) refresh(w http.ResponseWriter, r *http.Request, clientID string
 			return
 		}
 		slog.Warn("oauth: refresh token bị dùng lại, đã thu hồi cả family", "user", userID, "client", clientID)
+		_ = audit.Write(ctx, s.DB, audit.Entry{Actor: userID, Action: "oauth.family_revoke",
+			Target:  "client:" + clientID,
+			Payload: map[string]any{"user": userID, "family": family.String(), "reason": "refresh_reuse"}})
 		oauthError(w, http.StatusBadRequest, "invalid_grant", "refresh_token đã được dùng")
 		return
 	}
@@ -497,6 +507,9 @@ func (s *Server) refresh(w http.ResponseWriter, r *http.Request, clientID string
 		internalError(w, "token", err)
 		return
 	}
+	_ = audit.Write(ctx, s.DB, audit.Entry{Actor: userID, Action: "oauth.refresh",
+		Target:  "client:" + clientID,
+		Payload: map[string]any{"user": userID, "resource": resource, "scope": scope}})
 	writeTokens(w, resp)
 }
 

@@ -231,6 +231,16 @@ func TestOAuthTokenEndpointSecurity(t *testing.T) {
 	if c := callWith(resA, tok2["access_token"].(string)); c != 401 {
 		t.Fatalf("sau khi phát hiện refresh bị dùng lại, cả family phải bị thu hồi: %d", c)
 	}
+
+	// Toàn bộ sự kiện xác thực phải để lại audit: cấp token, luân chuyển, thu hồi family (reuse).
+	ctx := context.Background()
+	for _, want := range []string{"oauth.token", "oauth.refresh", "oauth.family_revoke"} {
+		var n int
+		if err := f.pool.QueryRow(ctx, `SELECT count(*) FROM audit_log
+			WHERE action = $1 AND payload->>'user' = $2`, want, f.builder).Scan(&n); err != nil || n == 0 {
+			t.Fatalf("thiếu audit %s cho user %s (err %v)", want, f.builder, err)
+		}
+	}
 }
 
 func TestOAuthMetadata(t *testing.T) {
