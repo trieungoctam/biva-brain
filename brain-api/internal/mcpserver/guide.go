@@ -350,3 +350,119 @@ const reviewQualityPrompt = `Rà chất lượng bot của nhà xe theo góc nh�
 4. recall_knowledge vài câu khách hay hỏi — kiểm bot có tri thức trả lời không; câu bot không trả lời được → thiếu tri thức, đề xuất hỏi nhà xe (generate_questions).
 5. Tổng hợp báo cáo: (a) chỗ yếu của artifact kèm dòng, (b) tri thức thiếu, (c) đề xuất lesson (add_lesson với type do/dont) cho lỗi hay gặp, (d) đề xuất test case cho chỗ mưa gió.
 Chỉ nêu vấn đề có bằng chứng (dòng/trích dẫn); mỗi đề xuất kèm next action cụ thể.`
+
+// addCatalogResources: 4 resource còn lại của mục 6 docs/mcp.md — lessons ngành, module logic, L0, artifact.
+func (s *Server) addCatalogResources(srv *mcp.Server, operatorID string) {
+	srv.AddResource(&mcp.Resource{
+		URI: "biva://industry/lessons", Name: "industry/lessons",
+		MIMEType: "text/markdown", Description: "Bài học đúng chung / sai chung của ngành (kể cả bài học về code)",
+	}, func(ctx context.Context, _ *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
+		rows, err := s.db.Query(ctx, `
+			SELECT id::text, layer, topic, text FROM items
+			WHERE kind = 'lesson' AND status = 'active' AND operator_id IS NULL
+			ORDER BY layer, topic LIMIT 100`)
+		if err != nil {
+			return nil, internal("resource lessons", err)
+		}
+		defer rows.Close()
+		var b strings.Builder
+		b.WriteString("# Bài học của ngành (L1)\n\n_Thêm bài học nhà xe bằng add_lesson; đủ 3 nhà xe giống nhau → đề xuất promote lên đây._\n")
+		for rows.Next() {
+			var id, layer, topic, text string
+			if err := rows.Scan(&id, &layer, &topic, &text); err != nil {
+				return nil, internal("resource lessons", err)
+			}
+			fmt.Fprintf(&b, "\n- [L%s · %s] %s [[%s]]\n", layer, topic, text, id)
+		}
+		return textResource("biva://industry/lessons", b.String()), nil
+	})
+
+	srv.AddResource(&mcp.Resource{
+		URI: "biva://logic/modules", Name: "logic/modules",
+		MIMEType: "text/markdown", Description: "Danh mục module logic L1 (manifest + repo/path)",
+	}, func(ctx context.Context, _ *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
+		rows, err := s.db.Query(ctx, `
+			SELECT DISTINCT ON (id) id, version::int, capability, summary, path FROM logic_modules
+			WHERE status = 'active' AND operator_id IS NULL ORDER BY id, version DESC`)
+		if err != nil {
+			return nil, internal("resource modules", err)
+		}
+		defer rows.Close()
+		var b strings.Builder
+		b.WriteString("# Danh mục module logic L1\n\n_Chi tiết: get_logic_module(id)._\n")
+		for rows.Next() {
+			var id string
+			var ver int
+			var cap, sum, path string
+			if err := rows.Scan(&id, &ver, &cap, &sum, &path); err != nil {
+				return nil, internal("resource modules", err)
+			}
+			fmt.Fprintf(&b, "\n- **%s@%d** [%s] %s — `%s`\n", id, ver, cap, sum, path)
+		}
+		return textResource("biva://logic/modules", b.String()), nil
+	})
+
+	srv.AddResource(&mcp.Resource{
+		URI: "biva://platform/rules", Name: "platform/rules",
+		MIMEType: "text/markdown", Description: "L0 — quy tắc nền của toàn nền tảng (chỉ đọc)",
+	}, func(ctx context.Context, _ *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
+		rows, err := s.db.Query(ctx, `
+			SELECT id::text, topic, text, locked FROM items
+			WHERE layer = 0 AND status = 'active' ORDER BY key LIMIT 100`)
+		if err != nil {
+			return nil, internal("resource rules", err)
+		}
+		defer rows.Close()
+		var b strings.Builder
+		b.WriteString("# L0 — quy tắc nền (chỉ đọc)\n\n_Rule locked phải có trong system_prompt của mọi bot._\n")
+		for rows.Next() {
+			var id, topic, text string
+			var locked bool
+			if err := rows.Scan(&id, &topic, &text, &locked); err != nil {
+				return nil, internal("resource rules", err)
+			}
+			lock := ""
+			if locked {
+				lock = " · LOCKED"
+			}
+			fmt.Fprintf(&b, "\n- [%s%s] %s [[%s]]\n", topic, lock, text, id)
+		}
+		return textResource("biva://platform/rules", b.String()), nil
+	})
+
+	srv.AddResourceTemplate(&mcp.ResourceTemplate{
+		URITemplate: "biva://operator/{operator}/bots/{+bot}/artifacts/{kind}",
+		Name:        "bots/artifacts", MIMEType: "text/markdown",
+		Description: "Artifact hiện tại (bản mới nhất) của bot theo kênh (bot id dạng <operator>:<kênh>)",
+	}, func(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
+		op, bot, kind, ok := parseArtifactURI(req.Params.URI)
+		if !ok || op != operatorID {
+			return nil, errors.New("URI phải là biva://operator/" + operatorID + "/bots/<bot>/artifacts/<kind>")
+		}
+		a, err := artifact.Get(ctx, s.db, operatorID, channelOf(bot), kind, 0)
+		if err != nil {
+			return nil, err
+		}
+		var b strings.Builder
+		fmt.Fprintf(&b, "# %s — %s v%d (%s)\n\n", bot, kind, a.Version, a.Status)
+		b.WriteString(a.Content)
+		return textResource(req.Params.URI, b.String()), nil
+	})
+}
+
+func parseArtifactURI(uri string) (op, bot, kind string, ok bool) {
+	u := strings.TrimPrefix(uri, "biva://operator/")
+	parts := strings.Split(u, "/")
+	if len(parts) != 5 || parts[1] != "bots" || parts[3] != "artifacts" {
+		return "", "", "", false
+	}
+	return parts[0], parts[2], parts[4], true
+}
+
+// channelOf: bot id dạng "<operator>:<channel>" (artifact.BotID).
+func channelOf(bot string) string {
+	if i := strings.LastIndex(bot, ":"); i > 0 {
+		return bot[i+1:]
+	}
+	return "zalo"
+}

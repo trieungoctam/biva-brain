@@ -120,3 +120,50 @@ func TestGuideResourcesPromptsAndValidate(t *testing.T) {
 		t.Fatalf("refresh_bot: %v", err)
 	}
 }
+
+// 4 resource còn lại của mục 6: lessons, modules, L0, artifact theo bot.
+func TestCatalogResources(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	if _, err := f.pool.Exec(ctx, `INSERT INTO bots (id, operator_id, channel) VALUES ($1, $2, 'zalo')`,
+		f.opA+":zalo", f.opA); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.pool.Exec(ctx, `INSERT INTO bot_artifacts (bot_id, operator_id, kind, version, content,
+		content_hash, status, author) VALUES ($1, $2, 'faq', 1, 'Nội dung FAQ [[x]]', 'h', 'valid', 't')`,
+		f.opA+":zalo", f.opA); err != nil {
+		t.Fatal(err)
+	}
+
+	s, err := connect(t, f.url+"/mcp/operator/"+f.opA+"/", f.builderTok)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	read := func(uri string) string {
+		r, err := s.ReadResource(ctx, &mcp.ReadResourceParams{URI: uri})
+		if err != nil {
+			t.Fatalf("%s: %v", uri, err)
+		}
+		return r.Contents[0].Text
+	}
+	if md := read("biva://platform/rules"); !strings.Contains(md, "LOCKED") {
+		t.Fatalf("L0 thiếu rule locked:\n%s", md[:200])
+	}
+	if md := read("biva://industry/lessons"); !strings.Contains(md, "add_lesson") {
+		t.Fatalf("lessons thiếu hướng dẫn:\n%s", md[:200])
+	}
+	if md := read("biva://logic/modules"); !strings.Contains(md, "get_logic_module") {
+		t.Fatalf("modules thiếu hướng dẫn:\n%s", md[:200])
+	}
+	md := read("biva://operator/" + f.opA + "/bots/" + f.opA + ":zalo/artifacts/faq")
+	if !strings.Contains(md, "faq v1 (valid)") || !strings.Contains(md, "Nội dung FAQ") {
+		t.Fatalf("artifact = %s", md[:200])
+	}
+	// URI nhà xe khác → từ chối.
+	if _, err := s.ReadResource(ctx, &mcp.ReadResourceParams{
+		URI: "biva://operator/" + f.opB + "/bots/x/artifacts/faq"}); err == nil {
+		t.Fatal("đọc artifact nhà xe khác phải lỗi")
+	}
+}

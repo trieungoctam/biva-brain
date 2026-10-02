@@ -93,7 +93,7 @@ Chi tiết từng story nằm trong comment các issue Linear (kèm link CI). T�
   `apply_review` — mọi đường apply (MCP lẫn auto-apply rủi ro thấp của worker) đều chạy consolidate;
   bỏ enqueue cũ phía Go. Đã kiểm trên stack: submit_knowledge → worker tự apply → consolidate tự chạy.
 - **M5** platform tools: `list_operators`, `list_promotion_candidates`, `propose_l1_change`,
-  `impact_of_change`, `run_regression_all`. **Danh mục tool MCP đầy đủ 46/46** —包括 2 tool sót
+  `impact_of_change`, `run_regression_all`. **Danh mục tool MCP đầy đủ 46/46, resource 9/9** —包括 2 tool sót
   `search_logic` (module/feature/code chunk/lesson, có dấu-không dấu) và `get_logic_module`
   (manifest đầy đủ) vừa bổ sung.
 

@@ -198,15 +198,16 @@ Cột **Mốc** = mốc dự kiến (xem lộ trình trong [architecture.md](arc
 | URI | Nội dung |
 |---|---|
 | `biva://operator/{id}/pages/{tong-quan, chinh-sach, khac-thong-le, con-thieu, logic}.md` | Operator Profile pages (Tổng quan · Chính sách · Khác thông lệ · Còn thiếu · Logic) — dựng sẵn bởi job `refresh_pages`, đọc resource tự dựng nếu chưa có |
-| `biva://operator/{id}/bots/{bot}/artifacts/{kind}` | artifact hiện tại |
+| `biva://operator/{id}/bots/{bot}/artifacts/{kind}` | ✅ artifact hiện tại (bot id `<operator>:<kênh>`, bản mới nhất kèm version/status) |
 | `biva://industry/template` | template onboarding L1 (mục + capability bắt buộc/khuyến nghị) |
-| `biva://industry/lessons` | bài học đúng chung / sai chung (gồm bài học về code) |
-| `biva://logic/modules` | danh mục module L1 |
-| `biva://platform/rules` | L0 (chỉ đọc) |
+| `biva://industry/lessons` | ✅ bài học đúng chung / sai chung (gồm bài học về code) — L1 active, kèm [[id]] |
+| `biva://logic/modules` | ✅ danh mục module L1 (id@version, capability, đường dẫn repo) |
+| `biva://platform/rules` | ✅ L0 (chỉ đọc, rule LOCKED được đánh dấu) |
 | `biva://guides/citation` | hướng dẫn hợp đồng trích dẫn cho AI |
 | `biva://guides/workflow` | quy trình build bot / xử lý cập nhật |
 
-Đã có ở M1: `biva://guides/citation`, `biva://guides/workflow`, `biva://industry/template`, và
+Đủ 9 resource của mục này: 3 guides/template (M1), 5 trang pages + profile (M2),
+lessons/modules/L0/artifacts (bổ sung sau).
 `biva://operator/{id}/profile` (bản đọc nhanh, dựng trực tiếp từ knowledge pack). M2: 5 trang `pages/<slug>.md`
 dựng sẵn bởi job `refresh_pages` (scheduler leader, mỗi phút theo version tri thức; bảng `operator_pages`);
 đọc resource khi chưa có hoặc đã cũ version thì Brain dựng tại chỗ — nội dung luôn đúng version hiện tại.
