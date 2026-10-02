@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/trieungoctam/biva-brain/brain-api/internal/kb"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/logic"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/queue"
+	"github.com/trieungoctam/biva-brain/brain-api/internal/textnorm"
 )
 
 type logicSpecIn struct {
@@ -601,4 +603,188 @@ func (s *Server) addLessonTool(srv *mcp.Server, operatorID string) {
 			return nil, addLessonOut{ItemID: id,
 				NextActions: []string{"bài học đã vào L2 — get_knowledge_pack sẽ thấy"}}, nil
 		})
+}
+
+type searchLogicIn struct {
+	Query string `json:"query" jsonschema:"từ khoá (có dấu hay không đều được)"`
+	Kind  string `json:"kind,omitempty" jsonschema:"module | feature | code | lesson; bỏ trống = tất cả"`
+	Limit int    `json:"limit,omitempty" jsonschema:"mặc định 10, tối đa 30"`
+}
+
+type logicHit struct {
+	Kind    string `json:"kind"` // module | feature | code | lesson
+	ID      string `json:"id"`
+	Title   string `json:"title,omitempty"`
+	Snippet string `json:"snippet,omitempty"`
+	Module  string `json:"module,omitempty"` // chunk code thuộc module nào
+}
+
+type searchLogicOut struct {
+	Hits        []logicHit `json:"hits"`
+	NextActions []string   `json:"next_actions"`
+}
+
+const searchLogicDesc = "Tìm trong tri thức logic: module chuẩn (manifest), feature danh mục L1, " +
+	"code chunk đã index từ repo (theo hàm/lớp, có dấu/không dấu đều được), lesson về code " +
+	"(topic code:<capability> của nhà xe hoặc dùng chung). Dùng trước khi triển khai logic."
+
+type getLogicModuleIn struct {
+	ID      string `json:"id" jsonschema:"vd fare.standard"`
+	Version int    `json:"version,omitempty" jsonschema:"bỏ trống = bản mới nhất"`
+}
+
+type logicModuleOut struct {
+	ID            string           `json:"id"`
+	Version       int              `json:"version"`
+	Layer         string           `json:"layer"`
+	Capability    string           `json:"capability"`
+	Summary       string           `json:"summary"`
+	Entrypoint    string           `json:"entrypoint"`
+	Features      []string         `json:"features"`
+	ParamsSchema  map[string]any   `json:"params_schema,omitempty"`
+	Hooks         []map[string]any `json:"hooks,omitempty"`
+	RequiredTests []string         `json:"required_tests,omitempty"`
+	DeprecatedBy  *string          `json:"deprecated_by,omitempty"`
+	Repo          string           `json:"repo"`
+	Path          string           `json:"path"`
+	Commit        string           `json:"commit"`
+	NextActions   []string         `json:"next_actions"`
+}
+
+const getLogicModuleDesc = "Manifest của một module logic: interface (entrypoint), params_schema, " +
+	"hooks, version, test bắt buộc, repo/path/commit. Bỏ trống version = bản mới nhất."
+
+func (s *Server) addLogicSearchTools(srv *mcp.Server, operatorID string) {
+	mcp.AddTool(srv, &mcp.Tool{Name: "search_logic", Description: searchLogicDesc, Annotations: readOnly},
+		func(ctx context.Context, _ *mcp.CallToolRequest, in searchLogicIn) (*mcp.CallToolResult, searchLogicOut, error) {
+			q := strings.TrimSpace(in.Query)
+			if q == "" {
+				return nil, searchLogicOut{}, errors.New("thiếu query")
+			}
+			if in.Kind != "" && !slices.Contains([]string{"module", "feature", "code", "lesson"}, in.Kind) {
+				return nil, searchLogicOut{}, errors.New("kind phải là module | feature | code | lesson")
+			}
+			limit := min(max(in.Limit, 1), 30)
+			if in.Limit == 0 {
+				limit = 10
+			}
+			// textnorm hai phía (ghi index & query) — có dấu/không dấu khớp nhau.
+			tsq := textnorm.SearchText(q)
+			out := searchLogicOut{Hits: []logicHit{}}
+			want := func(k string) bool { return in.Kind == "" || in.Kind == k }
+			// Module/feature: bảng nhỏ, lọc bằng textnorm phía Go — so TOKEN (không bigram),
+			// mọi token của query phải có trong tài liệu (giống nhánh keyword của recall).
+			qToks := textnorm.Tokens(q)
+			containsAll := func(doc string) bool {
+				if len(qToks) == 0 {
+					return false
+				}
+				have := map[string]bool{}
+				for _, t := range textnorm.Tokens(doc) {
+					have[t] = true
+				}
+				for _, t := range qToks {
+					if !have[t] {
+						return false
+					}
+				}
+				return true
+			}
+			if want("module") {
+				rows, err := s.db.Query(ctx, `
+					SELECT DISTINCT ON (id) id, version::int, summary, capability FROM logic_modules
+					WHERE status = 'active' ORDER BY id, version DESC`)
+				if err == nil {
+					for rows.Next() {
+						var h logicHit
+						var ver int
+						var cap string
+						if rows.Scan(&h.ID, &ver, &h.Snippet, &cap) == nil &&
+							containsAll(h.ID+" "+cap+" "+h.Snippet) {
+							h.Kind, h.Title = "module", fmt.Sprintf("%s@%d", h.ID, ver)
+							out.Hits = append(out.Hits, h)
+						}
+					}
+					rows.Close()
+				}
+			}
+			if want("feature") {
+				rows, err := s.db.Query(ctx, `
+					SELECT id, description FROM logic_features WHERE status = 'active'`)
+				if err == nil {
+					for rows.Next() {
+						var h logicHit
+						if rows.Scan(&h.ID, &h.Snippet) == nil &&
+							containsAll(h.ID+" "+h.Snippet) {
+							h.Kind, h.Title = "feature", h.ID
+							out.Hits = append(out.Hits, h)
+						}
+					}
+					rows.Close()
+				}
+			}
+			if want("code") {
+				out.Hits = append(out.Hits, queryHits(ctx, s.db, "code", `
+					SELECT symbol, path, left(summary, 80), coalesce(module_id, '') FROM code_chunks
+					WHERE tsv @@ to_tsquery('simple', $1)
+					ORDER BY created_at DESC LIMIT $2`, tsq, limit)...)
+			}
+			if want("lesson") {
+				out.Hits = append(out.Hits, queryHits(ctx, s.db, "lesson", `
+					SELECT id::text, topic, left(text, 100), '' FROM items
+					WHERE kind = 'lesson' AND topic LIKE 'code:%' AND status = 'active'
+					  AND (operator_id = $2 OR operator_id IS NULL)
+					  AND to_tsvector('simple', search_text) @@ to_tsquery('simple', $1)
+					ORDER BY layer, updated_at DESC LIMIT $3`, tsq, operatorID, limit)...)
+			}
+			if len(out.Hits) > limit {
+				out.Hits = out.Hits[:limit]
+			}
+			out.NextActions = []string{"get_logic_module(id=…) nếu tìm module"}
+			return nil, out, nil
+		})
+
+	mcp.AddTool(srv, &mcp.Tool{Name: "get_logic_module", Description: getLogicModuleDesc, Annotations: readOnly},
+		func(ctx context.Context, _ *mcp.CallToolRequest, in getLogicModuleIn) (*mcp.CallToolResult, logicModuleOut, error) {
+			var m logicModuleOut
+			var params, hooks []byte
+			var dep *string
+			err := s.db.QueryRow(ctx, `
+				SELECT id, version::int, layer, capability, summary, entrypoint, features, params_schema,
+				       hooks, required_tests, deprecated_by, repo, path, commit
+				FROM logic_modules WHERE id = $1 AND ($2 = 0 OR version = $2)
+				ORDER BY version DESC LIMIT 1`, in.ID, in.Version).
+				Scan(&m.ID, &m.Version, &m.Layer, &m.Capability, &m.Summary, &m.Entrypoint,
+					&m.Features, &params, &hooks, &m.RequiredTests, &dep, &m.Repo, &m.Path, &m.Commit)
+			if err != nil {
+				if err.Error() == "no rows in result set" {
+					return nil, logicModuleOut{}, errors.New("không tìm thấy module " + in.ID)
+				}
+				return nil, logicModuleOut{}, internal("get_logic_module", err)
+			}
+			m.DeprecatedBy = dep
+			_ = json.Unmarshal(params, &m.ParamsSchema)
+			_ = json.Unmarshal(hooks, &m.Hooks)
+			m.NextActions = []string{"plan_logic_implementation(capability=" + m.Capability + ")"}
+			return nil, m, nil
+		})
+}
+
+// queryHits chạy một nhánh tìm kiếm; cột: id, title, snippet, module (theo thứ tự đó).
+func queryHits(ctx context.Context, db *pgxpool.Pool, kind, sql string, args ...any) []logicHit {
+	rows, err := db.Query(ctx, sql, args...)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var out []logicHit
+	for rows.Next() {
+		var h logicHit
+		if err := rows.Scan(&h.ID, &h.Title, &h.Snippet, &h.Module); err != nil {
+			return out
+		}
+		h.Kind = kind
+		out = append(out, h)
+	}
+	return out
 }

@@ -201,6 +201,7 @@ func TestGetOperationScopedToOperator(t *testing.T) {
 		"plan_logic_implementation": true, "record_decision": false, "propose_logic_profile": false,
 		"list_logic_families": true, "run_examples_against": false,
 		"add_logic_test": false, "list_logic_tests": true,
+		"search_logic": true, "get_logic_module": true,
 		"run_tests": false, "sandbox_chat": false,
 		"reflect": false, "compare_with_industry": true, "check_release_gate": true, "request_publish": false, "rollback_release": false,
 		"add_lesson": false}

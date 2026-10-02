@@ -276,3 +276,66 @@ func TestAddLessonTool(t *testing.T) {
 		t.Fatalf("L1 pending = %d %s", l1, istatus)
 	}
 }
+
+// search_logic + get_logic_module (2 tool cuối của danh mục mcp.md §5.3).
+func TestSearchLogicAndGetModule(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	// Feature catalog seed (test DB không có kb sync của stack).
+	if _, err := f.pool.Exec(ctx, `INSERT INTO logic_features (id, capability, description, status)
+		VALUES ('fare.holiday_surcharge', 'fare', 'Phụ thu theo dịp (Tết, 30/4) áp theo ngày đi', 'active')
+		ON CONFLICT (id) DO UPDATE SET status = 'active'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.pool.Exec(ctx, `INSERT INTO logic_modules (id, version, layer, capability, summary,
+		entrypoint, features, params_schema, hooks, required_tests, repo, path, commit)
+		VALUES ('fare.smoke', 1, 'L1', 'fare', 'Giá theo tuyến mùa Tết có phụ thu', 'calc.py:calculate',
+		ARRAY['fare.holiday_surcharge'], '{}', '[]', '{}', 'biva-integrations', 'modules/fare/smoke', 'c1')`,
+	); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { f.pool.Exec(ctx, `DELETE FROM logic_modules WHERE id = 'fare.smoke'`) })
+
+	s, err := connect(t, f.url+"/mcp/operator/"+f.opA+"/", f.builderTok)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	// search theo từ không dấu vẫn ra module + feature.
+	isErr, res, _ := call(t, s, "search_logic", map[string]any{"query": "phu thu tet"})
+	if isErr {
+		t.Fatal("search lỗi")
+	}
+	kinds := map[string]bool{}
+	for _, h := range res["hits"].([]any) {
+		kinds[h.(map[string]any)["kind"].(string)] = true
+	}
+	if !kinds["module"] || !kinds["feature"] {
+		t.Fatalf("hits = %v", res["hits"])
+	}
+
+	// Lọc kind.
+	isErr, res, _ = call(t, s, "search_logic", map[string]any{"query": "holiday", "kind": "feature"})
+	if isErr {
+		t.Fatal("search feature lỗi")
+	}
+	for _, h := range res["hits"].([]any) {
+		if h.(map[string]any)["kind"] != "feature" {
+			t.Fatalf("lọc kind sai: %v", res["hits"])
+		}
+	}
+
+	// get_logic_module: bản mới nhất + đủ manifest.
+	isErr, m, _ := call(t, s, "get_logic_module", map[string]any{"id": "fare.smoke"})
+	if isErr || m["version"].(float64) != 1 || m["entrypoint"] != "calc.py:calculate" {
+		t.Fatalf("module = %+v", m)
+	}
+	if m["features"].([]any)[0] != "fare.holiday_surcharge" {
+		t.Fatalf("features = %v", m["features"])
+	}
+	// Module lạ → lỗi rõ.
+	if isErr, _, _ = call(t, s, "get_logic_module", map[string]any{"id": "khong.co"}); !isErr {
+		t.Fatal("module lạ phải lỗi")
+	}
+}

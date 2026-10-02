@@ -162,8 +162,8 @@ Cột **Mốc** = mốc dự kiến (xem lộ trình trong [architecture.md](arc
 | `plan_logic_implementation` | M2 ✅ | RO | kế hoạch theo capability: module L1 phủ nhiều feature của spec nhất, phần thiếu (viết mới / tái dùng nhà xe tương tự), bậc thấp nhất đủ dùng (config → hook → custom+ADR), params_draft từ spec |
 | `list_logic_families` | M3 ✅ | RO | họ logic theo capability (cụm spec trùng feature ≥ 60%): feature chung, thành viên, triển khai đề xuất; `promote_candidate` = ≥ 3 nhà xe cùng hook/custom — ứng candidate promote lên tham số/hook chuẩn |
 | `run_examples_against` | M3 ✅ | | async (operation_id): chạy ví dụ thật của nhà xe (logic_tests) trên triển khai của các nhà xe tương tự trong sandbox (config/hook/custom; api/handoff bỏ qua) → từng ứng viên % pass + case fail (input/kỳ vọng/nhận được); ứng viên cao nhất = điểm xuất phát |
-| `search_logic` | M2 | RO | tìm module, feature, pattern, lesson, code chunk |
-| `get_logic_module` | M2 | RO | manifest: interface, params_schema, hooks, version, test bắt buộc |
+| `search_logic` | M2 ✅ | RO | tìm trong tri thức logic: module chuẩn (manifest), feature danh mục L1, code chunk theo hàm/lớp (có dấu/không dấu), lesson về code (code:<capability>) — lọc theo kind |
+| `get_logic_module` | M2 ✅ | RO | manifest đầy đủ của module: entrypoint, params_schema, hooks, version, test bắt buộc, repo/path/commit; bỏ trống version = bản mới nhất |
 | `propose_logic_profile` | M2 ✅ | | gửi profile.yaml (+file hook/custom) → job logic.propose: validate schema, custom bắt buộc ADR (record_decision), có token thì tạo PR vào biva-integrations, chưa có thì trả nội dung để tạo PR tay; trả operation_id |
 | `record_decision` | M2 ✅ | | ghi ADR (lý do hook/custom) → id adr_* dùng trong profile.yaml |
 | `add_logic_test` / `list_logic_tests` | M3 ✅ | | thêm / liệt kê ví dụ input → output của nhà xe (out hoặc error, note hoàn cảnh, source item); CI repo biva-integrations cũng chạy lại cases.yaml của module bằng pytest |

@@ -267,6 +267,7 @@ func (s *Server) operatorServer(operatorID string) *mcp.Server {
 	s.addFamiliesTool(srv, operatorID)
 	s.addRunExamplesTool(srv, operatorID)
 	s.addLogicTestsTools(srv, operatorID)
+	s.addLogicSearchTools(srv, operatorID)
 	s.addTestTools(srv, operatorID)
 	s.addReflectTools(srv, operatorID)
 	s.addReleaseTools(srv, operatorID)

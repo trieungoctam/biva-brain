@@ -77,7 +77,9 @@ Chi tiết từng story nằm trong comment các issue Linear (kèm link CI). T�
 - **M4** `check_release_gate`; `request_publish` (staging tự động, production chờ lead) +
   `rollback_release` < 1 phút; `add_lesson` + prompt `/review_quality`; bộ test chống prompt injection.
 - **M5** platform tools: `list_operators`, `list_promotion_candidates`, `propose_l1_change`,
-  `impact_of_change`, `run_regression_all`.
+  `impact_of_change`, `run_regression_all`. **Danh mục tool MCP đầy đủ 45/45** —包括 2 tool sót
+  `search_logic` (module/feature/code chunk/lesson, có dấu-không dấu) và `get_logic_module`
+  (manifest đầy đủ) vừa bổ sung.
 
 Việc còn treo (đều ngoài code — cần chủ dự án):
 1. **Dữ liệu pilot thật + golden set** (DYN-110/112) — đo mọi AC số liệu (recall, ≥90% parse, ≥95% alias,
