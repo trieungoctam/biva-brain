@@ -76,9 +76,22 @@ def diff(
     for c in candidates:
         by_key.setdefault(c.key, []).append(c)
 
+    def pick(versions: list[ExistingItem], moment: date) -> ExistingItem:
+        """Bản chứa thời điểm hiệu lực của ứng viên; khe hở/key mới thì lấy bản mới nhất."""
+        for e in versions:
+            if (e.valid_from is None or e.valid_from <= moment) and (
+                e.valid_to is None or e.valid_to > moment
+            ):
+                return e
+        return versions[-1]
+
+    # Chấp nhận dict[key → item] (dạng cũ) lẫn dict[key → list[item]] (load_existing mới).
+    normalized = {k: (v if isinstance(v, list) else [v]) for k, v in existing.items()}
+
     decisions: list[Decision] = []
     for key, group in by_key.items():
-        target = existing.get(key)
+        versions = normalized.get(key, [])
+        target = versions[-1] if versions else None
         upserts: list[Candidate] = []
         for c in group:  # bỏ bản lặp y hệt trong cùng một tin
             if c.action == "upsert" and not any(_same_candidate(c, u) for u in upserts):
@@ -101,6 +114,11 @@ def diff(
             continue
         if upserts:  # upsert thắng remove trong cùng tin ("bỏ giá cũ, giá mới là …")
             c = upserts[0]
+            # Target = bản chứa thời điểm đề xuất có hiệu lực (mặc định hôm nay), không phải
+            # bản mới nhất: khi có bản lên lịch tương lai, sửa giá hôm nay phải nhắm bản hiện tại.
+            moment = c.valid_from or (today or date.today())
+            if versions:
+                target = pick(versions, moment)
             if target is None:
                 kind = "NEW"
             elif same_content(c, target, today):

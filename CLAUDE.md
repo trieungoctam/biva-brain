@@ -30,6 +30,14 @@ snapshot_id, gate chỉ nhận test của đúng snapshot mới nhất (snapshot
 (d) lỗi DB khi ghi kết quả job từng giết slot worker vĩnh viễn — giờ bắt ở ranh giới slot;
 (e) run_code/git-clone đồng bộ từng chặn event loop → hết lease 60s bị claim lại — sang to_thread;
 (f) clone lỗi để lộ tmpdir; (g) goroutine ticker scheduler tích luỹ qua từng phiên leader.
+Vòng 6 (2 medium nữa — thực ra deterministic, không cần golden set): target review/ingest giờ
+chọn bản active có khoảng hiệu lực CHỨA thời điểm đề xuất (mặc định hôm nay) thay vì bản
+valid_from lớn nhất — sửa giá đang áp dụng khi đã có bản Tết lên lịch không còn nhắm nhầm/
+vi phạm items_scope_key_validity (review.go + ingest load_existing trả mọi bản active theo key,
+diff.pick theo khoảng; test Go review_test + Python test_ingest). Promote L1 giờ chỉ đề xuất
+các CÂU được ≥3 nhà xe cùng nói (giao theo textnorm.fold) — câu riêng nhà xe đại diện không
+còn lên thông lệ ngành (_common_sentences + test).
+
 Vòng 5 (3 medium cuối cùng sửa được không cần golden set): migration 000024 — item nguồn của
 tham số profile (logic_param_sources) bị supersede/expire/rút giờ đánh profile `stale` ngay
 trong transaction (mở rộng items_mark_stale; logic_sync upsert hồi phục 'active' khi merge PR —
@@ -46,10 +54,9 @@ scope (chặn lost-update mất câu đã đánh dấu consolidated); recall loa
 lỗi DB khác báo lên (builder không bị báo "chưa có" khi DB lỗi); index.code HEAD không đổi vẫn
 hoàn thiện embedding chunk thiếu (TEI hồi phục là tự chữa); Similar/Compare nạp embedding phía
 spec mình — cosine chạy thật thay vì luôn fallback Jaccard.
-Backlog CÒN LẠI (cần golden set/pilot hoặc đổi semantics review): chọn target review nhắm bản
-tương lai thay vì bản đang áp dụng, promote chép nguyên câu nhà xe đại diện (câu riêng nhà xe đó
-lên L1 — cần provenance theo mệnh đề), propose_l1_change không sửa được key L1 đang tồn tại,
-ingest retry bỏ qua bước dở khi gặp document trùng.
+Backlog CÒN LẠI (2 mục, cần決 định thiết kế với chủ dự án): propose_l1_change không sửa được
+key L1 đang tồn tại (cần apply_review supersede item L1 — chạm flow duyệt L1), ingest retry bỏ
+qua bước dở khi gặp document trùng (cần gộp auto-apply + enqueue vào transaction của _write).
 
 Vòng 2 (sau review) sửa nốt 3 low/medium còn lại: export key thêm nonce (URL không đoán được),
 resource OAuth whitelist chặt (chặn `/mcp/operator/` rỗng + `../`), register hỗ trợ

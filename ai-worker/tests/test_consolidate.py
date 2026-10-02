@@ -245,3 +245,44 @@ def test_promote_khac_topic_khong_gop():
             await pool.close()
 
     asyncio.run(t())
+
+
+def test_promote_chi_lay_cau_chung():
+    """Regression (review mục 5): L1 chỉ chứa câu được ≥3 nhà xe cùng nói — câu riêng của
+    nhà xe đại diện ('trẻ em miễn phí') không được lên thông lệ ngành."""
+    obs = [
+        {
+            "id": "a1",
+            "operator": "opA",
+            "topic": "pets",
+            "text": "Không nhận chó mèo trên xe. Trẻ em dưới 5 tuổi miễn phí.",
+            "embedding": [],
+        },
+        {
+            "id": "a2",
+            "operator": "opB",
+            "topic": "pets",
+            "text": "không nhận chó mèo trên xe",
+            "embedding": [],
+        },
+        {
+            "id": "a3",
+            "operator": "opC",
+            "topic": "pets",
+            "text": "Không nhận chó mèo trên xe.",
+            "embedding": [],
+        },
+    ]
+    # Cụm đủ 3 nhà xe; câu chung đủ 3, câu riêng chỉ 1.
+    common = pjob._common_sentences(obs)
+    assert common == ["Không nhận chó mèo trên xe"], common
+
+    # Không câu nào đủ 3 → trả rỗng (caller giữ nguyên văn cũ).
+    lone = [
+        dict(obs[0]),
+        dict(obs[1]),
+        {"id": "a4", "operator": "opD", "topic": "pets", "text": "Xe có wifi", "embedding": []},
+    ]
+    # cụm này chỉ 2 nhà xe nói câu chó mèo — nhưng cluster yêu cầu 3 ops khác nhau; gọi
+    # trực tiếp hàm câu chung với 3 bản mà chỉ 2 bản cùng câu:
+    assert pjob._common_sentences(lone[:2] + [lone[2]]) == [], "câu chỉ 2 nhà xe nói không lên L1"

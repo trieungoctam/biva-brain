@@ -521,3 +521,32 @@ def test_structured_items_skip_llm():
             await pool.close()
 
     asyncio.run(t())
+
+
+def test_diff_target_theo_khoang_hieu_luc():
+    """Regression (review mục 5): đã có bản lên lịch cho tương lai, tin sửa giá HÔM NAY
+    phải nhắm bản hiện tại làm target — không phải bản valid_from lớn nhất."""
+    from datetime import date
+
+    # Hai bản đúng khoảng hiệu lực: hiện tại (→01/11) và Tết (từ 01/11).
+    cur = ExistingItem(
+        "id-cur", "fare.sg_dl", "fare", "Giá 320k", {"gia_ve": "320000"}, date(2026, 1, 1), date(2026, 11, 1)
+    )
+    tet = ExistingItem(
+        "id-tet", "fare.sg_dl", "fare", "Giá Tết 450k", {"gia_ve": "450000"}, date(2026, 11, 1), None
+    )
+    existing = {"fare.sg_dl": [cur, tet]}
+
+    # Tin hôm nay (không nói ngày hiệu lực) → CHANGE nhắm bản hiện tại.
+    d = diff(
+        [cand("fare.sg_dl", "Giá 350k", facts={"gia_ve": "350000"})], existing, today=date(2026, 10, 15)
+    )[0]
+    assert d.change_kind == "CHANGE" and d.target.id == "id-cur", (d.change_kind, d.target.id)
+
+    # Tin lên lịch cho Tết → nhắm bản Tết (khoảng chứa 01/11).
+    d = diff(
+        [cand("fare.sg_dl", "Giá Tết 500k", facts={"gia_ve": "500000"}, vf=date(2026, 11, 1))],
+        existing,
+        today=date(2026, 10, 15),
+    )[0]
+    assert d.target.id == "id-tet", d.target.id

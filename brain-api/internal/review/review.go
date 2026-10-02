@@ -241,11 +241,32 @@ func Propose(ctx context.Context, db *pgxpool.Pool, operatorID string, p Proposa
 
 	var targetID, targetText *string
 	var targetValue []byte
+	// Target = bản active có khoảng hiệu lực CHỨA thời điểm đề xuất có hiệu lực (mặc định hôm nay),
+	// không phải "bản có valid_from lớn nhất": khi đã có bản lên lịch cho tương lai, sửa giá đang
+	// áp dụng hôm nay phải nhắm bản hiện tại — nhắm bản tương lai thì apply_review supersede nhầm,
+	// để bản hiện tại active và khoảng mới chồng lên nó (vi phạm items_scope_key_validity).
+	moment := from
+	if moment == nil {
+		now := time.Now()
+		moment = &now
+	}
 	err = tx.QueryRow(ctx, `SELECT id::text, text, value FROM items
 		WHERE operator_id = $1 AND layer = 2 AND key = $2 AND status = 'active'
-		ORDER BY valid_from DESC NULLS LAST LIMIT 1`, operatorID, key).Scan(&targetID, &targetText, &targetValue)
+		  AND (valid_from IS NULL OR valid_from <= $3) AND (valid_to IS NULL OR valid_to > $3)
+		LIMIT 1`, operatorID, key, moment).Scan(&targetID, &targetText, &targetValue)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return s, err
+	}
+	if targetID == nil {
+		// Không có bản nào chứa thời điểm này (key mới, hoặc khe hở giữa hai bản) — về lấy
+		// bản active mới nhất theo valid_from để diff trước/after như cũ.
+		err = tx.QueryRow(ctx, `SELECT id::text, text, value FROM items
+			WHERE operator_id = $1 AND layer = 2 AND key = $2 AND status = 'active'
+			ORDER BY valid_from DESC NULLS LAST LIMIT 1`, operatorID, key).
+			Scan(&targetID, &targetText, &targetValue)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return s, err
+		}
 	}
 
 	kind := "NEW"

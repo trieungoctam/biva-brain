@@ -58,6 +58,29 @@ def same_practice(a: dict, b: dict) -> float:
     return best * 0.9  # keyword thận trọng hơn embedding
 
 
+def _common_sentences(cluster: list[dict]) -> list[str]:
+    """Các câu (so theo textnorm.fold — không phân biệt hoa/thường/dấu) được ≥ MIN_OPERATORS
+    nhà xe khác nhau trong cụm cùng nói; giữ nguyên văn bản của observation đại diện,
+    theo thứ tự xuất hiện ở đó. Trả [] nếu không câu nào đủ — caller giữ nguyên văn cũ."""
+    from collections import Counter
+
+    def sentences(text: str) -> list[str]:
+        return [ln.strip() for ln in text.split(".") if ln.strip()]
+
+    seen: Counter = Counter()
+    for ob in cluster:
+        for sent in {textnorm.fold(s) for s in sentences(ob["text"])}:
+            seen[sent] += 1
+    out: list[str] = []
+    seen_out: set[str] = set()
+    for sent in sentences(cluster[0]["text"]):
+        key = textnorm.fold(sent)
+        if seen[key] >= MIN_OPERATORS and key not in seen_out:
+            out.append(sent)
+            seen_out.add(key)
+    return out
+
+
 def clusters(observations: list[dict]) -> list[list[dict]]:
     """Union-find theo tương tự; trả các cụm có >= MIN_OPERATORS nhà xe khác nhau."""
     parent = list(range(len(observations)))
@@ -110,7 +133,13 @@ async def promote(pool: asyncpg.Pool) -> dict[str, Any]:
         for cluster in clusters(observations):
             topic = cluster[0]["topic"]
             ops = sorted({o["operator"] for o in cluster})  # dedupe: cùng nhà xe nhiều observation
-            rep = cluster[0]
+            # Nội dung L1 = các CÂU được ≥ MIN_OPERATORS nhà xe cùng nói (giao theo câu đã
+            # chuẩn hoá) — không chép nguyên observation nhà xe đại diện kèm câu riêng của
+            # nhà xe đó (vd "trẻ em miễn phí" chỉ 1 nhà xe có) lên thành thông lệ ngành.
+            rep = dict(cluster[0])
+            common = _common_sentences(cluster)
+            if common:
+                rep["text"] = " ".join(common)
             key = f"l1.promoted.{topic}.{rep['id'][:8]}"
             already = await con.fetchval(
                 """SELECT EXISTS (SELECT 1 FROM review_items

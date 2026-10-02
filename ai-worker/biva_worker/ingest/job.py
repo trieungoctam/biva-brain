@@ -121,26 +121,29 @@ def _proposal(c: Candidate) -> dict[str, Any]:
     }
 
 
-async def load_existing(conn: asyncpg.Connection, operator_id: str) -> dict[str, ExistingItem]:
-    """Bản active mới nhất theo key (một key có thể có bản hiện tại + bản có hiệu lực từ ngày tương lai)."""
+async def load_existing(conn: asyncpg.Connection, operator_id: str) -> dict[str, list[ExistingItem]]:
+    """Mọi bản active theo key (một key có thể có bản hiện tại + bản lên lịch cho tương lai);
+    diff sẽ chọn bản chứa thời điểm hiệu lực của từng ứng viên."""
     rows = await conn.fetch(
-        """SELECT DISTINCT ON (key) id::text, key, topic, text, value, valid_from, valid_to FROM items
+        """SELECT id::text, key, topic, text, value, valid_from, valid_to FROM items
            WHERE operator_id = $1 AND layer = 2 AND status = 'active' AND key IS NOT NULL
-           ORDER BY key, valid_from DESC NULLS LAST""",
+           ORDER BY key, valid_from NULLS FIRST, id""",
         operator_id,
     )
-    return {
-        r["key"]: ExistingItem(
-            id=r["id"],
-            key=r["key"],
-            topic=r["topic"],
-            text=r["text"],
-            facts=_facts(r["value"]),
-            valid_from=r["valid_from"].astimezone(VN).date() if r["valid_from"] else None,
-            valid_to=r["valid_to"].astimezone(VN).date() if r["valid_to"] else None,
+    out: dict[str, list[ExistingItem]] = {}
+    for r in rows:
+        out.setdefault(r["key"], []).append(
+            ExistingItem(
+                id=r["id"],
+                key=r["key"],
+                topic=r["topic"],
+                text=r["text"],
+                facts=_facts(r["value"]),
+                valid_from=r["valid_from"].astimezone(VN).date() if r["valid_from"] else None,
+                valid_to=r["valid_to"].astimezone(VN).date() if r["valid_to"] else None,
+            )
         )
-        for r in rows
-    }
+    return out
 
 
 async def _write(
@@ -258,7 +261,7 @@ async def ingest(pool: asyncpg.Pool, llm: LLMClient, job: Job) -> dict[str, Any]
             llm,
             content=payload["content"],
             received=received,
-            existing=list(existing.values()),
+            existing=[v[-1] for v in existing.values()],  # bản mới nhất mỗi key cho prompt
             topics=kbtemplate.topics(),
             operator_id=operator_id,
             operation_id=job.id,
