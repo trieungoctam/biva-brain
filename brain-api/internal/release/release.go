@@ -257,6 +257,12 @@ func Publish(ctx context.Context, db *pgxpool.Pool, operatorID, channel, stage, 
 			return "", "", err
 		}
 	}
+	if _, err := tx.Exec(ctx, `INSERT INTO audit_log (actor, action, target, payload)
+		VALUES ($1, 'release.publish', $2, $3)`, actor, "release:"+id,
+		fmt.Sprintf(`{"operator": %q, "channel": %q, "stage": %q, "snapshot_ver": %d, "status": %q}`,
+			operatorID, channel, stage, gatedVerInt(gatedVer), status)); err != nil {
+		return "", "", err
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return "", "", err
 	}
@@ -296,6 +302,11 @@ func Approve(ctx context.Context, db *pgxpool.Pool, releaseID, approver string) 
 	if _, err := tx.Exec(ctx, `UPDATE releases SET status = 'rolled_back', rolled_back_at = now()
 		WHERE operator_id = $1 AND bot_channel = $2 AND stage = 'production'
 		  AND status = 'published' AND id <> $3::uuid`, op, ch, releaseID); err != nil {
+		return "", err
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO audit_log (actor, action, target, payload)
+		VALUES ($1, 'release.approve', $2, $3)`, approver, "release:"+releaseID,
+		fmt.Sprintf(`{"operator": %q, "channel": %q}`, op, ch)); err != nil {
 		return "", err
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -349,12 +360,19 @@ func Rollback(ctx context.Context, db *pgxpool.Pool, operatorID, channel, actor 
 		WHERE id = $1::uuid`, cur); err != nil {
 		return "", 0, err
 	}
+	if _, err := tx.Exec(ctx, `INSERT INTO audit_log (actor, action, target, payload)
+		VALUES ($1, 'release.rollback', $2, $3)`, actor, "release:"+cur,
+		fmt.Sprintf(`{"operator": %q, "channel": %q, "from_ver": %d, "to_ver_prev": %q}`,
+			operatorID, channel, curVer, prev)); err != nil {
+		return "", 0, err
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return "", 0, err
 	}
-	var _ = actor
 	return prev, curVer, nil
 }
+
+func gatedVerInt(s string) int { return mustAtoi(s) }
 
 func mustAtoi(s string) int {
 	n := 0

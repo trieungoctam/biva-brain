@@ -161,6 +161,18 @@ nên job bị claim lại sau khi chết giữa chừng xử lý lại từ đ�
 `BIVA_RESTORE_VERIFY=1 deploy/backup.sh` → 39/39 bảng, 45/45 items, 119/119 operations
 khớp tuyệt đối giữa bản và DB scratch.
 
+## Redis dùng làm gì & hành vi khi chết (kiểm chứng 03/10)
+
+Redis chỉ giữ **quota LLM** (`RedisQuota` trong ai-worker). Khi Redis chết: quota
+**fail-open** (cho phép gọi LLM, ghi WARNING) — việc bảo vệ ngân sách tạm mất nhưng
+không job nào chết. Queue nằm trong Postgres nên không bị ảnh hưởng.
+
+## Chaos: S3 chết giữa export (kiểm chứng 03/10)
+
+`docker stop s3` → export_bot trả lỗi thân thiện ("Brain tạm thời không trả lời được"),
+không treo, brain-api sống; `docker start s3` → export chạy lại được ngay (URL tải có
+nonce không đoán được). Outage matrix đầy đủ: postgres ✓ · redis ✓ (fail-open) · s3 ✓.
+
 ## Trước khi lên production (security)
 
 - **Bucket export**: key export đã có nonce ngẫu nhiên (URL không đoán được kể cả bucket công khai);

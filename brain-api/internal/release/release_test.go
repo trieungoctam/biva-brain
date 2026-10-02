@@ -198,6 +198,16 @@ func TestPublishApproveRollback(t *testing.T) {
 	if now1 != "published" || now3 != "rolled_back" {
 		t.Fatalf("sau rollback: %s/%s", now1, now3)
 	}
+
+	// Publish staging + Approve + Rollback đều phải ghi audit_log (phát hành là hành động
+	// ảnh hưởng khách hàng — không được mù trên nhật ký; fix round 19).
+	for _, want := range []string{"release.publish", "release.approve", "release.rollback"} {
+		var n int
+		if err := pool.QueryRow(ctx, `SELECT count(*) FROM audit_log WHERE action = $1
+			AND payload->>'operator' = $2`, want, op).Scan(&n); err != nil || n == 0 {
+			t.Fatalf("thiếu audit %s cho %s (err %v)", want, op, err)
+		}
+	}
 }
 
 // Concurrency: hai Publish staging cùng (operator, kênh) chạy song song thật — advisory lock
