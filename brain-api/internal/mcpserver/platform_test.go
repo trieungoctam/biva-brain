@@ -167,3 +167,75 @@ func TestImpactAndRegression(t *testing.T) {
 		t.Fatalf("job = %s %v", kind, err)
 	}
 }
+
+// approve_publish: preview danh sách chờ → duyệt → published.
+func TestApprovePublish(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	bot := f.opA + ":zalo"
+	if _, err := f.pool.Exec(ctx, `INSERT INTO bots (id, operator_id, channel) VALUES ($1, $2, 'zalo')`,
+		bot, f.opA); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.pool.Exec(ctx, `INSERT INTO snapshots (bot_id, operator_id, version,
+		artifact_versions, definition, created_by) VALUES ($1, $2, 1, '{}', '{}', 't')`, bot, f.opA); err != nil {
+		t.Fatal(err)
+	}
+	rel := func() string {
+		var id string
+		if err := f.pool.QueryRow(ctx, `INSERT INTO releases (operator_id, bot_channel, snapshot_id,
+			snapshot_ver, stage, status, requested_by)
+			SELECT $1, 'zalo', s.id, s.version, 'production', 'requested', 'ai:t' FROM snapshots s
+			WHERE s.bot_id = $2 ORDER BY s.version DESC LIMIT 1 RETURNING id::text`, f.opA, bot).Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	t.Cleanup(func() { f.pool.Exec(ctx, `DELETE FROM releases WHERE operator_id = $1`, f.opA) })
+
+	s, err := connect(t, f.url+"/mcp/platform/", f.leadTok)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	relID := rel() // bản production requested duy nhất — preview phải thấy đúng bản này
+	// Preview: thấy bản chờ + token.
+	isErr, out, raw := call(t, s, "approve_publish", map[string]any{})
+	if isErr {
+		t.Fatalf("preview lỗi: %v", raw)
+	}
+	if len(out["pending"].([]any)) != 1 {
+		t.Fatalf("pending = %+v", out)
+	}
+	na := out["next_actions"].([]any)[0].(string)
+	i := indexStr(na, "confirm_token=")
+	if i < 0 {
+		t.Fatalf("không có token trong %q", na)
+	}
+	token := na[i+len("confirm_token="):]
+	if j := indexStr(token, " (hết hạn"); j > 0 {
+		token = token[:j]
+	}
+	// Duyệt đúng id → published.
+	isErr, out, _ = call(t, s, "approve_publish", map[string]any{
+		"release_id": relID, "confirm_token": token})
+	if isErr || out["approved_release"] != relID {
+		t.Fatalf("approve = %+v", out)
+	}
+	var status string
+	f.pool.QueryRow(ctx, `SELECT status FROM releases WHERE id = $1::uuid`, relID).Scan(&status)
+	if status != "published" {
+		t.Fatalf("status = %s", status)
+	}
+	// Token dùng lại → bị từ chối (một lần).
+	if isErr, _, _ = call(t, s, "approve_publish", map[string]any{
+		"release_id": relID, "confirm_token": token}); !isErr {
+		t.Fatal("token dùng lại phải bị từ chối")
+	}
+	// Id không còn requested → lỗi rõ.
+	if isErr, _, _ = call(t, s, "approve_publish", map[string]any{
+		"release_id": relID, "confirm_token": "ct_khongtontai"}); !isErr {
+		t.Fatal("id đã published phải lỗi")
+	}
+}

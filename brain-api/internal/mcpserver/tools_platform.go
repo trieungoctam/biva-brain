@@ -12,6 +12,7 @@ import (
 
 	"github.com/trieungoctam/biva-brain/brain-api/internal/confirm"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/queue"
+	"github.com/trieungoctam/biva-brain/brain-api/internal/release"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/textnorm"
 )
 
@@ -437,5 +438,79 @@ func (s *Server) addRegressionTool(srv *mcp.Server) {
 			out.Count = len(out.Operations)
 			out.NextActions = []string{"get_operation(operation_id=…) cho từng nhà xe khi job xong"}
 			return nil, out, nil
+		})
+}
+
+type approvePublishIn struct {
+	ReleaseID    string `json:"release_id,omitempty" jsonschema:"id bản production đang requested"`
+	ConfirmToken string `json:"confirm_token,omitempty"`
+}
+
+type pendingRelease struct {
+	Operator    string `json:"operator"`
+	Channel     string `json:"channel"`
+	ReleaseID   string `json:"release_id"`
+	SnapshotVer int    `json:"snapshot_version"`
+	RequestedBy string `json:"requested_by"`
+	RequestedAt string `json:"requested_at"`
+}
+
+const approvePublishDesc = "Lead duyệt bản phát hành production đang chờ (request_publish stage=production). " +
+	"Bỏ trống release_id → xem danh sách chờ duyệt + confirm_token; gửi lại kèm release_id để duyệt " +
+	"— bản cũ tự rolled_back."
+
+type approvePublishOut struct {
+	Pending     []pendingRelease `json:"pending,omitempty"`
+	Approved    string           `json:"approved_release,omitempty"`
+	NextActions []string         `json:"next_actions"`
+}
+
+func (s *Server) addApprovePublish(srv *mcp.Server) {
+	mcp.AddTool(srv, &mcp.Tool{Name: "approve_publish", Description: approvePublishDesc,
+		Annotations: &mcp.ToolAnnotations{IdempotentHint: false, DestructiveHint: ptr(false), OpenWorldHint: ptr(false)}},
+		func(ctx context.Context, req *mcp.CallToolRequest, in approvePublishIn) (*mcp.CallToolResult, approvePublishOut, error) {
+			p, err := callerOf(req)
+			if err != nil {
+				return nil, approvePublishOut{}, err
+			}
+			if in.ConfirmToken == "" {
+				rows, err := s.db.Query(ctx, `
+					SELECT r.id::text, r.operator_id, r.bot_channel, r.snapshot_ver::int, r.requested_by,
+					       to_char(r.requested_at, 'YYYY-MM-DD HH24:MI')
+					FROM releases r WHERE r.stage = 'production' AND r.status = 'requested'
+					ORDER BY r.requested_at`)
+				if err != nil {
+					return nil, approvePublishOut{}, internal("approve_publish", err)
+				}
+				defer rows.Close()
+				out := approvePublishOut{Pending: []pendingRelease{}}
+				for rows.Next() {
+					var pr pendingRelease
+					if err := rows.Scan(&pr.ReleaseID, &pr.Operator, &pr.Channel, &pr.SnapshotVer,
+						&pr.RequestedBy, &pr.RequestedAt); err != nil {
+						return nil, approvePublishOut{}, internal("approve_publish", err)
+					}
+					out.Pending = append(out.Pending, pr)
+				}
+				token, exp, err := confirm.Issue(ctx, s.db, p.UserID, "", "approve_publish", "*", confirm.DefaultTTL)
+				if err != nil {
+					return nil, approvePublishOut{}, internal("approve_publish", err)
+				}
+				out.NextActions = []string{"duyệt: gọi lại với release_id + confirm_token=" + token +
+					" (hết hạn " + exp.Format("15:04:05") + ")"}
+				return nil, out, nil
+			}
+			if in.ReleaseID == "" {
+				return nil, approvePublishOut{}, errors.New("có confirm_token thì phải kèm release_id")
+			}
+			if err := confirm.Consume(ctx, s.db, in.ConfirmToken, p.UserID, "", "approve_publish", "*"); err != nil {
+				return nil, approvePublishOut{}, err
+			}
+			status, err := release.Approve(ctx, s.db, in.ReleaseID, p.Actor())
+			if err != nil {
+				return nil, approvePublishOut{}, internal("approve_publish", err)
+			}
+			return nil, approvePublishOut{Approved: in.ReleaseID,
+				NextActions: []string{"bản " + status + " — bản production cũ tự rolled_back; rollback_release nếu cần"}}, nil
 		})
 }

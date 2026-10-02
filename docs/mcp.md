@@ -191,6 +191,7 @@ Cột **Mốc** = mốc dự kiến (xem lộ trình trong [architecture.md](arc
 | `list_promotion_candidates` | M5 ✅ | RO | ứng viên promote: tri thức (review PROMOTE đang mở — observation ≥ 3 nhà xe) + logic (họ ≥ 3 nhà xe hook/custom), kèm danh sách nhà xe |
 | `propose_l1_change` | M5 ✅ | C | lead đề xuất thêm/sửa thông lệ L1 (preview + confirm_token) → item L1 pending + review chờ duyệt như mọi đề xuất |
 | `run_regression_all` | M5 ✅ | | platform-only: enqueue bot.tests cho mọi nhà xe có snapshot (chạy song song qua queue) — trả operation_id theo nhà xe |
+| `approve_publish` | M5 ✅ | C | platform-only (lead): duyệt bản production đang requested — bỏ trống release_id xem danh sách chờ + confirm_token; duyệt xong bản cũ tự rolled_back (kết nối `release.Approve` cho luồng request_publish) |
 
 ## 6. Resources
 
