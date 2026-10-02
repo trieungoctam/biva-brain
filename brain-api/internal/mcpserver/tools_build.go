@@ -249,7 +249,9 @@ func (s *Server) addBuildTools(srv *mcp.Server, operatorID string) {
 				FROM logic_profiles lp
 				JOIN logic_param_sources lps ON lps.profile_id = lp.id
 				JOIN items i ON i.id = lps.item_id
+					AND (i.operator_id = $1 OR (i.operator_id IS NULL AND i.layer <= 1))
 				LEFT JOIN items n ON n.id = i.superseded_by
+					AND (n.operator_id = $1 OR (n.operator_id IS NULL AND n.layer <= 1))
 				WHERE lp.operator_id = $1 AND lp.status = 'stale'
 				ORDER BY lp.capability, lps.param_path`, operatorID)
 			if err != nil {

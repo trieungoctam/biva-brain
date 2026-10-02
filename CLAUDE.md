@@ -30,6 +30,19 @@ snapshot_id, gate chỉ nhận test của đúng snapshot mới nhất (snapshot
 (d) lỗi DB khi ghi kết quả job từng giết slot worker vĩnh viễn — giờ bắt ở ranh giới slot;
 (e) run_code/git-clone đồng bộ từng chặn event loop → hết lease 60s bị claim lại — sang to_thread;
 (f) clone lỗi để lộ tmpdir; (g) goroutine ticker scheduler tích luỹ qua từng phiên leader.
+Vòng 11 (review lại chính các bản fix — security-reviewer trên diff cbe11c9..HEAD): SỬA 1 high
+thật — vòng fix sandbox vòng 1 KHÔNG đậu: purge list không chứa io/_io/_socket (replace không
+khớp chuỗi sau format), và UNDER_DENY chỉ áp nhánh non-builtin nên `import _io; _io.open()`
+vẫn đọc file thật, `_socket.socket()` vẫn mở mạng. Hướng chặn đúng: builtin DENY-BY-DEFAULT
+(BUILTIN_OK chỉ builtin tính toán) + purge io/_io/marshal/_socket/pickle/ctypes… khỏi
+sys.modules + NẠP SẴN whitelist trước khi đăng ký finder (machinery đọc .py qua _io — không
+nạp trước là vỡ import hợp lệ; whitlist đóng băng: module ngoài không nạp thêm được).
+Corpus tấn công cố hóa 6 đường + test whitelist-full. Kèm: Publish chốt snapshot dưới advisory
+lock (chống TOCTOU export_bot chen snapshot chưa test), Approve theo thứ tự advisory→row,
+list_stale JOIN ràng operator (chặn leak chéo tenant qua logic_param_sources + logic_sync kiểm
+ownership khi ghi — bộ test cũ tự dùng nguồn chéo, đã sửa fixture), OAuth resource bắt buộc
+(RFC 8707). SLO đo lại sau 36 fix: recall p95 8,8ms — không suy giảm.
+
 Vòng 8–9 (verify + drift): demo E2E pass trên stack code hiện tại (migrate 24/25 trên DB sống);
 test concurrency thật (8 publish song song → đúng 1 published; 2 consolidate song song → 0 câu mất);
 review repo biva-integrations (sửa alias columns không strip, lỗi child_policy rõ ràng). Vòng 10 (drift

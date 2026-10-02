@@ -77,3 +77,32 @@ def test_module_cho_phép_chạy_dc():
         "f",
     )
     assert res["ok"] and res["value"]["d"] == "2026-10-02", res
+
+
+def _fn(*stmts: str) -> str:
+    body = "\n".join("    " + st for st in stmts)
+    return f"def __biva_entry():\n{body}\n"
+
+
+def test_builtin_bypass_bi_chan():
+    """_io/_socket/marshal/pickle là builtin: import lấy từ sys.modules cache, KHÔNG qua
+    finder — phải purge khỏi cache và deny ở nhánh builtin (đường từng lọt, vòng fix sau)."""
+    from biva_worker.security import sandbox_builtin_bypass_cases
+
+    for code in sandbox_builtin_bypass_cases():
+        r = run_code(_fn(code), "__biva_entry")
+        assert r["ok"] is False and "SANDBOX_BLOCKED" in r["error"], (code, r)
+
+
+def test_module_hop_le_van_chay():
+    """Toàn bộ whitelist vẫn import được sau khi _io bị chặn (machinery đọc .py qua _io —
+    nên phải nạp sẵn TRƯỚC khi đăng ký finder + purge)."""
+    r = run_code(
+        _fn(
+            "import json, datetime, math, re, decimal, statistics, fractions, "
+            "textwrap, hashlib, random, collections, itertools, functools, typing, string",
+            "return 'ok'",
+        ),
+        "__biva_entry",
+    )
+    assert r["ok"] is True and r["value"] == "ok", r

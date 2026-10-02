@@ -276,6 +276,17 @@ async def sync(pool: asyncpg.Pool, embedder: Embedder, source: str) -> dict[str,
                         await con.execute("DELETE FROM logic_param_sources WHERE profile_id = $1", prof_id)
                         rows = [(prof_id, name, p["source"]) for name, p in params.items() if p.get("source")]
                         if rows:
+                            # Item nguồn phải thuộc nhà xe này (hoặc là tri thức L0/L1 dùng chung)
+                            # — profile.yaml của repo không tin cậy: không cho trỏ item nhà xe khác.
+                            valid = await con.fetch(
+                                """SELECT id::text FROM items WHERE id = ANY($1::uuid[])
+                                   AND (operator_id = $2 OR (operator_id IS NULL AND layer <= 1))""",
+                                [r[2] for r in rows],
+                                operator,
+                            )
+                            ok = {r["id"] for r in valid}
+                            rows = [r for r in rows if r[2] in ok]
+                        if rows:
                             await con.executemany(
                                 """INSERT INTO logic_param_sources (profile_id, param_path, item_id)
                                    VALUES ($1, $2, $3::uuid)

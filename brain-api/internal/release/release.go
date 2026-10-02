@@ -211,20 +211,38 @@ func Publish(ctx context.Context, db *pgxpool.Pool, operatorID, channel, stage, 
 		operatorID, channel); err != nil {
 		return "", "", err
 	}
+	// Chống TOCTOU với export_bot (snapshot vN+1 có thể commit giữa Gate và đây): dưới
+	// advisory lock, kiểm tra lại test 100% PHẢI gắn đúng snapshot sắp phát hành — snapshot
+	// mới hơn chưa test thì từ chối, không phát hành bản chưa kiểm.
+	var gatedSnap, gatedVer string
+	var gatedTotal, gatedPassed int
+	if err := tx.QueryRow(ctx, `
+		SELECT s.id::text, s.version::text, t.total, t.passed FROM snapshots s
+		JOIN bots b ON b.id = s.bot_id AND b.operator_id = $1 AND b.channel = $2
+		LEFT JOIN LATERAL (
+			SELECT total, passed FROM test_runs r
+			WHERE r.operator_id = $1 AND r.bot_channel = $2 AND r.snapshot_id = s.id
+			ORDER BY r.created_at DESC LIMIT 1) t ON true
+		ORDER BY s.version DESC LIMIT 1`, operatorID, channel).
+		Scan(&gatedSnap, &gatedVer, &gatedTotal, &gatedPassed); err != nil {
+		if err.Error() == "no rows in result set" {
+			return "", "", fmt.Errorf("chưa có snapshot cho %s/%s — export_bot trước", operatorID, channel)
+		}
+		return "", "", err
+	}
+	if gatedTotal == 0 || gatedPassed < gatedTotal {
+		return "", "", fmt.Errorf("%w: snapshot v%s chưa có test pass 100%% (snapshot mới phải run_tests lại)",
+			ErrGateBlocked, gatedVer)
+	}
 	var id, status string
 	err = tx.QueryRow(ctx, `
-		WITH latest AS (
-			SELECT s.id, s.version FROM snapshots s JOIN bots b ON b.id = s.bot_id
-			WHERE b.operator_id = $1 AND b.channel = $2 ORDER BY s.version DESC LIMIT 1
-		)
 		INSERT INTO releases (operator_id, bot_channel, snapshot_id, snapshot_ver, stage,
 			status, requested_by, published_at)
-		SELECT $1, $2, l.id, l.version, $3,
-		       CASE WHEN $3 = 'staging' THEN 'published' ELSE 'requested' END, $4,
-		       CASE WHEN $3 = 'staging' THEN now() END
-		FROM latest l
+		SELECT $1, $2, $3::uuid, $4::int, $5,
+		       CASE WHEN $5 = 'staging' THEN 'published' ELSE 'requested' END, $6,
+		       CASE WHEN $5 = 'staging' THEN now() END
 		RETURNING id::text, status`,
-		operatorID, channel, stage, actor).Scan(&id, &status)
+		operatorID, channel, gatedSnap, mustAtoi(gatedVer), stage, actor).Scan(&id, &status)
 	if err != nil {
 		if err.Error() == "no rows in result set" {
 			return "", "", fmt.Errorf("chưa có snapshot cho %s/%s — export_bot trước", operatorID, channel)
@@ -253,18 +271,26 @@ func Approve(ctx context.Context, db *pgxpool.Pool, releaseID, approver string) 
 		return "", err
 	}
 	defer tx.Rollback(ctx)
-	var status, op, ch string
-	err = tx.QueryRow(ctx, `
-		UPDATE releases SET status = 'published', approved_by = $2, published_at = now()
-		WHERE id = $1::uuid AND status = 'requested' AND stage = 'production'
-		RETURNING status, operator_id, bot_channel`, releaseID, approver).Scan(&status, &op, &ch)
-	if err != nil {
+	// Thứ tự khoá thống nhất toàn package: advisory TRƯỚC row (Publish/Rollback đã theo
+	// thứ tự này — Approve từng update row trước advisory, dễ sinh cycle khi có biến thể sau).
+	var op, ch string
+	if err := tx.QueryRow(ctx, `
+		SELECT operator_id, bot_channel FROM releases WHERE id = $1::uuid
+		  AND status = 'requested' AND stage = 'production'`, releaseID).Scan(&op, &ch); err != nil {
 		if err.Error() == "no rows in result set" {
 			return "", fmt.Errorf("bản phát hành %s không ở trạng thái requested (production)", releaseID)
 		}
 		return "", err
 	}
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext($1 || ':' || $2))`, op, ch); err != nil {
+		return "", err
+	}
+	var status string
+	err = tx.QueryRow(ctx, `
+		UPDATE releases SET status = 'published', approved_by = $2, published_at = now()
+		WHERE id = $1::uuid AND status = 'requested' AND stage = 'production'
+		RETURNING status`, releaseID, approver).Scan(&status)
+	if err != nil {
 		return "", err
 	}
 	if _, err := tx.Exec(ctx, `UPDATE releases SET status = 'rolled_back', rolled_back_at = now()
@@ -328,4 +354,15 @@ func Rollback(ctx context.Context, db *pgxpool.Pool, operatorID, channel, actor 
 	}
 	var _ = actor
 	return prev, curVer, nil
+}
+
+func mustAtoi(s string) int {
+	n := 0
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return 0
+		}
+		n = n*10 + int(c-'0')
+	}
+	return n
 }

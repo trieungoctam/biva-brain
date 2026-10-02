@@ -59,32 +59,65 @@ ALLOWED = {
 }
 
 
+# Builtin thuần TÍNH TOÁN cho phép (mọi builtin khác bị chặn mặc định — _io/_socket từng
+# lọt qua vì deny cũ chỉ áp cho module không-builtin; _io là builtin trên mọi build CPython).
+BUILTIN_OK = frozenset(
+    {
+        "sys",
+        "builtins",
+        "_imp",
+        "_frozen_importlib",
+        "_frozen_importlib_external",
+        "_codecs",
+        "_collections",
+        "_functools",
+        "_operator",
+        "_itertools",
+        "_heapq",
+        "_bisect",
+        "_sre",
+        "_string",
+        "_struct",
+        "_random",
+        "_json",
+        "_datetime",
+        "_decimal",
+        "_stat",
+        "_sha256",
+        "_sha512",
+        "_sha3",
+        "_sha1",
+        "_md5",
+        "_blake2",
+        "_ast",
+        "_weakref",
+        "math",
+        "cmath",
+        "binascii",
+        "_tokenize",
+        "_locale",
+        "posixpath",
+        "ntpath",
+    }
+)
+
+
 class WhitelistImporter(importlib.abc.MetaPathFinder):
     def find_spec(self, fullname, path=None, target=None):  # noqa: ANN001
         root = fullname.split(".")[0]
-        if root in sys.builtin_module_names and root not in ("sys", "builtins", "_imp"):
-            if root in (
-                "posix",
-                "nt",
-                "posixpath",
-                "ntpath",
-                "pwd",
-                "grp",
-                "resource",
-                "signal",
-                "fcntl",
-                "termios",
-                "msvcrt",
-                "_winapi",
-                "subprocess",
-                "threading",
-            ):
-                raise Blocked(f"import {fullname} bị cấm trong sandbox")
-            return None  # builtin vô hại: để máy mặc định xử lý
+        # 1) Deny tuyệt đối trước mọi nhánh (kể cả builtin: _socket/_io từng chạy được).
+        if root in UNDER_DENY:
+            raise Blocked(f"import {fullname} bị cấm trong sandbox")
+        # 2) Builtin: deny-by-default, chỉ cho phép bộ tính toán thuần.
+        if root in sys.builtin_module_names:
+            if root not in BUILTIN_OK:
+                raise Blocked(f"import builtin {fullname} bị cấm trong sandbox")
+            return None
         if root in ALLOWED:
             return None
-        # Tiện ích C nội bộ của stdlib (_decimal, _datetime, _sha256...) — thuần tính toán.
-        if root.startswith("_") and root not in UNDER_DENY:
+        # Extension C nội bộ còn lại của stdlib cho phép nếu không nằm trong deny —
+        # nhưng mọi builtin nguy hiểm đã chặn ở nhánh 2.
+        if root.startswith("_"):
             return None
         raise Blocked(f"import {fullname} bị cấm trong sandbox (chỉ cho phép: {', '.join(sorted(ALLOWED))})")
 
@@ -102,6 +135,15 @@ UNDER_DENY = {
     "_signal",
     "_imp",
 }
+
+# NẠP SẴN toàn bộ module được phép TRƯỚC khi purge: import machinery đọc file .py qua
+# builtin _io, nên sau khi chặn _io thì chỉ module có sẵn trong cache import được —
+# tức whitelist đóng băng, module ngoài không thể nạp thêm (kể cả file trong repo).
+for _m in sorted(ALLOWED):
+    try:
+        __import__(_m)
+    except Exception:  # noqa: BLE001 — module nào lỗi vẫn để finder quyết định sau
+        pass
 
 sys.meta_path.insert(0, WhitelistImporter())
 
@@ -127,6 +169,26 @@ for m in [
         "ftplib",
         "smtplib",
         "pathlib",
+        # builtin/extension nguy hiểm đã nạp sẵn từ khởi động: import lấy thẳng từ
+        # sys.modules KHÔNG qua find_spec — phải bỏ khỏi cache thì deny mới tới được.
+        "io",
+        "_io",
+        "marshal",
+        "_socket",
+        "_ssl",
+        "_thread",
+        "_signal",
+        "select",
+        "faulthandler",
+        "zipimport",
+        "runpy",
+        "code",
+        "codeop",
+        "linecache",
+        "pickle",
+        "_pickle",
+        "ctypes",
+        "multiprocessing",
     )
 ]:
     del sys.modules[m]
@@ -139,12 +201,7 @@ def main() -> None:
     safe_builtins = dict(builtins.__dict__)
     for name in ("open", "input", "breakpoint", "exit", "quit"):
         safe_builtins[name] = _blocked  # hàm thuần không đọc file / console
-    # io đã bị purge khỏi sys.modules + deny ở finder — chặn nốt tham chiếu còn sót.
-    import sys as _sys
-
-    if "io" in _sys.modules:
-        _sys.modules["io"].open = _blocked
-    del _sys
+    # io/_io đã purge + deny ở finder; sys.stdout/stderr vẫn dùng được qua object đã có.
     env: dict = {"__name__": "sandboxed", "__builtins__": safe_builtins}
     exec(compile(job["code"], "<sandbox>", "exec"), env)  # noqa: S102 - đây là mục đích của sandbox
     fn = env.get(job["entry"])

@@ -26,3 +26,16 @@ ATTACKS: list[dict] = [
         "text": "Giá vé tuyến Sài Gòn - Đà Lạt xe giường nằm là 320.000đ.",
     },
 ]
+
+
+def sandbox_builtin_bypass_cases() -> list[str]:
+    """Các đường vượt sandbox qua builtin (đã từng lọt: _io/_socket là builtin nên
+    import lấy thẳng sys.modules, không qua finder)."""
+    return [
+        "import _io; _io.open('/etc/passwd').read(1)",
+        "import io; io.open('/etc/passwd').read(1)",
+        "import _socket; _socket.socket()",
+        "import marshal; marshal.dumps({})",
+        "import pickle; pickle.dumps({})",
+        "import csv",  # ngoài whitelist — đóng băng sau khi chặn _io
+    ]

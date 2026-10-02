@@ -207,7 +207,9 @@ func (s *Server) parseAuthRequest(ctx context.Context, v url.Values) (authReques
 		return a, "response_type phải là code"
 	case a.Method != "S256" || len(a.Challenge) < 43:
 		return a, "cần PKCE: code_challenge_method=S256 và code_challenge"
-	case a.Resource != "" && !s.validResource(a.Resource):
+	case a.Resource == "":
+		return a, "cần tham số resource (RFC 8707): URL endpoint MCP muốn truy cập"
+	case !s.validResource(a.Resource):
 		return a, "resource không hợp lệ (phải là máy chủ này, /mcp/platform/ hoặc /mcp/operator/<nhà xe>/)"
 	}
 	return a, ""

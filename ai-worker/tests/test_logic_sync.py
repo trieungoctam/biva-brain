@@ -82,15 +82,15 @@ def git(args: list[str], cwd) -> None:
     subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, check=True)
 
 
-def make_repo(path, item: str, calc: str = CALC_PY) -> None:
+def make_repo(path, item: str, calc: str = CALC_PY, op: str = "alicex") -> None:
     (path / "modules" / "fare" / "mini").mkdir(parents=True)
     (path / "modules" / "fare" / "mini" / "module.yaml").write_text(MODULE_YAML, encoding="utf-8")
     (path / "modules" / "fare" / "mini" / "calc.py").write_text(calc, encoding="utf-8")
     (path / "modules" / "fare" / "mini" / "tests").mkdir()
     (path / "modules" / "fare" / "mini" / "tests" / "cases.yaml").write_text(CASES_YAML, encoding="utf-8")
-    op_dir = path / "operators" / "alicex"
+    op_dir = path / "operators" / op
     (op_dir / "tests").mkdir(parents=True)
-    (op_dir / "profile.yaml").write_text(PROFILE_YAML.format(op="alicex", item=item), encoding="utf-8")
+    (op_dir / "profile.yaml").write_text(PROFILE_YAML.format(op=op, item=item), encoding="utf-8")
     (op_dir / "tests" / "cases.yaml").write_text(CASES_YAML, encoding="utf-8")
     git(["init", "-q"], path)
     git(["config", "user.email", "t@biva.vn"], path)
@@ -103,9 +103,14 @@ def make_repo(path, item: str, calc: str = CALC_PY) -> None:
 def test_sync_modules_profiles_tests_chunks_and_forget():
     async def t() -> None:
         pool = await asyncpg.create_pool(DB_URL, init=init_connection)
-        op = f"lgx{uuid.uuid4().hex[:8]}"
+        op = "alicex"
+        op2 = f"new{uuid.uuid4().hex[:8]}"  # chưa onboard — phase 1 của sync phải skip profile
         try:
-            await pool.execute("INSERT INTO operators (id, name) VALUES ($1, 'Logic test')", op)
+            await pool.execute(
+                "INSERT INTO operators (id, name) VALUES ($1, 'Alice X') ON CONFLICT DO NOTHING", op
+            )
+            # Item nguồn phải CÙNG nhà xe với profile (operators/alicex/profile.yaml) —
+            # logic_sync giờ từ chối item nguồn chéo nhà xe.
             item_id = await pool.fetchval(
                 """INSERT INTO items (layer, operator_id, kind, topic, text, status)
                    VALUES (2, $1, 'policy', 'fare', 'Giá cơ bản 300k', 'active') RETURNING id::text""",
@@ -117,7 +122,7 @@ def test_sync_modules_profiles_tests_chunks_and_forget():
             with tempfile.TemporaryDirectory() as tmp:
                 repo = Path(tmp) / "biva-integrations"
                 repo.mkdir()
-                make_repo(repo, item_id)
+                make_repo(repo, item_id, op=op2)
                 # profile của nhà xe chưa onboard → skipped, nhưng module/test/chunk vẫn vào.
                 first = await logic_sync.sync(pool, FakeEmbedder(), str(repo))
                 assert first["changed"] and first["counts"]["modules"] == 1
@@ -152,7 +157,16 @@ def test_sync_modules_profiles_tests_chunks_and_forget():
                 assert again["changed"] is True and again["counts"]["skipped_profiles"] == 1
 
                 # Onboard nhà xe + đổi code → profile vào, chunk cũ bị "quên", commit mới.
-                await pool.execute("INSERT INTO operators (id, name) VALUES ('alicex', 'Alice X')")
+                # Onboard nhà xe thật: chuyển profile sang thư mục operators/alicex.
+                git(["mv", f"operators/{op2}", "operators/alicex"], repo)
+                (repo / "operators" / "alicex" / "profile.yaml").write_text(
+                    PROFILE_YAML.format(op="alicex", item=item_id), encoding="utf-8"
+                )
+                git(["add", "-A"], repo)
+                git(["commit", "-qm", "onboard alicex"], repo)
+                await pool.execute(
+                    "INSERT INTO operators (id, name) VALUES ('alicex', 'Alice X') ON CONFLICT DO NOTHING"
+                )
                 (repo / "modules" / "fare" / "mini" / "calc.py").write_text(
                     CALC_PY.replace("def calculate", "def calculate_v2"), encoding="utf-8"
                 )
@@ -188,7 +202,7 @@ def test_sync_modules_profiles_tests_chunks_and_forget():
                 )
                 assert old == 0  # chunk của commit cũ bị bỏ
         finally:
-            await pool.execute("DELETE FROM operators WHERE id IN ($1, 'alicex')", op)
+            await pool.execute("DELETE FROM operators WHERE id = $1", op)
 
     asyncio.run(t())
 
