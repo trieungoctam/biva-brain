@@ -43,6 +43,13 @@ list_stale JOIN ràng operator (chặn leak chéo tenant qua logic_param_sources
 ownership khi ghi — bộ test cũ tự dùng nguồn chéo, đã sửa fixture), OAuth resource bắt buộc
 (RFC 8707). SLO đo lại sau 36 fix: recall p95 8,8ms — không suy giảm.
 
+Vòng 20–22 (audit/visibility + form không-LLM): release.publish/approve/rollback và oauth.
+register/token/refresh/family_revoke giờ ghi audit_log (test assert đủ); token SAI (401) ghi
+WARN log kèm IP/path (không đụng DB — chống khuếch đại khi bị quét). Form submit trích
+DETERMINISTIC: câu trả lời → item policy theo topic của câu hỏi (key topic.q_<token câu hỏi>)
+— vòng thu thập DYN-110 (coverage → questions → form → items) chạy trọn KHÔNG cần GEMINI key;
+nội dung thô vẫn giữ trong payload.content để duyệt/ingest LLM sau này.
+
 Vòng 8–9 (verify + drift): demo E2E pass trên stack code hiện tại (migrate 24/25 trên DB sống);
 test concurrency thật (8 publish song song → đúng 1 published; 2 consolidate song song → 0 câu mất);
 review repo biva-integrations (sửa alias columns không strip, lỗi child_policy rõ ràng). Vòng 10 (drift

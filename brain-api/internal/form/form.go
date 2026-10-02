@@ -20,6 +20,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/trieungoctam/biva-brain/brain-api/internal/textnorm"
 )
 
 const (
@@ -260,8 +262,29 @@ func (h *Handler) accept(ctx context.Context, f formRow, answers []Answer, conte
 	if status != "open" {
 		return errAlreadySubmitted
 	}
+	// Trích DETERMINISTIC: mỗi câu trả lời thành một item policy theo topic của câu hỏi
+	// (câu hỏi sinh từ template nên đã gắn topic). Đường chính theo kiến trúc — form không
+	// phụ thuộc GEMINI key; nội dung thô vẫn giữ trong payload.content để duyệt lại/ingest LLM
+	// sau này nếu cần trích facts chi tiết hơn.
+	items := []map[string]any{}
+	for _, a := range answers {
+		text := strings.TrimSpace(a.Answer)
+		if text == "" {
+			continue
+		}
+		toks := textnorm.Tokens(a.Question)
+		if len(toks) > 6 {
+			toks = toks[:6]
+		}
+		items = append(items, map[string]any{
+			"kind": "policy", "topic": a.Topic,
+			"key":  a.Topic + ".q_" + strings.Join(toks, "_"),
+			"text": text,
+		})
+	}
 	payload := map[string]any{"operator_id": f.operatorID, "source": "form", "content": content,
-		"received_at": time.Now().UTC().Format(time.RFC3339), "submitted_by": "form:" + f.id}
+		"received_at": time.Now().UTC().Format(time.RFC3339), "submitted_by": "form:" + f.id,
+		"items": items}
 	var opID string
 	if err := tx.QueryRow(ctx, `INSERT INTO operations (kind, operator_id, payload, idempotency_key)
 		VALUES ('ingest', $1, $2, $3) RETURNING id::text`, f.operatorID, payload, "form:"+f.id).Scan(&opID); err != nil {

@@ -81,6 +81,15 @@ func TestFormFlow(t *testing.T) {
 	if err := sch.Validate(roundTrip(payload)); err != nil || !strings.Contains(payload["content"].(string), "Nhận mèo nhỏ trong lồng") {
 		t.Fatalf("payload = %v (%v)", payload, err)
 	}
+	// Trích deterministic: mỗi câu trả lời → item policy theo topic câu hỏi (không cần LLM).
+	items, _ := payload["items"].([]any)
+	if len(items) == 0 {
+		t.Fatalf("payload thiếu items (đường không-LLM): %v", payload)
+	}
+	first, _ := items[0].(map[string]any)
+	if first["kind"] != "policy" || first["topic"] == "" || !strings.HasPrefix(first["key"].(string), first["topic"].(string)+".q_") {
+		t.Fatalf("item form = %v", first)
+	}
 	// Gửi lại → 409, vẫn một job.
 	if resp, _ := http.PostForm(c.URL, url.Values{"a0": {"khác"}}); resp.StatusCode != 409 {
 		t.Fatalf("gửi lại = %d", resp.StatusCode)
