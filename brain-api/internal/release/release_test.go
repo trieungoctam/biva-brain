@@ -98,3 +98,94 @@ func contains(s, sub string) bool {
 		return false
 	})()
 }
+
+// S4.1.2: staging tự động, production chờ duyệt, rollback < 1 phút.
+func TestPublishApproveRollback(t *testing.T) {
+	ctx := context.Background()
+	pool := testdb.Pool(t)
+	op := "pb" + fmt.Sprintf("%d", time.Now().UnixNano())
+	if _, err := pool.Exec(ctx, `INSERT INTO operators (id, name) VALUES ($1, 'P')`, op); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { pool.Exec(ctx, `DELETE FROM operators WHERE id = $1`, op) })
+	bot := op + ":zalo"
+	if _, err := pool.Exec(ctx, `INSERT INTO bots (id, operator_id, channel) VALUES ($1, $2, 'zalo')`, bot, op); err != nil {
+		t.Fatal(err)
+	}
+	req, topics := []string{"faq"}, []string{"fare"}
+	seed := func(ver int) string {
+		var id string
+		if err := pool.QueryRow(ctx, `INSERT INTO snapshots (bot_id, operator_id, version, artifact_versions,
+			definition, created_by) VALUES ($1, $2, $3, '{}', '{}', 't') RETURNING id::text`,
+			bot, op, ver).Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := pool.Exec(ctx, `INSERT INTO bot_artifacts (bot_id, operator_id, kind, version, content,
+			content_hash, status, author) VALUES ($1, $2, 'faq', $3, 'x', 'h', 'valid', 't')`,
+			bot, op, ver); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO items (layer, operator_id, kind, topic, text, status)
+		VALUES (2, $1, 'policy', 'fare', 'nội dung', 'active')`, op); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO test_runs (operator_id, bot_channel, total, passed, report)
+		VALUES ($1, 'zalo', 1, 1, '[]')`, op); err != nil {
+		t.Fatal(err)
+	}
+
+	// Gate chặn khi thiếu (chưa có artifact/snapshot).
+	if _, _, err := Publish(ctx, pool, op, "zalo", "staging", "t", req, topics); err == nil ||
+		!contains(err.Error(), "gate") {
+		t.Fatalf("phải chặn vì gate: %v", err)
+	}
+
+	seed(1)
+	// Staging: published ngay.
+	_, st, err := Publish(ctx, pool, op, "zalo", "staging", "t", req, topics)
+	if err != nil || st != "published" {
+		t.Fatalf("staging = %s %v", st, err)
+	}
+	// Production: requested, chờ duyệt.
+	id2, st, err := Publish(ctx, pool, op, "zalo", "production", "t", req, topics)
+	if err != nil || st != "requested" {
+		t.Fatalf("production = %s %v", st, err)
+	}
+	// Duyệt → published.
+	if _, err := Approve(ctx, pool, id2, "user:lead"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Bản production thứ 2: snapshot v2, duyệt → bản 1 rolled_back.
+	seed(2)
+	id3, st, _ := Publish(ctx, pool, op, "zalo", "production", "t", req, topics)
+	if st != "requested" {
+		t.Fatalf("st = %s", st)
+	}
+	if _, err := Approve(ctx, pool, id3, "user:lead"); err != nil {
+		t.Fatal(err)
+	}
+	var old1 string
+	pool.QueryRow(ctx, `SELECT status FROM releases WHERE id = $1::uuid`, id2).Scan(&old1)
+	if old1 != "rolled_back" {
+		t.Fatalf("bản cũ phải rolled_back: %s", old1)
+	}
+
+	// Rollback: bản 2 (v2) → rolled_back, bản id2 published lại.
+	start := time.Now()
+	prev, ver, err := Rollback(ctx, pool, op, "zalo", "user:lead")
+	if err != nil || prev != id2 || ver != 2 {
+		t.Fatalf("rollback = %s v%d %v", prev, ver, err)
+	}
+	if d := time.Since(start); d > time.Minute {
+		t.Fatalf("rollback mất %v", d)
+	}
+	var now1, now3 string
+	pool.QueryRow(ctx, `SELECT status FROM releases WHERE id = $1::uuid`, id2).Scan(&now1)
+	pool.QueryRow(ctx, `SELECT status FROM releases WHERE id = $1::uuid`, id3).Scan(&now3)
+	if now1 != "published" || now3 != "rolled_back" {
+		t.Fatalf("sau rollback: %s/%s", now1, now3)
+	}
+}

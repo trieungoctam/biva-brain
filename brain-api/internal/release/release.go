@@ -12,7 +12,9 @@ package release
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -173,4 +175,123 @@ func countTopics(ctx context.Context, db *pgxpool.Pool, operatorID string, requi
 		}
 	}
 	return missing, rows.Err()
+}
+
+// ───────────────────────── S4.1.2: request_publish / rollback ─────────────────────────
+
+var ErrGateBlocked = errors.New("release gate chưa đạt")
+
+// Publish yêu cầu phát hành snapshot mới nhất. stage=staging: gate đạt → published ngay.
+// stage=production: tạo bản requested — chờ lead duyệt (Approve) rồi mới published.
+func Publish(ctx context.Context, db *pgxpool.Pool, operatorID, channel, stage, actor string,
+	requiredArtifacts, requiredTopics []string) (string, string, error) {
+	gate, err := Gate(ctx, db, operatorID, channel, requiredArtifacts, requiredTopics)
+	if err != nil {
+		return "", "", err
+	}
+	if !gate.Passed {
+		return "", "", fmt.Errorf("%w: %s", ErrGateBlocked, strings.Join(gate.Blocked, "; "))
+	}
+	var id, status string
+	err = db.QueryRow(ctx, `
+		WITH latest AS (
+			SELECT s.id, s.version FROM snapshots s JOIN bots b ON b.id = s.bot_id
+			WHERE b.operator_id = $1 AND b.channel = $2 ORDER BY s.version DESC LIMIT 1
+		)
+		INSERT INTO releases (operator_id, bot_channel, snapshot_id, snapshot_ver, stage,
+			status, requested_by, published_at)
+		SELECT $1, $2, l.id, l.version, $3,
+		       CASE WHEN $3 = 'staging' THEN 'published' ELSE 'requested' END, $4,
+		       CASE WHEN $3 = 'staging' THEN now() END
+		FROM latest l
+		RETURNING id::text, status`,
+		operatorID, channel, stage, actor).Scan(&id, &status)
+	if err != nil {
+		if err.Error() == "no rows in result set" {
+			return "", "", fmt.Errorf("chưa có snapshot cho %s/%s — export_bot trước", operatorID, channel)
+		}
+		return "", "", err
+	}
+	// Staging published → mọi bản staging cũ của kênh này thành rolled_back (chỉ 1 bản chạy).
+	if stage == "staging" {
+		if _, err := db.Exec(ctx, `UPDATE releases SET status = 'rolled_back', rolled_back_at = now()
+			WHERE operator_id = $1 AND bot_channel = $2 AND stage = 'staging'
+			  AND status = 'published' AND id <> $3::uuid`, operatorID, channel, id); err != nil {
+			return "", "", err
+		}
+	}
+	return id, status, nil
+}
+
+// Approve: lead duyệt bản production requested → published. Rollback mọi bản production cũ.
+func Approve(ctx context.Context, db *pgxpool.Pool, releaseID, approver string) (string, error) {
+	var status string
+	err := db.QueryRow(ctx, `
+		UPDATE releases SET status = 'published', approved_by = $2, published_at = now()
+		WHERE id = $1::uuid AND status = 'requested' AND stage = 'production'
+		RETURNING status`, releaseID, approver).Scan(&status)
+	if err != nil {
+		if err.Error() == "no rows in result set" {
+			return "", fmt.Errorf("bản phát hành %s không ở trạng thái requested (production)", releaseID)
+		}
+		return "", err
+	}
+	var op, ch string
+	if err := db.QueryRow(ctx, `SELECT operator_id, bot_channel FROM releases WHERE id = $1::uuid`,
+		releaseID).Scan(&op, &ch); err != nil {
+		return "", err
+	}
+	if _, err := db.Exec(ctx, `UPDATE releases SET status = 'rolled_back', rolled_back_at = now()
+		WHERE operator_id = $1 AND bot_channel = $2 AND stage = 'production'
+		  AND status = 'published' AND id <> $3::uuid`, op, ch, releaseID); err != nil {
+		return "", err
+	}
+	return status, nil
+}
+
+// Rollback về bản production trước đó (< 1 phút): bản đang published → rolled_back,
+// bản published gần nhất trước đó (đã rolled_back) → published lại.
+func Rollback(ctx context.Context, db *pgxpool.Pool, operatorID, channel, actor string) (string, int, error) {
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		return "", 0, err
+	}
+	defer tx.Rollback(ctx)
+	var cur, prev string
+	var curVer int
+	err = tx.QueryRow(ctx, `
+		SELECT id::text, snapshot_ver FROM releases
+		WHERE operator_id = $1 AND bot_channel = $2 AND stage = 'production' AND status = 'published'
+		ORDER BY published_at DESC LIMIT 1`, operatorID, channel).Scan(&cur, &curVer)
+	if err != nil {
+		if err.Error() == "no rows in result set" {
+			return "", 0, fmt.Errorf("không có bản production nào đang phát hành")
+		}
+		return "", 0, err
+	}
+	err = tx.QueryRow(ctx, `
+		SELECT id::text FROM releases
+		WHERE operator_id = $1 AND bot_channel = $2 AND stage = 'production'
+		  AND status = 'rolled_back' AND id <> $3::uuid
+		ORDER BY published_at DESC LIMIT 1`, operatorID, channel, cur).Scan(&prev)
+	switch {
+	case err == nil:
+		if _, err := tx.Exec(ctx, `UPDATE releases SET status = 'published', rolled_back_at = NULL,
+			published_at = now() WHERE id = $1::uuid`, prev); err != nil {
+			return "", 0, err
+		}
+	case err.Error() == "no rows in result set":
+		prev = "" // chưa có bản trước đó
+	default:
+		return "", 0, err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE releases SET status = 'rolled_back', rolled_back_at = now()
+		WHERE id = $1::uuid`, cur); err != nil {
+		return "", 0, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return "", 0, err
+	}
+	var _ = actor
+	return prev, curVer, nil
 }

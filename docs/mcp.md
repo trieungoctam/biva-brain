@@ -181,7 +181,8 @@ Cột **Mốc** = mốc dự kiến (xem lộ trình trong [architecture.md](arc
 | `run_tests` | M3 ✅ | | async: sinh test từ tri thức nhà xe (policy → must_mention, data → must_call_tool) rồi chạy toàn bộ qua reference executor (LLM + tool query_data thật của Brain) → % pass + case fail (kỳ vọng vs nhận được), ghi test_runs |
 | `sandbox_chat` | M3 ✅ | | async: chat thử 1 lượt với snapshot mới nhất qua reference executor — UAT thủ công, không phục vụ khách thật |
 | `check_release_gate` | M4 ✅ | RO | kiểm trước khi phát hành: coverage mục bắt buộc 100%, artifact bắt buộc valid + 0 stale, đã có snapshot, test bot pass 100%, không đề xuất đang mở — chặn thì liệt kê lý do cụ thể kèm cách sửa (refresh_bot/export_bot/run_tests…) |
-| `request_publish` | M4 | C | đánh dấu bản phát hành; production cần lead duyệt |
+| `request_publish` | M4 ✅ | C | phát hành snapshot mới nhất sau khi gate đạt (preview + confirm_token): staging → published ngay; production → requested, chờ lead duyệt (approve_publish / console) |
+| `rollback_release` | M4 ✅ | C | quay về bản production trước đó (< 1 phút): bản đang chạy → rolled_back, bản trước phát hành lại |
 
 ### 5.5 Platform (`/mcp/platform/`)
 `list_operators`, `list_promotion_candidates` (tri thức + logic), `propose_l1_change`, `run_regression_all` — M5.

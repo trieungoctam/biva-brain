@@ -10,6 +10,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/trieungoctam/biva-brain/brain-api/internal/artifact"
+	"github.com/trieungoctam/biva-brain/brain-api/internal/confirm"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/export"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/kb"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/pack"
@@ -492,5 +493,129 @@ func (s *Server) addReleaseTools(srv *mcp.Server, operatorID string) {
 				next = append(next, "sửa từng mục trong blocked rồi kiểm lại")
 			}
 			return nil, gateOut{Report: rep, NextActions: next}, nil
+		})
+}
+
+type publishIn struct {
+	Stage        string `json:"stage" jsonschema:"staging (mặc định, tự động khi gate đạt) | production (chờ lead duyệt)"`
+	Channel      string `json:"channel,omitempty"`
+	ConfirmToken string `json:"confirm_token,omitempty" jsonschema:"lần 2 sau khi xem preview"`
+}
+
+type rollbackIn struct {
+	Channel      string `json:"channel,omitempty"`
+	ConfirmToken string `json:"confirm_token,omitempty"`
+}
+
+const (
+	publishDesc = "Đánh dấu bản phát hành (sau check_release_gate đạt): staging tự động published; " +
+		"production tạo bản requested — chờ lead duyệt (approve_publish). Cần confirm_token."
+	rollbackDesc = "Quay về bản production trước đó (< 1 phút): bản đang chạy chuyển rolled_back, " +
+		"bản trước đó phát hành lại. Cần confirm_token."
+)
+
+type publishOut struct {
+	ReleaseID   string   `json:"release_id"`
+	Stage       string   `json:"stage"`
+	Status      string   `json:"status"`
+	Detail      string   `json:"detail"`
+	NextActions []string `json:"next_actions"`
+}
+
+type rollbackOut struct {
+	RestoredRelease string   `json:"restored_release,omitempty"`
+	RolledBackVer   int      `json:"rolled_back_version"`
+	NextActions     []string `json:"next_actions"`
+}
+
+func (s *Server) addPublishTools(srv *mcp.Server, operatorID string) {
+	mcp.AddTool(srv, &mcp.Tool{Name: "request_publish", Description: publishDesc,
+		Annotations: &mcp.ToolAnnotations{IdempotentHint: false, DestructiveHint: ptr(false), OpenWorldHint: ptr(false)}},
+		func(ctx context.Context, req *mcp.CallToolRequest, in publishIn) (*mcp.CallToolResult, publishOut, error) {
+			p, err := callerOf(req)
+			if err != nil {
+				return nil, publishOut{}, err
+			}
+			stage := in.Stage
+			if stage == "" {
+				stage = "staging"
+			}
+			if stage != "staging" && stage != "production" {
+				return nil, publishOut{}, errors.New("stage phải là staging hoặc production")
+			}
+			channel := in.Channel
+			if channel == "" {
+				channel = "zalo"
+			}
+			subject := confirm.Subject("request_publish", operatorID, channel, stage)
+			if in.ConfirmToken == "" {
+				gate, err := release.Gate(ctx, s.db, operatorID, channel,
+					s.template.Artifacts.Required, s.topicIDs())
+				if err != nil {
+					return nil, publishOut{}, internal("request_publish", err)
+				}
+				token, exp, err := confirm.Issue(ctx, s.db, p.UserID, operatorID, "request_publish", subject, confirm.DefaultTTL)
+				if err != nil {
+					return nil, publishOut{}, internal("request_publish", err)
+				}
+				detail := "gate ĐẠT — preview phát hành."
+				if !gate.Passed {
+					detail = "gate CHƯA ĐẠT: " + strings.Join(gate.Blocked, "; ")
+				}
+				return nil, publishOut{Stage: stage, Detail: detail, NextActions: []string{
+					"xem preview trên; nếu đồng ý, gọi lại với confirm_token=" + token + " (hết hạn " + exp.Format("15:04:05") + ")",
+				}}, nil
+			}
+			if err := confirm.Consume(ctx, s.db, in.ConfirmToken, p.UserID, operatorID, "request_publish", subject); err != nil {
+				return nil, publishOut{}, err
+			}
+			id, status, err := release.Publish(ctx, s.db, operatorID, channel, stage, p.Actor(),
+				s.template.Artifacts.Required, s.topicIDs())
+			if errors.Is(err, release.ErrGateBlocked) {
+				return nil, publishOut{}, err
+			}
+			if err != nil {
+				return nil, publishOut{}, internal("request_publish", err)
+			}
+			detail := "đã phát hành lên staging"
+			next := []string{"check_release_gate giữ mắt điều kiện"}
+			if status == "requested" {
+				detail = "chờ lead duyệt (approve_publish)"
+				next = []string{"lead gọi approve_publish(release_id=" + id + ")"}
+			}
+			return nil, publishOut{ReleaseID: id, Stage: stage, Status: status, Detail: detail,
+				NextActions: next}, nil
+		})
+
+	mcp.AddTool(srv, &mcp.Tool{Name: "rollback_release", Description: rollbackDesc,
+		Annotations: &mcp.ToolAnnotations{IdempotentHint: false, DestructiveHint: ptr(true), OpenWorldHint: ptr(false)}},
+		func(ctx context.Context, req *mcp.CallToolRequest, in rollbackIn) (*mcp.CallToolResult, rollbackOut, error) {
+			p, err := callerOf(req)
+			if err != nil {
+				return nil, rollbackOut{}, err
+			}
+			channel := in.Channel
+			if channel == "" {
+				channel = "zalo"
+			}
+			subject := confirm.Subject("rollback_release", operatorID, channel)
+			if in.ConfirmToken == "" {
+				token, exp, err := confirm.Issue(ctx, s.db, p.UserID, operatorID, "rollback_release", subject, confirm.DefaultTTL)
+				if err != nil {
+					return nil, rollbackOut{}, internal("rollback_release", err)
+				}
+				return nil, rollbackOut{NextActions: []string{
+					"xác nhận rollback: gọi lại với confirm_token=" + token + " (hết hạn " + exp.Format("15:04:05") + ")",
+				}}, nil
+			}
+			if err := confirm.Consume(ctx, s.db, in.ConfirmToken, p.UserID, operatorID, "rollback_release", subject); err != nil {
+				return nil, rollbackOut{}, err
+			}
+			prev, ver, err := release.Rollback(ctx, s.db, operatorID, channel, p.Actor())
+			if err != nil {
+				return nil, rollbackOut{}, internal("rollback_release", err)
+			}
+			return nil, rollbackOut{RestoredRelease: prev, RolledBackVer: ver,
+				NextActions: []string{"kiểm tra lại bot; nếu cần rollback tiếp, gọi lại"}}, nil
 		})
 }
