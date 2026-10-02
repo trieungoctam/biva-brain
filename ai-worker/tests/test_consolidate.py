@@ -286,3 +286,46 @@ def test_promote_chi_lay_cau_chung():
     # cụm này chỉ 2 nhà xe nói câu chó mèo — nhưng cluster yêu cầu 3 ops khác nhau; gọi
     # trực tiếp hàm câu chung với 3 bản mà chỉ 2 bản cùng câu:
     assert pjob._common_sentences(lone[:2] + [lone[2]]) == [], "câu chỉ 2 nhà xe nói không lên L1"
+
+
+@needs_db
+def test_consolidate_chay_song_song_khong_mat_cau():
+    """Concurrency: hai job consolidate cùng scope chạy song song thật (asyncio.gather) —
+    advisory lock phải serialize để KHÔNG mất câu đã đánh dấu consolidated (round 4)."""
+    import asyncio
+
+    async def t() -> None:
+        pool = await asyncpg.create_pool(DB_URL, init=init_connection)
+        op = f"cc{uuid.uuid4().hex[:8]}"
+        await pool.execute("INSERT INTO operators (id, name) VALUES ($1, 'C')", op)
+        try:
+            # Hai đợt nguồn khác nhau cùng scope, câu phân biệt rõ.
+            for i in range(6):
+                await pool.execute(
+                    """INSERT INTO items (layer, operator_id, kind, topic, key, text, status)
+                       VALUES (2, $1, 'policy', 'cc', $2, $3, 'active')""",
+                    op,
+                    f"cc.src{i}",
+                    f"Câu nguồn số {i}",
+                )
+            # Chạy 2 consolidate chồng nhau trên CÙNG scope.
+            results = await asyncio.gather(cjob.consolidate(pool, op), cjob.consolidate(pool, op))
+            assert all(r["status"] == "done" for r in results), results
+            obs = await pool.fetch(
+                """SELECT text FROM items WHERE operator_id=$1 AND kind='observation' AND status='active'""",
+                op,
+            )
+            merged = " ".join(r["text"] for r in obs)
+            for i in range(6):
+                assert f"Câu nguồn số {i}" in merged, f"mất câu {i} khi chạy song song: {merged!r}"
+            unconsolidated = await pool.fetchval(
+                """SELECT count(*) FROM items WHERE operator_id=$1 AND status='active'
+                   AND kind <> 'observation' AND consolidated_at IS NULL""",
+                op,
+            )
+            assert unconsolidated == 0, f"{unconsolidated} nguồn chưa được đánh dấu consolidated"
+        finally:
+            await pool.execute("DELETE FROM operators WHERE id = $1", op)
+            await pool.close()
+
+    asyncio.run(t())
