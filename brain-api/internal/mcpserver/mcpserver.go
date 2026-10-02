@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -170,6 +171,9 @@ func (s *Server) verify(ctx context.Context, token string, r *http.Request) (*au
 		p, err = authz.Verify(ctx, s.db, token)
 	}
 	if errors.Is(err, authz.ErrInvalidToken) {
+		// Token sai phải để lại dấu ở LOG (không ghi audit_log — quét token sẽ khuếch đại
+		// tải DB): WARN kèm IP + endpoint để phát hiện dò token khi rà nhật ký.
+		slog.Warn("mcp: token không hợp lệ", "ip", clientIP(r), "path", r.URL.Path)
 		return nil, fmt.Errorf("%w", auth.ErrInvalidToken)
 	}
 	if err != nil {
@@ -295,4 +299,16 @@ func (s *Server) newPlatformServer() *mcp.Server {
 func (s *Server) WithStorage(st *storage.S3) *Server {
 	s.storage = st
 	return s
+}
+
+// clientIP: ưu thiện X-Forwarded-For (qua proxy), fallback RemoteAddr.
+func clientIP(r *http.Request) string {
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		return strings.TrimSpace(strings.Split(xff, ",")[0])
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
 }

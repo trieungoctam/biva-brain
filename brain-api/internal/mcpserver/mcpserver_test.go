@@ -1,12 +1,15 @@
 package mcpserver
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -251,4 +254,44 @@ func TestPlatformForLead(t *testing.T) {
 	if res, out := callGetOperation(t, s, f.jobB); res.IsError || out["id"] != f.jobB {
 		t.Fatalf("lead đọc job bất kỳ qua platform: %v %v", res.IsError, out)
 	}
+}
+
+// Token sai → 401 VÀ phải để lại WARN trong log (IP + path) — dò token không được vô hình.
+func TestInvalidTokenWarns(t *testing.T) {
+	f := setup(t)
+	var buf syncBuffer
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})))
+	t.Cleanup(func() { slog.SetDefault(slog.Default()) })
+	req, _ := http.NewRequest(http.MethodPost, f.url+"/mcp/operator/"+f.opA+"/", strings.NewReader("{}"))
+	req.Header.Set("Authorization", "Bearer biva_saitokenhetssss")
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("status = %d", resp.StatusCode)
+	}
+	got := buf.String()
+	if !strings.Contains(got, "token không hợp lệ") || !strings.Contains(got, "/mcp/operator/") {
+		t.Fatalf("thiếu WARN token không hợp lệ: %q", got)
+	}
+}
+
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
 }

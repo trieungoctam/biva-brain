@@ -173,6 +173,13 @@ không job nào chết. Queue nằm trong Postgres nên không bị ảnh hưở
 không treo, brain-api sống; `docker start s3` → export chạy lại được ngay (URL tải có
 nonce không đoán được). Outage matrix đầy đủ: postgres ✓ · redis ✓ (fail-open) · s3 ✓.
 
+## Phát hiện dò token trong log
+
+Token sai → 401 + dòng WARN `mcp: token không hợp lệ` kèm `ip` và `path` (không ghi
+audit_log để quét token không khuếch đại tải DB). Rà định kỳ:
+`docker logs brain-api 2>&1 | grep "token không hợp lệ" | awk '{print $6}' | sort | uniq -c | sort -rn | head`
+— một IP dày đặc là đang dò; chặn ở firewall/WAF.
+
 ## Trước khi lên production (security)
 
 - **Bucket export**: key export đã có nonce ngẫu nhiên (URL không đoán được kể cả bucket công khai);
