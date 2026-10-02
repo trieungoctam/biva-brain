@@ -8,6 +8,12 @@ Commit message tiếng Anh.
 Tài liệu thiết kế: `docs/architecture.md`, `docs/mcp.md` (danh mục tool, luật trích dẫn), `docs/data-model.md`,
 `docs/implementation-plan.md` (milestone M0–M5, story S*.*.* ↔ issue Linear DYN-*).
 
+## Đo SLO (E-X2 cơ bản)
+
+`deploy/slo.sh` đo p50/p95 các tool chính so mục tiêu §7.3 runbook. Kết quả 02/10/2026 trên stack
+local (TEI off — chỉ keyword+graph+temporal): recall p95 10ms (<150), pack p95 4ms (<800),
+validate tĩnh p95 3ms (<300); update rủi ro thấp → stale 1.9ms (trigger, trong transaction — AC <1 phút).
+
 ## Demo nhanh (stack local)
 
 ```bash
