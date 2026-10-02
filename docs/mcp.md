@@ -167,7 +167,7 @@ Cột **Mốc** = mốc dự kiến (xem lộ trình trong [architecture.md](arc
 | `propose_logic_profile` | M2 ✅ | | gửi profile.yaml (+file hook/custom) → job logic.propose: validate schema, custom bắt buộc ADR (record_decision), có token thì tạo PR vào biva-integrations, chưa có thì trả nội dung để tạo PR tay; trả operation_id |
 | `record_decision` | M2 ✅ | | ghi ADR (lý do hook/custom) → id adr_* dùng trong profile.yaml |
 | `add_logic_test` / `list_logic_tests` | M3 ✅ | | thêm / liệt kê ví dụ input → output của nhà xe (out hoặc error, note hoàn cảnh, source item); CI repo biva-integrations cũng chạy lại cases.yaml của module bằng pytest |
-| `impact_of_change` | M3 | RO | module/version/feature hoặc item đổi → nhà xe, bot, test bị ảnh hưởng |
+| `impact_of_change` | M5 ✅ | RO | platform-only: item/module/feature đổi → ai bị ảnh hưởng — artifact đang trích dẫn (sẽ stale), hồ sơ logic lấy tham số từ item, logic test theo nguồn, spec chứa feature, họ logic — mỗi mục kèm lý do |
 
 ### 5.4 Build bot
 | Tool | Mốc | Cờ | Mô tả |
@@ -190,7 +190,7 @@ Cột **Mốc** = mốc dự kiến (xem lộ trình trong [architecture.md](arc
 | `list_operators` | M5 ✅ | RO | danh mục nhà xe: item active, bot, đề xuất đang chờ, bản production đang chạy |
 | `list_promotion_candidates` | M5 ✅ | RO | ứng viên promote: tri thức (review PROMOTE đang mở — observation ≥ 3 nhà xe) + logic (họ ≥ 3 nhà xe hook/custom), kèm danh sách nhà xe |
 | `propose_l1_change` | M5 ✅ | C | lead đề xuất thêm/sửa thông lệ L1 (preview + confirm_token) → item L1 pending + review chờ duyệt như mọi đề xuất |
-| `run_regression_all` | M5 | | chạy song song, báo cáo theo bot |
+| `run_regression_all` | M5 ✅ | | platform-only: enqueue bot.tests cho mọi nhà xe có snapshot (chạy song song qua queue) — trả operation_id theo nhà xe |
 
 ## 6. Resources
 

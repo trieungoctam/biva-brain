@@ -96,3 +96,74 @@ func indexStr(s, sub string) int {
 	}
 	return -1
 }
+
+// S5.1.2 + S5.1.3: impact_of_change và run_regression_all.
+func TestImpactAndRegression(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	if _, err := f.pool.Exec(ctx, `INSERT INTO logic_families (id, capability, name, centroid_features,
+		members) VALUES ('fare.famx', 'fare', 'Họ fare', ARRAY['fare.holiday_surcharge'], ARRAY[$1])`,
+		f.opA); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { f.pool.Exec(ctx, `DELETE FROM logic_families`) })
+
+	s, err := connect(t, f.url+"/mcp/platform/", f.leadTok)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	// impact theo feature: spec chứa feature + family chứa feature.
+	if _, err := f.pool.Exec(ctx, `INSERT INTO logic_specs (operator_id, capability, features,
+		rules_text, source_item_ids, created_by) VALUES ($1, 'fare',
+		'[{"id":"fare.holiday_surcharge"}]'::jsonb, ARRAY['Tết'], '{}', 't')`, f.opA); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { f.pool.Exec(ctx, `DELETE FROM logic_specs WHERE operator_id = $1`, f.opA) })
+
+	isErr, imp, _ := call(t, s, "impact_of_change", map[string]any{"feature_id": "fare.holiday_surcharge"})
+	if isErr {
+		t.Fatal("impact lỗi")
+	}
+	kinds := map[string]int{}
+	for _, i := range imp["impacted"].([]any) {
+		kinds[i.(map[string]any)["kind"].(string)]++
+	}
+	if kinds["spec"] < 1 || kinds["family"] < 1 {
+		t.Fatalf("impacted = %v", imp["impacted"])
+	}
+	// Truyền 2 tham số → lỗi.
+	if isErr, _, _ = call(t, s, "impact_of_change", map[string]any{
+		"feature_id": "fare.x", "module_id": "fare.standard"}); !isErr {
+		t.Fatal("phải truyền đúng một tham số")
+	}
+
+	// run_regression_all: nhà xe có snapshot được enqueue bot.tests.
+	if _, err := f.pool.Exec(ctx, `INSERT INTO bots (id, operator_id, channel) VALUES ($1, $2, 'zalo')`,
+		f.opA+":zalo", f.opA); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.pool.Exec(ctx, `INSERT INTO snapshots (bot_id, operator_id, version,
+		artifact_versions, definition, created_by) VALUES ($1, $2, 1, '{}', '{}', 't')`,
+		f.opA+":zalo", f.opA); err != nil {
+		t.Fatal(err)
+	}
+	isErr, reg, _ := call(t, s, "run_regression_all", map[string]any{})
+	if isErr {
+		t.Fatal("regression lỗi")
+	}
+	ops := reg["operations"].([]any)
+	if len(ops) < 1 {
+		t.Fatalf("operations = %v", ops)
+	}
+	firstOp := ops[0].(map[string]any)
+	if firstOp["operator"] != f.opA || firstOp["operation_id"] == "" {
+		t.Fatalf("op = %v", firstOp)
+	}
+	var kind string
+	if err := f.pool.QueryRow(ctx, `SELECT kind FROM operations WHERE id = $1::uuid`,
+		firstOp["operation_id"].(string)).Scan(&kind); err != nil || kind != "bot.tests" {
+		t.Fatalf("job = %s %v", kind, err)
+	}
+}

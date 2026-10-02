@@ -5,11 +5,13 @@ package mcpserver
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/trieungoctam/biva-brain/brain-api/internal/confirm"
+	"github.com/trieungoctam/biva-brain/brain-api/internal/queue"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/textnorm"
 )
 
@@ -236,4 +238,204 @@ func slug(s string) string {
 		out = "x"
 	}
 	return out
+}
+
+type impactIn struct {
+	ItemID    string `json:"item_id,omitempty" jsonschema:"id item tri thức vừa đổi (nhận cả [[id]])"`
+	ModuleID  string `json:"module_id,omitempty" jsonschema:"vd fare.standard — kể cả đổi version"`
+	FeatureID string `json:"feature_id,omitempty" jsonschema:"vd fare.holiday_surcharge"`
+}
+
+type impacted struct {
+	Kind   string `json:"kind"` // operator | artifact | profile | test | family
+	ID     string `json:"id"`
+	Reason string `json:"reason"`
+}
+
+type impactOut struct {
+	Impacted    []impacted `json:"impacted"`
+	Count       int        `json:"count"`
+	NextActions []string   `json:"next_actions"`
+}
+
+const impactDesc = "Đổi tri thức/module/feature sẽ ảnh hưởng gì: nhà xe nào, artifact nào đang trích dẫn " +
+	"(sẽ stale), hồ sơ logic dùng tham số từ item, test nào phụ thuộc, họ logic nào chứa feature. " +
+	"Truyền đúng một trong item_id / module_id / feature_id."
+
+func (s *Server) addImpactTool(srv *mcp.Server) {
+	mcp.AddTool(srv, &mcp.Tool{Name: "impact_of_change", Description: impactDesc, Annotations: readOnly},
+		func(ctx context.Context, _ *mcp.CallToolRequest, in impactIn) (*mcp.CallToolResult, impactOut, error) {
+			given := 0
+			for _, v := range []string{in.ItemID, in.ModuleID, in.FeatureID} {
+				if v != "" {
+					given++
+				}
+			}
+			if given != 1 {
+				return nil, impactOut{}, errors.New("truyền đúng MỘT trong item_id / module_id / feature_id")
+			}
+			out := impactOut{Impacted: []impacted{}}
+			add := func(kind, id, reason string) {
+				out.Impacted = append(out.Impacted, impacted{Kind: kind, ID: id, Reason: reason})
+			}
+			switch {
+			case in.ItemID != "":
+				id := strings.Trim(in.ItemID, "[]")
+				if !isUUID(id) {
+					return nil, impactOut{}, errors.New("item_id phải là UUID (nhận cả [[id]])")
+				}
+				rows, err := s.db.Query(ctx, `
+					SELECT b.operator_id, a.kind, a.status FROM artifact_citations c
+					JOIN bot_artifacts a ON a.id = c.artifact_id
+					JOIN bots b ON b.id = a.bot_id
+					WHERE c.item_id = $1::uuid
+					  AND a.id IN (SELECT DISTINCT ON (kind) id FROM bot_artifacts x
+					               WHERE x.bot_id = a.bot_id AND x.kind = a.kind ORDER BY kind, version DESC)`,
+					id)
+				if err != nil {
+					return nil, impactOut{}, internal("impact_of_change", err)
+				}
+				for rows.Next() {
+					var op, kind, status string
+					if err := rows.Scan(&op, &kind, &status); err != nil {
+						rows.Close()
+						return nil, impactOut{}, internal("impact_of_change", err)
+					}
+					add("artifact", op+"/"+kind, "đang trích dẫn item — sẽ stale khi item đổi (hiện "+status+")")
+				}
+				rows.Close()
+				prows, err := s.db.Query(ctx, `
+					SELECT DISTINCT p.operator_id, p.capability FROM logic_param_sources s
+					JOIN logic_profiles p ON p.id = s.profile_id WHERE s.item_id = $1::uuid`, id)
+				if err != nil {
+					return nil, impactOut{}, internal("impact_of_change", err)
+				}
+				for prows.Next() {
+					var op, cap string
+					if err := prows.Scan(&op, &cap); err != nil {
+						prows.Close()
+						return nil, impactOut{}, internal("impact_of_change", err)
+					}
+					add("profile", op+"/"+cap, "tham số lấy nguồn từ item — hồ sơ sẽ stale")
+				}
+				prows.Close()
+				trows, err := s.db.Query(ctx, `
+					SELECT DISTINCT t.operator_id, t.capability FROM logic_tests t
+					WHERE t.source_item_id = $1::uuid AND t.operator_id IS NOT NULL`, id)
+				if err != nil {
+					return nil, impactOut{}, internal("impact_of_change", err)
+				}
+				for trows.Next() {
+					var op, cap string
+					if err := trows.Scan(&op, &cap); err != nil {
+						trows.Close()
+						return nil, impactOut{}, internal("impact_of_change", err)
+					}
+					add("test", op+"/"+cap, "logic test lấy item làm nguồn — chạy lại để xác nhận")
+				}
+				trows.Close()
+			case in.ModuleID != "":
+				rows, err := s.db.Query(ctx, `
+					SELECT p.operator_id, p.capability, p.module_version FROM logic_profiles p
+					WHERE p.module_id = $1`, in.ModuleID)
+				if err != nil {
+					return nil, impactOut{}, internal("impact_of_change", err)
+				}
+				for rows.Next() {
+					var op, cap string
+					var ver int
+					if err := rows.Scan(&op, &cap, &ver); err != nil {
+						rows.Close()
+						return nil, impactOut{}, internal("impact_of_change", err)
+					}
+					add("profile", op+"/"+cap, fmt.Sprintf("đang chạy %s@%d — kiểm tra tương thích khi nâng version", in.ModuleID, ver))
+				}
+				rows.Close()
+			default: // feature
+				rows, err := s.db.Query(ctx, `
+					SELECT s.operator_id, s.capability FROM logic_specs s
+					WHERE s.status = 'active' AND s.features::text LIKE '%' || $1 || '%'`, in.FeatureID)
+				if err != nil {
+					return nil, impactOut{}, internal("impact_of_change", err)
+				}
+				for rows.Next() {
+					var op, cap string
+					if err := rows.Scan(&op, &cap); err != nil {
+						rows.Close()
+						return nil, impactOut{}, internal("impact_of_change", err)
+					}
+					add("spec", op+"/"+cap, "spec chứa feature — so lại khi feature đổi")
+				}
+				rows.Close()
+				frows, err := s.db.Query(ctx, `
+					SELECT id, members::text FROM logic_families
+					WHERE $1 = ANY(centroid_features) OR $1 = ANY(members)`, in.FeatureID)
+				if err != nil {
+					return nil, impactOut{}, internal("impact_of_change", err)
+				}
+				for frows.Next() {
+					var fid, members string
+					if err := frows.Scan(&fid, &members); err != nil {
+						frows.Close()
+						return nil, impactOut{}, internal("impact_of_change", err)
+					}
+					add("family", fid, "họ chứa feature — gom lại khi thay đổi")
+				}
+				frows.Close()
+			}
+			out.Count = len(out.Impacted)
+			if out.Count > 0 {
+				out.NextActions = []string{"thông báo nhà xe + run_tests lại bot liên quan"}
+			} else {
+				out.NextActions = []string{"không có ảnh hưởng nào được ghi nhận"}
+			}
+			return nil, out, nil
+		})
+}
+
+type regressionOut struct {
+	Operations  []map[string]string `json:"operations"`
+	Count       int                 `json:"count"`
+	NextActions []string            `json:"next_actions"`
+}
+
+const regressionDesc = "Chạy regression TOÀN BỘ nhà xe có snapshot (bot.tests cho từng nhà xe, chạy " +
+	"song song qua queue). Trả danh sách operation_id theo nhà xe — theo dõi bằng get_operation."
+
+func (s *Server) addRegressionTool(srv *mcp.Server) {
+	mcp.AddTool(srv, &mcp.Tool{Name: "run_regression_all", Description: regressionDesc,
+		Annotations: &mcp.ToolAnnotations{IdempotentHint: true, DestructiveHint: ptr(false), OpenWorldHint: ptr(false)}},
+		func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, regressionOut, error) {
+			rows, err := s.db.Query(ctx, `
+				SELECT DISTINCT b.operator_id, b.channel FROM snapshots s
+				JOIN bots b ON b.id = s.bot_id`)
+			if err != nil {
+				return nil, regressionOut{}, internal("run_regression_all", err)
+			}
+			var targets [][2]string
+			for rows.Next() {
+				var op, ch string
+				if err := rows.Scan(&op, &ch); err != nil {
+					rows.Close()
+					return nil, regressionOut{}, internal("run_regression_all", err)
+				}
+				targets = append(targets, [2]string{op, ch})
+			}
+			rows.Close()
+			out := regressionOut{Operations: []map[string]string{}}
+			for _, t := range targets {
+				opID, _, err := queue.Enqueue(ctx, s.db, queue.Job{
+					Kind: "bot.tests", OperatorID: t[0],
+					Payload: map[string]string{"channel": t[1]},
+				})
+				if err != nil {
+					return nil, regressionOut{}, internal("run_regression_all", err)
+				}
+				out.Operations = append(out.Operations, map[string]string{
+					"operator": t[0], "channel": t[1], "operation_id": opID})
+			}
+			out.Count = len(out.Operations)
+			out.NextActions = []string{"get_operation(operation_id=…) cho từng nhà xe khi job xong"}
+			return nil, out, nil
+		})
 }

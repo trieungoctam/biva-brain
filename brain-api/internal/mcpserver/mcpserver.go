@@ -283,6 +283,8 @@ func (s *Server) newPlatformServer() *mcp.Server {
 	})
 	addPlatformTools(srv, s.db)
 	s.addPlatformMgmt(srv)
+	s.addImpactTool(srv)
+	s.addRegressionTool(srv)
 	return srv
 }
 
