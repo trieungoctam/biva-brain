@@ -8,6 +8,19 @@ Commit message tiếng Anh.
 Tài liệu thiết kế: `docs/architecture.md`, `docs/mcp.md` (danh mục tool, luật trích dẫn), `docs/data-model.md`,
 `docs/implementation-plan.md` (milestone M0–M5, story S*.*.* ↔ issue Linear DYN-*).
 
+## Demo nhanh (stack local)
+
+```bash
+# token demo (ops = mọi nhà xe, lead = platform) — tạo 1 lần:
+C='docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.local.yml exec -T brain-api brain-api'
+$C operator add demoa "Demo A" && $C user add demoops --email demo@biva.vn --name "Demo Ops" --role ops \
+  && $C user grant demoops demoa
+$C token issue demoops --name demo
+
+# chạy chuỗi promote toàn cục (không cần GEMINI key):
+BIVA_API=http://localhost:7788 BIVA_DEMO_OPS_TOKEN=… BIVA_DEMO_LEAD_TOKEN=… deploy/demo.sh
+```
+
 ## Cấu trúc
 
 | Thư mục | Nội dung |

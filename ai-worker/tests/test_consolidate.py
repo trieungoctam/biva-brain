@@ -171,3 +171,44 @@ def test_promote_updates_logic_families():
             await pool.execute("DELETE FROM logic_similarity")
 
     asyncio.run(t())
+
+
+@needs_db
+def test_apply_review_enqueues_consolidate():
+    """Migration 000023: hàm SQL apply_review tự enqueue consolidate — kể cả đường auto-apply của worker."""
+
+    async def t() -> None:
+        pool = await asyncpg.create_pool(DB_URL, init=init_connection)
+        op = f"ae{uuid.uuid4().hex[:8]}"
+        await pool.execute("DELETE FROM operators WHERE id = $1", op)
+        await pool.execute("INSERT INTO operators (id, name) VALUES ($1, 'A')", op)
+        try:
+            item = await pool.fetchval(
+                """INSERT INTO items (layer, operator_id, kind, topic, key, text, status)
+                   VALUES (2, $1, 'policy', 'luggage', 'luggage.x', '20kg miễn phí', 'pending')
+                   RETURNING id::text""",
+                op,
+            )
+            review = await pool.fetchval(
+                """INSERT INTO review_items (operator_id, key, topic, change_kind, risk, item_id, proposed_by)
+                   VALUES ($1, 'luggage.x', 'luggage', 'NEW', 'low', $2::uuid, 'system:ingest')
+                   RETURNING id::text""",
+                op,
+                item,
+            )
+            # Đường worker: gọi thẳng hàm SQL (không qua MCP).
+            out = await pool.fetchval("SELECT apply_review($1::uuid, 'system:ingest')::text", review)
+            assert '"applied"' in out
+            job = await pool.fetchrow(
+                "SELECT kind, status FROM operations WHERE idempotency_key = $1", f"consolidate:{op}:{review}"
+            )
+            assert job is not None and job["kind"] == "consolidate" and job["status"] == "queued"
+            # Apply lần 2 không thể (review đã applied) → không job mới.
+            n = await pool.fetchval(
+                "SELECT count(*) FROM operations WHERE kind = 'consolidate' AND operator_id = $1", op
+            )
+            assert n == 1
+        finally:
+            await pool.execute("DELETE FROM operators WHERE id = $1", op)
+
+    asyncio.run(t())
