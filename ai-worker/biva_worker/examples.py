@@ -12,6 +12,7 @@ Kết quả: {operator, mode, pass_rate, passed, failed:[{input, expected, got, 
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 from pathlib import Path
@@ -184,7 +185,10 @@ async def _run_candidates(workdir, profiles, modules, wanted, cases) -> list[dic
             continue
         params = {k: v.get("value") for k, v in (json.loads(p["params"] or "{}")).items()}
         for c in cases:
-            got = run_code(code, "__biva_entry", {**json.loads(c["input"]), **params})
+            # to_thread: run_code là subprocess đồng bộ — chặn event loop thì heartbeat
+            # lease của mọi job trong process dừng (S: lease 60s bị vượt → job bị claim lại).
+            payload = {**json.loads(c["input"]), **params}
+            got = await asyncio.to_thread(run_code, code, "__biva_entry", payload)
             if compare(json.loads(c["expected"]), got):
                 entry["passed"] += 1
             else:

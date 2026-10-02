@@ -20,6 +20,24 @@ Agent security-review rà 7 mặt; phân quyền đa tenant, tham số hoá SQL,
 - MED approve_publish: token gắn subject "*" — nay bắt buộc release_id ở preview, token hash đúng
   release đó (test: token của r1 duyệt r2 bị chặn).
 - MED examples: entrypoint/hooks chứa ".." đọc file ngoài repo — resolve + is_relative_to(workdir).
+Vòng 3 (review chất lượng, agent reviewer 22 finding): đã sửa 4 high + 3 leak/medium —
+(a) schema operation_result từng additionalProperties:false khiến job bot.tests/bot.chat/index.code
+v.v. bị đánh failed dù handler chạy xong (mở rộng schema theo kết quả thật + test hồi quy);
+(b) Publish/Approve/Rollback từng 3 lệnh autocommit riêng (A/B đua nhau → cả hai rolled_back) —
+giờ 1 transaction + pg_advisory_xact_lock theo (operator, kênh);
+(c) gate phát hành từng chấp nhận test run của snapshot khác bản phát hành — bot.tests giờ ghi
+snapshot_id, gate chỉ nhận test của đúng snapshot mới nhất (snapshot mới phải test lại);
+(d) lỗi DB khi ghi kết quả job từng giết slot worker vĩnh viễn — giờ bắt ở ranh giới slot;
+(e) run_code/git-clone đồng bộ từng chặn event loop → hết lease 60s bị claim lại — sang to_thread;
+(f) clone lỗi để lộ tmpdir; (g) goroutine ticker scheduler tích luỹ qua từng phiên leader.
+Backlog medium CHƯA sửa (chờ golden set/pilot): stale logic_param_sources, valid_to nửa mở
+(query_data trả giá cũ+ mới ngày chuyển), chọn target review nhầm bản tương lai, hydrate recall
+không snapshot nhất quán, consolidate lost-update (cần advisory lock), promote gom sai topic +
+chép câu riêng nhà xe đại diện lên L1, embedding code không tự hoàn thiện sau TEI lỗi, pages
+không refresh khi sang ngày hiệu lực, cosine trong compare luôn fallback Jaccard, lỗi DB bị coi
+là "chưa có profile logic" trong overview, timezone executor (UTC vs +07), propose_l1_change
+không sửa được key L1 đang tồn tại, ingest retry bỏ qua bước dở khi gặp document trùng.
+
 Vòng 2 (sau review) sửa nốt 3 low/medium còn lại: export key thêm nonce (URL không đoán được),
 resource OAuth whitelist chặt (chặn `/mcp/operator/` rỗng + `../`), register hỗ trợ
 `BIVA_OAUTH_REGISTRATION_SECRET`, consent hiển thị client_id. Ghi hướng dẫn trong runbook.

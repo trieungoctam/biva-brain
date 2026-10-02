@@ -22,6 +22,7 @@ URL thì clone --depth 1 vào thư mục tạm mỗi lần chạy (repo nhỏ); 
 from __future__ import annotations
 
 import ast
+import asyncio
 import os
 import shutil
 import subprocess
@@ -49,7 +50,11 @@ def resolve_repo(source: str) -> tuple[Path, str, str | None]:
     """→ (workdir, tên repo, tmpdir cần dọn | None). URL thì clone; path thì dùng trực tiếp."""
     if source.startswith(("http://", "https://", "git@", "ssh://")):
         tmp = tempfile.mkdtemp(prefix="biva-integrations-")
-        _git(["clone", "--depth", "1", source, tmp])
+        try:
+            _git(["clone", "--depth", "1", source, tmp])
+        except Exception:
+            shutil.rmtree(tmp, ignore_errors=True)  # không để lại pack clone nửa chừng
+            raise
         name = source.rstrip("/").removesuffix(".git").rsplit("/", 1)[-1] or "biva-integrations"
         return Path(tmp), name, tmp
     path = Path(source).resolve()
@@ -125,7 +130,9 @@ def module_context(path: Path, root: Path) -> tuple[str | None, str | None]:
 
 
 async def sync(pool: asyncpg.Pool, embedder: Embedder, source: str) -> dict[str, Any]:
-    workdir, repo, tmp = resolve_repo(source)
+    # resolve_repo chạy git clone đồng bộ (không timeout) — đẩy sang thread để
+    # không chặn event loop/heartbeat lease của worker.
+    workdir, repo, tmp = await asyncio.to_thread(resolve_repo, source)
     try:
         commit = _git(["rev-parse", "HEAD"], cwd=workdir)
         row = await pool.fetchrow("SELECT commit FROM logic_syncs WHERE repo = $1", repo)

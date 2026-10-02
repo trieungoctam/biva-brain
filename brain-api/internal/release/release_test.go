@@ -40,7 +40,7 @@ func TestGateBlocksAndPasses(t *testing.T) {
 		return out
 	}
 	all := join(rep.Blocked)
-	for _, want := range []string{"system_prompt: chưa có", "coverage", "snapshot", "chưa chạy test"} {
+	for _, want := range []string{"system_prompt: chưa có", "coverage", "snapshot", "chưa test được"} {
 		if !contains(all, want) {
 			t.Fatalf("thiếu lý do %q trong %v", want, rep.Blocked)
 		}
@@ -59,12 +59,15 @@ func TestGateBlocksAndPasses(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := pool.Exec(ctx, `INSERT INTO snapshots (bot_id, operator_id, version, artifact_versions,
-		definition, created_by) VALUES ($1, $2, 1, '{}', '{}', 't')`, bot, op); err != nil {
+	var snapID string
+	if err := pool.QueryRow(ctx, `INSERT INTO snapshots (bot_id, operator_id, version, artifact_versions,
+		definition, created_by) VALUES ($1, $2, 1, '{}', '{}', 't') RETURNING id::text`,
+		bot, op).Scan(&snapID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pool.Exec(ctx, `INSERT INTO test_runs (operator_id, bot_channel, total, passed, report)
-		VALUES ($1, 'zalo', 1, 1, '[]')`, op); err != nil {
+	// Test run phải gắn đúng snapshot mới nhất — gate không nhận kết quả của snapshot cũ.
+	if _, err := pool.Exec(ctx, `INSERT INTO test_runs (operator_id, bot_channel, snapshot_id, total, passed, report)
+		VALUES ($1, 'zalo', $2::uuid, 1, 1, '[]')`, op, snapID); err != nil {
 		t.Fatal(err)
 	}
 	rep, err = Gate(ctx, pool, op, "zalo", req, topics)
@@ -131,11 +134,6 @@ func TestPublishApproveRollback(t *testing.T) {
 		VALUES (2, $1, 'policy', 'fare', 'nội dung', 'active')`, op); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pool.Exec(ctx, `INSERT INTO test_runs (operator_id, bot_channel, total, passed, report)
-		VALUES ($1, 'zalo', 1, 1, '[]')`, op); err != nil {
-		t.Fatal(err)
-	}
-
 	// Gate chặn khi thiếu (chưa có artifact/snapshot).
 	if _, _, err := Publish(ctx, pool, op, "zalo", "staging", "t", req, topics); err == nil ||
 		!contains(err.Error(), "gate") {
@@ -143,6 +141,12 @@ func TestPublishApproveRollback(t *testing.T) {
 	}
 
 	seed(1)
+	// Gate chỉ nhận test run gắn đúng snapshot sẽ phát hành (S4.1.1): seed trước, test sau.
+	if _, err := pool.Exec(ctx, `INSERT INTO test_runs (operator_id, bot_channel, snapshot_id, total, passed, report)
+		SELECT $1, 'zalo', id::uuid, 1, 1, '[]' FROM snapshots
+		WHERE bot_id = $2 ORDER BY version DESC LIMIT 1`, op, bot); err != nil {
+		t.Fatal(err)
+	}
 	// Staging: published ngay.
 	_, st, err := Publish(ctx, pool, op, "zalo", "staging", "t", req, topics)
 	if err != nil || st != "published" {
@@ -158,8 +162,13 @@ func TestPublishApproveRollback(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Bản production thứ 2: snapshot v2, duyệt → bản 1 rolled_back.
+	// Bản production thứ 2: snapshot v2 + test lại cho đúng bản đó, duyệt → bản 1 rolled_back.
 	seed(2)
+	if _, err := pool.Exec(ctx, `INSERT INTO test_runs (operator_id, bot_channel, snapshot_id, total, passed, report)
+		SELECT $1, 'zalo', id::uuid, 1, 1, '[]' FROM snapshots
+		WHERE bot_id = $2 ORDER BY version DESC LIMIT 1`, op, bot); err != nil {
+		t.Fatal(err)
+	}
 	id3, st, _ := Publish(ctx, pool, op, "zalo", "production", "t", req, topics)
 	if st != "requested" {
 		t.Fatalf("st = %s", st)

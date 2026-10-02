@@ -101,19 +101,20 @@ async def generate_tests(pool: asyncpg.Pool, operator: str) -> dict[str, Any]:
 # ───────────────────────── S3.5.3: run_tests / sandbox_chat ─────────────────────────
 
 
-async def load_definition(pool: asyncpg.Pool, operator: str, channel: str) -> dict | None:
+async def load_definition(pool: asyncpg.Pool, operator: str, channel: str) -> tuple[dict | None, str | None]:
+    """Trả (definition, snapshot_id) của snapshot MỚI NHẤT — run phải gắn với đúng bản này."""
     row = await pool.fetchrow(
-        """SELECT definition::text FROM snapshots s
+        """SELECT definition::text, s.id::text AS sid FROM snapshots s
            JOIN bots b ON b.id = s.bot_id AND b.operator_id = $1 AND b.channel = $2
            ORDER BY s.version DESC LIMIT 1""",
         operator,
         channel or "zalo",
     )
-    return json.loads(row["definition"]) if row else None
+    return (json.loads(row["definition"]), row["sid"]) if row else (None, None)
 
 
 async def run_tests(pool: asyncpg.Pool, llm: LLMClient, operator: str, channel: str) -> dict[str, Any]:
-    definition = await load_definition(pool, operator, channel)
+    definition, snapshot_id = await load_definition(pool, operator, channel)
     if definition is None:
         raise PermanentError(
             f"chưa có snapshot cho bot {operator}/{channel or 'zalo'} — export_bot trước", code="NO_SNAPSHOT"
@@ -147,10 +148,11 @@ async def run_tests(pool: asyncpg.Pool, llm: LLMClient, operator: str, channel: 
         )
     rate = round(passed / len(cases), 3) if cases else 0.0
     run_id = await pool.fetchval(
-        """INSERT INTO test_runs (operator_id, bot_channel, total, passed, report)
-           VALUES ($1, $2, $3, $4, $5::jsonb) RETURNING id::text""",
+        """INSERT INTO test_runs (operator_id, bot_channel, snapshot_id, total, passed, report)
+           VALUES ($1, $2, $3::uuid, $4, $5, $6::jsonb) RETURNING id::text""",
         operator,
         channel or "zalo",
+        snapshot_id,
         len(cases),
         passed,
         report,
@@ -168,7 +170,7 @@ async def run_tests(pool: asyncpg.Pool, llm: LLMClient, operator: str, channel: 
 async def sandbox_chat(
     pool: asyncpg.Pool, llm: LLMClient, operator: str, message: str, channel: str
 ) -> dict[str, Any]:
-    definition = await load_definition(pool, operator, channel)
+    definition, snapshot_id = await load_definition(pool, operator, channel)
     if definition is None:
         raise PermanentError(
             f"chưa có snapshot cho bot {operator}/{channel or 'zalo'} — export_bot trước", code="NO_SNAPSHOT"

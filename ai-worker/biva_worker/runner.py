@@ -183,7 +183,13 @@ class Runner:
                 log.warning("claim lỗi: %s", exc)
                 job = None
             if job is not None:
-                await self._process(job, stop)
+                # Lỗi DB lúc GHI trạng thái kết quả phải giết job-scope, không giết slot:
+                # nếu bỏ qua, slot tắt vĩnh viễn và worker mất capacity (job sẽ được
+                # scheduler trả lại queue theo lease, side effect phải idempotent).
+                try:
+                    await self._process(job, stop)
+                except (OSError, asyncpg.PostgresError) as exc:
+                    log.error("ghi trạng thái job %s lỗi (chờ lease hồi): %s", job.id, exc)
                 continue
             self._wake.clear()
             with contextlib.suppress(TimeoutError):

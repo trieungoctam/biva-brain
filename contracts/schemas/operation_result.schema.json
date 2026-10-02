@@ -25,6 +25,71 @@
         }
       }
     },
+    "run_id": { "type": "string", "description": "bot.tests: id test_runs" },
+    "failed_cases": {
+      "type": "array", "maxItems": 10,
+      "items": { "type": "string" },
+      "description": "bot.tests: tên case fail (tối đa 10)"
+    },
+    "reply": { "type": "string", "description": "bot.chat: câu bot trả lời" },
+    "tools_called": {
+      "type": "array", "items": { "type": "string" }, "description": "bot.chat: tool đã gọi"
+    },
+    "warnings": { "type": "array", "items": { "type": "string" }, "description": "bot.reflect" },
+    "answer": { "type": "string", "description": "bot.reflect: câu trả lời phân tích" },
+    "commit": { "type": ["string", "null"], "description": "index.code: HEAD đã xử lý" },
+    "changed": { "type": "boolean", "description": "index.code: có thay đổi" },
+    "embedded": { "type": "integer", "minimum": 0, "description": "index.code: số chunk đã nhúng" },
+    "contradictions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["explanation", "ids"],
+        "properties": {
+          "explanation": { "type": "string" },
+          "ids": { "type": "array", "items": { "type": "string" } }
+        }
+      },
+      "description": "validate (LLM): các mâu thuẫn tìm thấy"
+    },
+    "proposed_features": {
+      "type": "array", "items": { "type": "string" }, "description": "logic.spec"
+    },
+    "capability": { "type": "string", "description": "logic.examples: capability đã chạy" },
+    "cases": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["name"],
+        "properties": { "name": { "type": "string" } }
+      },
+      "description": "logic.examples: case đã chạy"
+    },
+    "results": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["name", "ok"],
+        "properties": { "name": { "type": "string" }, "ok": { "type": "boolean" } }
+      },
+      "description": "logic.examples: kết quả từng case"
+    },
+    "branch": { "type": ["string", "null"], "description": "logic.propose: nhánh đã đẩy" },
+    "pr_url": { "type": ["string", "null"], "description": "logic.propose: link PR" },
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path"],
+        "properties": { "path": { "type": "string" }, "content": { "type": "string" } }
+      },
+      "description": "logic.propose (chế độ manual): nội dung để tạo PR tay"
+    },
+    "repo": { "type": ["string", "null"], "description": "logic.propose: repo đích" },
     "error": {
       "type": "object",
       "additionalProperties": false,

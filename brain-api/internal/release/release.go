@@ -98,37 +98,45 @@ func Gate(ctx context.Context, db *pgxpool.Pool, operatorID, channel string, req
 		pass("coverage", "mọi mục bắt buộc đã phủ")
 	}
 
-	// 3. Snapshot đã lắp.
-	var snap int
+	// 3. Snapshot đã lắp (đồng thời lấy id bản mới nhất để gắn test).
+	var snapVer int
+	var snapID string
 	if err := db.QueryRow(ctx, `
-		SELECT count(*) FROM snapshots s JOIN bots b ON b.id = s.bot_id
-		WHERE b.operator_id = $1 AND b.channel = $2`, operatorID, channel).Scan(&snap); err != nil {
-		return rep, err
-	}
-	if snap == 0 {
-		block("snapshot", "chưa có snapshot — export_bot trước")
-	} else {
-		pass("snapshot", fmt.Sprintf("snapshot mới nhất: bản thứ %d", snap))
-	}
-
-	// 4. Test bot pass 100% (lần chạy mới nhất).
-	var total, passed int
-	err = db.QueryRow(ctx, `
-		SELECT total, passed FROM test_runs
-		WHERE operator_id = $1 AND bot_channel = $2
-		ORDER BY created_at DESC LIMIT 1`, operatorID, channel).Scan(&total, &passed)
-	switch {
-	case err != nil:
-		if err.Error() != "no rows in result set" {
+		SELECT s.id::text, s.version FROM snapshots s JOIN bots b ON b.id = s.bot_id
+		WHERE b.operator_id = $1 AND b.channel = $2 ORDER BY s.version DESC LIMIT 1`,
+		operatorID, channel).Scan(&snapID, &snapVer); err != nil {
+		if err.Error() == "no rows in result set" {
+			block("snapshot", "chưa có snapshot — export_bot trước")
+		} else {
 			return rep, err
 		}
-		block("tests", "chưa chạy test bot — run_tests trước")
-	case total == 0:
-		block("tests", "lần chạy test gần nhất không có case nào")
-	case passed < total:
-		block("tests", fmt.Sprintf("test %d/%d pass — sửa case fail rồi chạy lại", passed, total))
-	default:
-		pass("tests", fmt.Sprintf("test %d/%d pass", passed, total))
+	} else {
+		pass("snapshot", fmt.Sprintf("snapshot mới nhất: v%d", snapVer))
+	}
+
+	// 4. Test bot pass 100% — lần chạy mới nhất PHẢI gắn đúng snapshot sẽ phát hành
+	// (test của snapshot cũ không chốt cửa cho snapshot mới).
+	if snapID == "" {
+		block("tests", "chưa có snapshot nên chưa test được")
+	} else {
+		var total, passed int
+		err = db.QueryRow(ctx, `
+			SELECT total, passed FROM test_runs
+			WHERE operator_id = $1 AND bot_channel = $2 AND snapshot_id = $3::uuid
+			ORDER BY created_at DESC LIMIT 1`, operatorID, channel, snapID).Scan(&total, &passed)
+		switch {
+		case err != nil:
+			if err.Error() != "no rows in result set" {
+				return rep, err
+			}
+			block("tests", "chưa chạy test bot cho snapshot mới nhất — run_tests trước")
+		case total == 0:
+			block("tests", "lần chạy test gần nhất không có case nào")
+		case passed < total:
+			block("tests", fmt.Sprintf("test %d/%d pass — sửa case fail rồi chạy lại", passed, total))
+		default:
+			pass("tests", fmt.Sprintf("test %d/%d pass", passed, total))
+		}
 	}
 
 	// 5. Không đề xuất đang mở (conflict/đề xuất chờ duyệt).
@@ -192,8 +200,19 @@ func Publish(ctx context.Context, db *pgxpool.Pool, operatorID, channel, stage, 
 	if !gate.Passed {
 		return "", "", fmt.Errorf("%w: %s", ErrGateBlocked, strings.Join(gate.Blocked, "; "))
 	}
+	// Một transaction + advisory lock theo (operator, kênh): chọn snapshot, publish, rollback
+	// bản cũ không thể interleaved giữa hai lời gọi (A/B cùng kênh từng ra cả hai rolled_back).
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		return "", "", err
+	}
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext($1 || ':' || $2))`,
+		operatorID, channel); err != nil {
+		return "", "", err
+	}
 	var id, status string
-	err = db.QueryRow(ctx, `
+	err = tx.QueryRow(ctx, `
 		WITH latest AS (
 			SELECT s.id, s.version FROM snapshots s JOIN bots b ON b.id = s.bot_id
 			WHERE b.operator_id = $1 AND b.channel = $2 ORDER BY s.version DESC LIMIT 1
@@ -214,36 +233,46 @@ func Publish(ctx context.Context, db *pgxpool.Pool, operatorID, channel, stage, 
 	}
 	// Staging published → mọi bản staging cũ của kênh này thành rolled_back (chỉ 1 bản chạy).
 	if stage == "staging" {
-		if _, err := db.Exec(ctx, `UPDATE releases SET status = 'rolled_back', rolled_back_at = now()
+		if _, err := tx.Exec(ctx, `UPDATE releases SET status = 'rolled_back', rolled_back_at = now()
 			WHERE operator_id = $1 AND bot_channel = $2 AND stage = 'staging'
 			  AND status = 'published' AND id <> $3::uuid`, operatorID, channel, id); err != nil {
 			return "", "", err
 		}
 	}
+	if err := tx.Commit(ctx); err != nil {
+		return "", "", err
+	}
 	return id, status, nil
 }
 
 // Approve: lead duyệt bản production requested → published. Rollback mọi bản production cũ.
+// Cùng advisory lock + transaction với Publish/Rollback: không thể interleaved mất bản đang chạy.
 func Approve(ctx context.Context, db *pgxpool.Pool, releaseID, approver string) (string, error) {
-	var status string
-	err := db.QueryRow(ctx, `
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer tx.Rollback(ctx)
+	var status, op, ch string
+	err = tx.QueryRow(ctx, `
 		UPDATE releases SET status = 'published', approved_by = $2, published_at = now()
 		WHERE id = $1::uuid AND status = 'requested' AND stage = 'production'
-		RETURNING status`, releaseID, approver).Scan(&status)
+		RETURNING status, operator_id, bot_channel`, releaseID, approver).Scan(&status, &op, &ch)
 	if err != nil {
 		if err.Error() == "no rows in result set" {
 			return "", fmt.Errorf("bản phát hành %s không ở trạng thái requested (production)", releaseID)
 		}
 		return "", err
 	}
-	var op, ch string
-	if err := db.QueryRow(ctx, `SELECT operator_id, bot_channel FROM releases WHERE id = $1::uuid`,
-		releaseID).Scan(&op, &ch); err != nil {
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext($1 || ':' || $2))`, op, ch); err != nil {
 		return "", err
 	}
-	if _, err := db.Exec(ctx, `UPDATE releases SET status = 'rolled_back', rolled_back_at = now()
+	if _, err := tx.Exec(ctx, `UPDATE releases SET status = 'rolled_back', rolled_back_at = now()
 		WHERE operator_id = $1 AND bot_channel = $2 AND stage = 'production'
 		  AND status = 'published' AND id <> $3::uuid`, op, ch, releaseID); err != nil {
+		return "", err
+	}
+	if err := tx.Commit(ctx); err != nil {
 		return "", err
 	}
 	return status, nil
@@ -257,6 +286,11 @@ func Rollback(ctx context.Context, db *pgxpool.Pool, operatorID, channel, actor 
 		return "", 0, err
 	}
 	defer tx.Rollback(ctx)
+	// Cùng lock với Publish/Approve: rollback không đua với publish mới của cùng kênh.
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext($1 || ':' || $2))`,
+		operatorID, channel); err != nil {
+		return "", 0, err
+	}
 	var cur, prev string
 	var curVer int
 	err = tx.QueryRow(ctx, `

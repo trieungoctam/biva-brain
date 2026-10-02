@@ -100,6 +100,10 @@ func (s *Scheduler) lead(ctx context.Context) {
 	slog.Info("scheduler: trở thành leader")
 	s.setLeader(true)
 	defer s.setLeader(false)
+	// Context con cho PHIÊN leader: khi mất lock/mất kết nối, mọi goroutine ticker của
+	// phiên này thoát — dùng context của Scheduler khiến chúng sống sót và tích luỹ.
+	leadCtx, cancelLead := context.WithCancel(ctx)
+	defer cancelLead()
 
 	ticks := make([]*time.Ticker, len(s.Tasks))
 	cases := make(chan int)
@@ -109,12 +113,12 @@ func (s *Scheduler) lead(ctx context.Context) {
 		go func() {
 			for {
 				select {
-				case <-ctx.Done():
+				case <-leadCtx.Done():
 					return
 				case <-ticks[i].C:
 					select {
 					case cases <- i:
-					case <-ctx.Done():
+					case <-leadCtx.Done():
 						return
 					}
 				}
@@ -126,16 +130,16 @@ func (s *Scheduler) lead(ctx context.Context) {
 
 	for {
 		select {
-		case <-ctx.Done():
+		case <-leadCtx.Done():
 			return
 		case <-alive.C:
-			if err := conn.Ping(ctx); err != nil {
+			if err := conn.Ping(leadCtx); err != nil {
 				slog.Warn("scheduler: mất kết nối giữ lock, thôi làm leader", "err", err)
 				return
 			}
 		case i := <-cases:
 			t := s.Tasks[i]
-			if err := t.Run(ctx, s.DB); err != nil && ctx.Err() == nil {
+			if err := t.Run(leadCtx, s.DB); err != nil && leadCtx.Err() == nil {
 				slog.Error("scheduler: task lỗi", "task", t.Name, "err", err)
 			}
 		}

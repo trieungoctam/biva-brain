@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import urllib.error
@@ -142,10 +143,12 @@ async def propose(pool: asyncpg.Pool, job: Job) -> dict[str, Any]:
             "repo": repo_url or None,
         }
 
-    workdir, repo_name, tmp = resolve_repo(repo_url)
-    original = _git(["rev-parse", "--abbrev-ref", "HEAD"], cwd=workdir) or "main"
+    workdir, repo_name, tmp = await asyncio.to_thread(resolve_repo, repo_url)
+    original = await asyncio.to_thread(_git, ["rev-parse", "--abbrev-ref", "HEAD"], workdir) or "main"
     try:
-        branch, written = prepare_branch(workdir, operator, profile_yaml, files, actor)
+        branch, written = await asyncio.to_thread(
+            prepare_branch, workdir, operator, profile_yaml, files, actor
+        )
         # Credential qua header thay vì nhúng URL (git in URL ra stderr khi lỗi → lộ token).
         push = [
             "-c",
@@ -156,11 +159,11 @@ async def propose(pool: asyncpg.Pool, job: Job) -> dict[str, Any]:
             "HEAD:refs/heads/" + branch,
         ]
         try:
-            _git(push, cwd=workdir)
+            await asyncio.to_thread(_git, push, workdir)
         except PermanentError as exc:
             raise PermanentError(str(exc).replace(token, "***"), code=exc.code) from exc
         # Trả workdir về nhánh gốc: index_code (chế độ path) không đọc nhánh chưa duyệt.
-        _git(["checkout", "-q", original], cwd=workdir)
+        await asyncio.to_thread(_git, ["checkout", "-q", original], workdir)
         owner_repo = repo_url.rstrip("/").removesuffix(".git").replace("https://github.com/", "")
         pr = _github_api(
             f"https://api.github.com/repos/{owner_repo}/pulls",
