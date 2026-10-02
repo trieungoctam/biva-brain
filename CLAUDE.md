@@ -86,7 +86,11 @@ Việc còn treo (đều ngoài code — cần chủ dự án):
    executor/reflect thật.
 3. **Máy amd64 hoặc RAM Docker >10GB** — TEI (semantic + rerank) không chạy được trên laptop này (OOM).
 4. **URL https công khai** (DYN-115) — thử ChatGPT connector (OAuth đã có).
-5. **RLS (S4.4.1)** — hoãn có chủ đích: app đang chạy role owner nên RLS sẽ bị bypass (giả an toàn);
+5. **S5.2 vận hành**: runbook đầy đủ `docs/runbook.md` (8 sự cố theo system-architecture §7.1 +
+  backup); `deploy/backup.sh` backup Postgres + `BIVA_RESTORE_VERIFY=1` khôi phục thử (đã chạy OK:
+  39 bảng / 26 items / 3 operations khớp) — tự dùng client trong container khi host thiếu pg tools;
+  PITR + Helm/KEDA theo cắt giảm (compose 1 VM đến khi cần scale).
+6. **RLS (S4.4.1)** — hoãn có chủ đích: app đang chạy role owner nên RLS sẽ bị bypass (giả an toàn);
    làm đúng cần role riêng + SET LOCAL mỗi request (thay đổi kiến trúc connection).
 6. Khi có pilot: chạy `/onboard_operator` → `/build_bot` → `run_tests` → `check_release_gate` →
    `request_publish`; DYN-65/70/77… chuyển Done khi AC đo được.

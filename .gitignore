@@ -14,3 +14,4 @@ brain-api/bin/
 
 # port override riêng theo máy — không commit
 deploy/docker-compose.local.yml
+deploy/backups/
