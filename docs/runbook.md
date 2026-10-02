@@ -133,6 +133,17 @@ ORDER BY published_at DESC LIMIT 3;` — bản mong muốn đang `published`.
 
 ---
 
+## Chaos: postgres chết giữa vận hành (đã kiểm chứng 02/10)
+
+`docker stop postgres` 15s rồi start lại:
+- health → 503, MCP → 500 từng request; **brain-api/ai-worker không restart** (pool tự nối lại).
+- scheduler: mất lock (SQLSTATE 57P01) → tự **tái tuyển leader ~20s** sau khi DB về; goroutine
+  phiên cũ thoát qua context con (không tích luỹ — fix vòng 3).
+- worker: claim lỗi ghi WARNING, vòng slot sống tiếp; job enqueue trong outage được xử lý
+  sau khi DB về (lease requeue không cần vì queue cũng nằm trong postgres).
+- Verify khi tái diễn: `docker logs brain-api | grep -c "trở thành leader"` tăng đúng 1 sau
+  mỗi lần mất-lại; job ping mới → status=done.
+
 ## Trước khi lên production (security)
 
 - **Bucket export**: key export đã có nonce ngẫu nhiên (URL không đoán được kể cả bucket công khai);
