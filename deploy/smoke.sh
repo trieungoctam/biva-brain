@@ -35,10 +35,10 @@ $C exec -T brain-api brain-api user add "smoke$sfx" --email "smoke$sfx@biva.loca
 $C exec -T brain-api brain-api user grant "smoke$sfx" "smoke$sfx"
 # Retry 1 lần: trên runner CI từng có lượt exit 255 không output ngay sau grant (flake
 # hạ tầng docker/runner) — marker + retry giúp lần tái phát biết chính xác lệnh nào chết.
-capture() { # capture <mô tả> <lệnh...> — chạy, echo marker, retry một lần nếu lỗi
+capture() { # capture <mô tả> <lệnh...> — marker ra STDERR (stdout bị $() nuốt), retry 1 lần
   local what=$1; shift
-  echo "→ $what"
-  "$@" || { echo "✗ $what lỗi lần 1 — thử lại"; "$@"; }
+  echo "→ $what" >&2
+  "$@" || { echo "✗ $what lỗi lần 1 — thử lại" >&2; "$@"; }
 }
 token=$(capture "token issue" bash -c   "$C exec -T brain-api brain-api token issue 'smoke$sfx' --name smoke --ttl 1h | tail -1")
 
