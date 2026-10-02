@@ -76,6 +76,9 @@ Chi tiết từng story nằm trong comment các issue Linear (kèm link CI). T�
   `compare_with_industry`.
 - **M4** `check_release_gate`; `request_publish` (staging tự động, production chờ lead) +
   `rollback_release` < 1 phút; `add_lesson` + prompt `/review_quality`; bộ test chống prompt injection.
+- **Sửa hổng kiến trúc (migration 000023)**: enqueue consolidate sau apply nằm TRONG hàm SQL
+  `apply_review` — mọi đường apply (MCP lẫn auto-apply rủi ro thấp của worker) đều chạy consolidate;
+  bỏ enqueue cũ phía Go. Đã kiểm trên stack: submit_knowledge → worker tự apply → consolidate tự chạy.
 - **M5** platform tools: `list_operators`, `list_promotion_candidates`, `propose_l1_change`,
   `impact_of_change`, `run_regression_all`. **Danh mục tool MCP đầy đủ 45/45** —包括 2 tool sót
   `search_logic` (module/feature/code chunk/lesson, có dấu-không dấu) và `get_logic_module`

@@ -30,12 +30,8 @@ for op in "${OPS[@]}"; do
   echo "   $op → $(echo "$out" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("summary") or d)')"
 done
 
-echo "== 2) Enqueue job consolidate cho từng nhà xe (auto-apply trong worker không đi qua MCP apply_review)"
-for op in "${OPS[@]}"; do
-  docker compose -f "$(dirname "$0")/docker-compose.yml" exec -T postgres psql -U biva -d biva -qtAc \
-    "INSERT INTO operations (kind, operator_id, idempotency_key) VALUES ('consolidate', '$op', 'demo:$op:' || floor(extract(epoch from now()))::text)" >/dev/null
-done
-sleep 10
+echo "== 2) apply_review (SQL) tự enqueue job consolidate — kể cả auto-apply của worker (migration 000023)"
+sleep 12
 for op in "${OPS[@]}"; do
   n=$(docker compose -f "$(dirname "$0")/docker-compose.yml" exec -T postgres psql -U biva -d biva -qtAc \
     "SELECT count(*) FROM items WHERE operator_id='$op' AND kind='observation' AND status='active'")
