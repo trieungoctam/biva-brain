@@ -140,5 +140,9 @@ Chi tiết: `deploy/pilot-kit/README.md`.
 | Cần | Mở khóa |
 |---|---|
 | Chọn 3 nhà xe pilot + dữ liệu thật | demo M5 trên nhà xe thật; đo mọi AC số liệu |
-| `GEMINI_API_KEY` | CONTRADICTION (recall ≥ 90% trên bộ test cài sẵn), executor/reflect thật |
+| `GEMINI_API_KEY` | run_tests/publish (executor chạy bot bằng LLM), CONTRADICTION (recall ≥ 90%), reflect, ingest ảnh/tin thô |
 | URL https công khai | ChatGPT connector (OAuth đã sẵn) |
+
+Không cần GEMINI key để onboard: pilot kit (`deploy/pilot-kit/`) nạp CSV trực tiếp, và form
+thu thập (`create_form` → nhà xe điền link) trích deterministic theo topic — đã kiểm chứng
+end-to-end. Artifact/validate/gate đều tĩnh; đường chờ key bắt đầu từ bot test.
