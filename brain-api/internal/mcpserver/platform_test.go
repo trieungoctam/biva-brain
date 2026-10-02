@@ -307,3 +307,69 @@ func TestApprovePublishTokenBindsRelease(t *testing.T) {
 		t.Fatalf("approve r1 = %+v", out)
 	}
 }
+
+// propose_l1_change trên key L1 ĐANG CÓ: review phải gắn target_item_id và apply
+// supersede bản cũ (trước đây apply đụng unique items_platform_key_active → không sửa được).
+func TestProposeL1ChangeModifiesExistingKey(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	s, err := connect(t, f.url+"/mcp/platform/", f.leadTok)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	mk := func(text string) (reviewID, itemID string) {
+		isErr, prev, _ := call(t, s, "propose_l1_change", map[string]any{
+			"topic": "luggage", "key": "hanh_ly.mien_phi", "text": text})
+		if isErr {
+			t.Fatalf("preview lỗi: %+v", prev)
+		}
+		na := prev["next_actions"].([]any)[1].(string)
+		token := na[len("đồng ý thì gọi lại với confirm_token="):]
+		if i := indexStr(token, " (hết hạn"); i > 0 {
+			token = token[:i]
+		}
+		isErr, done, _ := call(t, s, "propose_l1_change", map[string]any{
+			"topic": "luggage", "key": "hanh_ly.mien_phi", "text": text, "confirm_token": token})
+		if isErr {
+			t.Fatalf("confirm lỗi: %+v", done)
+		}
+		return done["review_id"].(string), done["item_id"].(string)
+	}
+
+	// Lần 1: thêm mới — apply → active.
+	r1, it1 := mk("Hành lý miễn phí 20kg.")
+	t.Cleanup(func() {
+		f.pool.Exec(ctx, `DELETE FROM items WHERE id = ANY($1::uuid[])`, []string{it1})
+		f.pool.Exec(ctx, `DELETE FROM review_items WHERE id = $1::uuid`, r1)
+	})
+	// apply_review là tool endpoint nhà xe; L1 apply trực tiếp qua hàm SQL (chính là
+	// thứ migration 000025 thay đổi).
+	if _, err := f.pool.Exec(ctx, `SELECT apply_review($1::uuid, 'user:lead')`, r1); err != nil {
+		t.Fatalf("apply lần 1: %v", err)
+	}
+
+	// Lần 2: SỬA cùng key — trước đây lỗi unique; giờ target = bản cũ, apply supersede.
+	r2, it2 := mk("Hành lý miễn phí 25kg.")
+	t.Cleanup(func() {
+		f.pool.Exec(ctx, `DELETE FROM items WHERE id = ANY($1::uuid[])`, []string{it2})
+		f.pool.Exec(ctx, `DELETE FROM review_items WHERE id = $1::uuid`, r2)
+	})
+	var target any
+	if err := f.pool.QueryRow(ctx, `SELECT target_item_id::text FROM review_items WHERE id = $2::uuid`, r2).
+		Scan(&target); err == nil && target != nil {
+		if target.(string) != it1 {
+			t.Fatalf("target = %v, muốn item bản đầu %s", target, it1)
+		}
+	}
+	if _, err := f.pool.Exec(ctx, `SELECT apply_review($1::uuid, 'user:lead')`, r2); err != nil {
+		t.Fatalf("apply lần 2 (sửa): %v", err)
+	}
+	var st1, st2 string
+	f.pool.QueryRow(ctx, `SELECT status FROM items WHERE id = $1::uuid`, it1).Scan(&st1)
+	f.pool.QueryRow(ctx, `SELECT status FROM items WHERE id = $1::uuid`, it2).Scan(&st2)
+	if st1 != "superseded" || st2 != "active" {
+		t.Fatalf("sau sửa: bản cũ=%s bản mới=%s, muốn superseded/active", st1, st2)
+	}
+}

@@ -269,28 +269,31 @@ async def ingest(pool: asyncpg.Pool, llm: LLMClient, job: Job) -> dict[str, Any]
         extracted_by = llm_result.served_model
     decisions = diff(candidates, existing, today=received)
 
-    async with pool.acquire() as conn:
-        doc_id, reviews = await _write(conn, payload, job, h, decisions)
-    if doc_id is None:
-        return {"status": "done", "summary": "tin đã ingest trước đó", "counts": {"duplicate_document": 1}}
-
     applied, stale = 0, 0
     auto = auto_apply_enabled()
+    # MỘT transaction cho toàn bộ side effect (document + review + auto-apply + enqueue index):
+    # worker chết giữa chừng → rollback hết, retry xử lý lại từ đầu. Trước đây _write commit
+    # riêng rồi mới auto-apply/enqueue ở transaction khác — chết giữa hai khối để lại document
+    # dở (review chưa apply, index không enqueue) mà retry trả "tin đã ingest" vì thấy trùng.
     async with pool.acquire() as conn:
-        for review_id, risk in reviews:
-            if risk != "low" or not auto:
-                continue
-            async with conn.transaction():
-                res = json.loads(
-                    await conn.fetchval("SELECT apply_review($1::uuid, $2)::text", review_id, ACTOR)
+        async with conn.transaction():
+            doc_id, reviews = await _write(conn, payload, job, h, decisions)
+            if doc_id is not None:
+                for review_id, risk in reviews:
+                    if risk != "low" or not auto:
+                        continue
+                    res = json.loads(
+                        await conn.fetchval("SELECT apply_review($1::uuid, $2)::text", review_id, ACTOR)
+                    )
+                    applied += res["status"] == "applied"
+                    stale += res["status"] == "stale"
+                await conn.execute(
+                    "INSERT INTO operations (kind, operator_id, payload) VALUES ('index.items', $1, $2)",
+                    operator_id,
+                    {"operator_id": operator_id},
                 )
-            applied += res["status"] == "applied"
-            stale += res["status"] == "stale"
-        await conn.execute(
-            "INSERT INTO operations (kind, operator_id, payload) VALUES ('index.items', $1, $2)",
-            operator_id,
-            {"operator_id": operator_id},
-        )
+    if doc_id is None:
+        return {"status": "done", "summary": "tin đã ingest trước đó", "counts": {"duplicate_document": 1}}
 
     counts: dict[str, int] = {"candidates": len(candidates), "auto_applied": applied, "stale": stale}
     for d in decisions:

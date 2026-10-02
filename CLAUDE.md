@@ -30,6 +30,14 @@ snapshot_id, gate chỉ nhận test của đúng snapshot mới nhất (snapshot
 (d) lỗi DB khi ghi kết quả job từng giết slot worker vĩnh viễn — giờ bắt ở ranh giới slot;
 (e) run_code/git-clone đồng bộ từng chặn event loop → hết lease 60s bị claim lại — sang to_thread;
 (f) clone lỗi để lộ tmpdir; (g) goroutine ticker scheduler tích luỹ qua từng phiên leader.
+Vòng 7 (2 mục cuối của 22 finding review chất lượng — chủ dự án "tiếp tục" = chốt hướng bảo thủ):
+migration 000025 — propose_l1_change giờ GÁN target_item_id khi key L1 đang có bản active,
+apply_review supersede bản cũ như nhánh CHANGE của L2 (trước đây apply đụng unique
+items_platform_key_active → không sửa được thông lệ đang có); guard no-target cũng nhìn key
+L1 active. Ingest: document + review + auto-apply + enqueue index.items nằm trong MỘT
+transaction (trước đây _write commit riêng rồi mới auto-apply/enqueue — chết giữa hai khối để
+lại document dở mà retry trả "tin đã ingest"); test rollback bằng proxy raise ở enqueue.
+
 Vòng 6 (2 medium nữa — thực ra deterministic, không cần golden set): target review/ingest giờ
 chọn bản active có khoảng hiệu lực CHỨA thời điểm đề xuất (mặc định hôm nay) thay vì bản
 valid_from lớn nhất — sửa giá đang áp dụng khi đã có bản Tết lên lịch không còn nhắm nhầm/
@@ -54,9 +62,7 @@ scope (chặn lost-update mất câu đã đánh dấu consolidated); recall loa
 lỗi DB khác báo lên (builder không bị báo "chưa có" khi DB lỗi); index.code HEAD không đổi vẫn
 hoàn thiện embedding chunk thiếu (TEI hồi phục là tự chữa); Similar/Compare nạp embedding phía
 spec mình — cosine chạy thật thay vì luôn fallback Jaccard.
-Backlog CÒN LẠI (2 mục, cần決 định thiết kế với chủ dự án): propose_l1_change không sửa được
-key L1 đang tồn tại (cần apply_review supersede item L1 — chạm flow duyệt L1), ingest retry bỏ
-qua bước dở khi gặp document trùng (cần gộp auto-apply + enqueue vào transaction của _write).
+Review chất lượng 22/22 finding đã xử lý hết (vòng 3–7).
 
 Vòng 2 (sau review) sửa nốt 3 low/medium còn lại: export key thêm nonce (URL không đoán được),
 resource OAuth whitelist chặt (chặn `/mcp/operator/` rỗng + `../`), register hỗ trợ

@@ -4,8 +4,10 @@ package mcpserver
 
 import (
 	"context"
+
 	"errors"
 	"fmt"
+	"github.com/jackc/pgx/v5"
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -183,14 +185,30 @@ func (s *Server) addPlatformMgmt(srv *mcp.Server) {
 				Scan(&itemID); err != nil {
 				return nil, proposeL1Out{}, internal("propose_l1_change", err)
 			}
+			// Key L1 đã có bản active → review là SỬA: gắn target để apply_review supersede
+			// bản cũ (như CHANGE của L2) thay vì đụng unique items_platform_key_active.
+			var l1Target *string
 			if err := tx.QueryRow(ctx, `
-				INSERT INTO review_items (operator_id, key, topic, change_kind, risk, item_id, reason, proposed_by)
-				VALUES ((SELECT id FROM operators ORDER BY id LIMIT 1), $1, $2, 'PROMOTE', 'high', $3::uuid, $4, $5)
+				SELECT id::text FROM items
+				WHERE layer = 1 AND operator_id IS NULL AND key = $1 AND status = 'active'
+				LIMIT 1`, key).Scan(&l1Target); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+				return nil, proposeL1Out{}, internal("propose_l1_change", err)
+			}
+			if err := tx.QueryRow(ctx, `
+				INSERT INTO review_items (operator_id, key, topic, change_kind, risk, item_id,
+					target_item_id, reason, proposed_by)
+				VALUES ((SELECT id FROM operators ORDER BY id LIMIT 1), $1, $2, 'PROMOTE', 'high', $3::uuid,
+					$4::uuid, $5, $6)
 				RETURNING id::text`,
-				key, in.Topic, itemID, "lead đề xuất L1: "+clipText(in.Text, 120), p.Actor()).
+				key, in.Topic, itemID, l1Target, "lead đề xuất L1: "+clipText(in.Text, 120), p.Actor()).
 				Scan(&reviewID); err != nil {
 				return nil, proposeL1Out{}, internal("propose_l1_change", err)
 			}
+			mode := "thêm mới"
+			if l1Target != nil {
+				mode = "sửa thông lệ hiện có"
+			}
+			_ = mode
 			if err := tx.Commit(ctx); err != nil {
 				return nil, proposeL1Out{}, internal("propose_l1_change", err)
 			}

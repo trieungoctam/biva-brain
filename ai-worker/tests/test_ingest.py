@@ -550,3 +550,85 @@ def test_diff_target_theo_khoang_hieu_luc():
         today=date(2026, 10, 15),
     )[0]
     assert d.target.id == "id-tet", d.target.id
+
+
+@needs_db
+def test_ingest_rollback_khi_enqueue_loi():
+    """Regression (review mục 2): mọi side effect của ingest trong MỘT transaction — lỗi ở bước
+    enqueue index.items phải rollback cả document + review, để retry xử lý lại (không kẹt
+    ở 'tin đã ingest' với nửa pipeline)."""
+
+    class Boom(Exception):
+        pass
+
+    class ProxyConn:
+        """Forward mọi lời gọi; raise với đúng INSERT index.items."""
+
+        def __init__(self, inner):
+            self._inner = inner
+
+        def __getattr__(self, name):
+            return getattr(self._inner, name)
+
+        async def execute(self, query, *args):
+            if "index.items" in query:
+                raise Boom("mô phỏng worker chết trước enqueue")
+            return await self._inner.execute(query, *args)
+
+    class ProxyPool:
+        def __init__(self, inner):
+            self._inner = inner
+
+        def acquire(self):
+            inner = self._inner
+
+            class _Ctx:
+                async def __aenter__(_s):  # noqa: N805
+                    _s._cm = inner.acquire()
+                    return ProxyConn(await _s._cm.__aenter__())
+
+                async def __aexit__(_s, *exc):
+                    return await _s._cm.__aexit__(*exc)
+
+            return _Ctx()
+
+        def __getattr__(self, name):
+            return getattr(self._inner, name)
+
+    async def t() -> None:
+        import hashlib
+
+        pool = await asyncpg.create_pool(DB_URL, init=init_connection)
+        op = f"rb{uuid.uuid4().hex[:8]}"
+        await pool.execute("INSERT INTO operators (id, name) VALUES ($1, 'RB')", op)
+        content = "Thú cưng phải để trong lồng khi lên xe."
+        try:
+            payload = {"operator_id": op, "source": "zalo",
+                       "received_at": "2026-10-01T09:00:00+07:00", "content": content}  # fmt: skip
+            job = Job(str(uuid.uuid4()), "ingest", op, payload, 1, 5, {})
+            scripted = [it("upsert", "policy", "pets", "pets.dieu_kien", "Thú cưng phải để trong lồng")]
+            fake = ScriptedLLM([scripted, scripted])  # lần 1 (bị rollback) + lần 2 (thành công)
+            llm = LLMClient(load(), providers={"gemini": fake})
+            # Lần 1: enqueue lỗi → MỌI thứ phải rollback.
+            try:
+                await ingest_job.ingest(ProxyPool(pool), llm, job)
+                raised = False
+            except Boom:
+                raised = True
+            assert raised, "phải ném lỗi enqueue"
+            h = hashlib.sha256(content.encode()).hexdigest()
+            n_doc = await pool.fetchval(
+                "SELECT count(*) FROM documents WHERE operator_id=$1 AND content_hash=$2", op, h
+            )
+            assert n_doc == 0, "document phải bị rollback theo enqueue"
+            assert await pool.fetchval("SELECT count(*) FROM items WHERE operator_id=$1", op) == 0, (
+                "item pending phải rollback"
+            )
+            # Lần 2 (không lỗi): ingest lại từ đầu thành công — không kẹt duplicate.
+            r2 = await ingest_job.ingest(pool, llm, job)
+            assert r2["status"] == "done" and r2["counts"]["auto_applied"] >= 1, r2
+        finally:
+            await pool.execute("DELETE FROM operators WHERE id = $1", op)
+            await pool.close()
+
+    asyncio.run(t())
