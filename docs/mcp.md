@@ -184,8 +184,13 @@ Cột **Mốc** = mốc dự kiến (xem lộ trình trong [architecture.md](arc
 | `request_publish` | M4 ✅ | C | phát hành snapshot mới nhất sau khi gate đạt (preview + confirm_token): staging → published ngay; production → requested, chờ lead duyệt (approve_publish / console) |
 | `rollback_release` | M4 ✅ | C | quay về bản production trước đó (< 1 phút): bản đang chạy → rolled_back, bản trước phát hành lại |
 
-### 5.5 Platform (`/mcp/platform/`)
-`list_operators`, `list_promotion_candidates` (tri thức + logic), `propose_l1_change`, `run_regression_all` — M5.
+### 5.5 Platform (`/mcp/platform/` — chỉ role lead)
+| Tool | Mốc | Cờ | Mô tả |
+|---|---|---|---|
+| `list_operators` | M5 ✅ | RO | danh mục nhà xe: item active, bot, đề xuất đang chờ, bản production đang chạy |
+| `list_promotion_candidates` | M5 ✅ | RO | ứng viên promote: tri thức (review PROMOTE đang mở — observation ≥ 3 nhà xe) + logic (họ ≥ 3 nhà xe hook/custom), kèm danh sách nhà xe |
+| `propose_l1_change` | M5 ✅ | C | lead đề xuất thêm/sửa thông lệ L1 (preview + confirm_token) → item L1 pending + review chờ duyệt như mọi đề xuất |
+| `run_regression_all` | M5 | | chạy song song, báo cáo theo bot |
 
 ## 6. Resources
 

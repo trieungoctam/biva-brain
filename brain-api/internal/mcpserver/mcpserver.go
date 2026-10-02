@@ -282,6 +282,7 @@ func (s *Server) newPlatformServer() *mcp.Server {
 		Instructions: "BIVA Brain — tri thức L0/L1 (nền tảng, ngành). Chỉ dành cho lead.",
 	})
 	addPlatformTools(srv, s.db)
+	s.addPlatformMgmt(srv)
 	return srv
 }
 
