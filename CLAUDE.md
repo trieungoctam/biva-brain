@@ -57,74 +57,39 @@ cd ai-worker && uv run pytest -q
 - Bí mật (Gemini key, token) chỉ qua biến môi trường — không ghi vào repo/log. Đường dẫn `/f/` không vào trace.
 - Không thêm tên/ID model AI vào commit, code, docs.
 
-## Trạng thái (01/10/2026)
+## Trạng thái (02/10/2026) — M0–M5 HẾT STORY CODE
 
-- M0, M1 xong phần code (CI xanh). Còn chờ chủ dự án: dữ liệu pilot thật + golden set (DYN-110/112), duyệt
-  `kb/` (DYN-111) và `kb/L1/xe-khach/entities.yaml` (DYN-113), URL https để thử ChatGPT connector (DYN-115).
-  DYN-65 (prompt build_bot/process_update) In Progress tới khi chạy trên pilot #1 thật.
-- M2 đã làm: stale/expire/list_stale/refresh_bot (E2.3), export_bot + lưu object storage `download_url`
-  (E2.4), coverage/generate_questions/form/onboard_operator + `refresh_pages` (E2.1 — 5 trang Operator Profile
-  `biva://operator/{id}/pages/<slug>.md`, job scheduler mỗi phút theo version tri thức),
-  entity alias (E2.2 — thiếu trigram/co-occurrence + đo ≥95%, DYN-70).
-- E2.5 tri thức logic v1 **đã chốt: repo riêng `github.com/trieungoctam/biva-integrations`** (clone ở
-  `../biva-integrations`). S2.5.1 xong: schema hợp đồng `contracts/schemas/logic/{module,profile,cases}.schema.json`
-  (fixture test cả Go ⇄ Python) + 3 module chuẩn đầu tiên (`fare.standard`, `booking.hold`,
-  `schedule.sync_excel`, CI riêng chạy cases). S2.5.2 xong: job `index.code` (ai-worker `logic_sync.py`)
-  sync repo → `logic_modules/logic_profiles/logic_param_sources/logic_tests/code_chunks/logic_syncs`
-  (migration 000015); chunk theo hàm/lớp gắn commit (commit mới xoá chunk cũ); no-op theo HEAD;
-  scheduler tick mỗi phút khi đặt `BIVA_INTEGRATIONS_REPO`; profile/case của nhà xe chưa onboard bị
-  bỏ qua và retry ở tick sau. S2.5.3 xong: seed 16 feature `kb/L1/xe-khach/features.yaml`
-  (schema kb/features + fixture 2 phía; `kb sync` upsert `logic_features`, rời bundle → deprecated) +
-  job `logic.spec` (ai-worker `logic_spec.py`, LLM purpose `logic`): ánh xạ tri thức đã duyệt vào feature
-  catalog → `logic_specs` (migration 000016), feature lạ → `proposed_features` chờ review; embedding
-  rules_text qua TEI (optional). S2.5.4 xong: `internal/logic` + tools MCP `get_operator_logic`,
-  `get_logic_spec`, `find_similar_operators` (0.5 feature IDF + 0.3 rules + 0.2 params, giải thích
-  trùng/thiếu/khác + param lệch), `compare_logic`. S2.5.5–5.7 xong: `plan_logic_implementation` (bậc thấp nhất đủ
-  dùng, params_draft), `record_decision` (ADR, bảng logic_decisions — migration 000017),
-  `propose_logic_profile` (job `logic.propose`: validate + custom chặn khi thiếu ADR; có
-  BIVA_INTEGRATIONS_TOKEN thì tạo PR, không thì trả nội dung tạo PR tay), `NO_CAPABILITY` trong
-  validate_artifact (tool khai báo `capability:` trong tool_spec phải có profile active),
-  prompt `/implement_operator_logic`. E2.5 đủ nội dung M2 — đo trên pilot thật chờ DYN-110.
-- M3 đã làm (S3.1.1 graph + S3.1.2 temporal): migration 000018 (`entities.ext_id`, `item_entities`);
-  `kb sync` điền 39 entity L1; job `index.items` nhận diện entity trong item text (ranh giới token);
-  recall thêm 2 nhánh vào RRF — `graph` (query nhắc thực thể) và `temporal` (có valid_at rõ ràng →
-  item mùa hẹp chứa ngày đi thắng item quanh năm). AC đo trên golden set chờ DYN-112. S3.1.3 rerank xong: `recall.TEIRerank`
-  (/rerank bge-reranker-v2-m3), top ≤50 sau RRF, ngân sách 80ms, quá hạn/lỗi → giữ RRF + `degraded`;
-  bật bằng `BIVA_RERANK_URL` (compose: cùng profile rerank).
-- M3 E3.2.1+E3.2.2 xong: migration 000019 (`observation_sources`, review nhận `PROMOTE`); job
-  `consolidate` (gom item active theo scope+topic thành `kind=observation`, 1 facet/observation,
-  near-dup bỏ trùng, nguồn ghi observation_sources; observation đã lọc khỏi pack/recall) — enqueue
-  tự động sau mỗi apply_review; job `promote` (scheduler 5 phút/lần): cụm observation giống nhau
-  (cosine ≥0.7 / jaccard câu ≥0.45×0.9) ở ≥3 nhà xe → review PROMOTE kèm danh sách nhà xe, duyệt
-  qua apply_review → item L1 active. S3.2.3 + S3.4.3 xong: migration 000020
-  (`logic_families`, `logic_similarity`); job promote gom họ logic (union-find theo trùng feature
-  ≥ 0.6, centroid = feature chung, recommended = mode phổ biến nhất; `promote_candidate` khi ≥ 3 nhà xe
-  hook/custom) + cache điểm tương đồng mọi cặp; tool `list_logic_families`. Phần tương đồng code
-  (embedding chunks) và behavior bổ sung khi có dữ liệu nhiều nhà xe.
-- M3 E3.3 xong (CONTRADICTION): job `validate` (ai-worker `validate_llm.py`, LLM purpose
-  `validate`) chạy nền sau mỗi validate_artifact PASS — Go enqueue tự động; detect mâu thuẫn
-  fact (chỉ nhận confident), ghi lỗi CONTRADICTION + dòng + item, hạ valid→invalid, có audit;
-  không mâu thuẫn → đánh dấu đã kiểm. Live test Gemini thật (skip CI) đo recall ≥90% trên 10
-  case cài sẵn (5 mâu thuẫn / 5 hợp lệ); AC đo đầy đủ cần GEMINI key thật.
-- M3 S3.4.1 sandbox xong: `biva_worker/sandbox.py` — process riêng (`-I`), chặn socket ở bootstrap,
-  import whitelist (chỉ module thuần), purge sys.modules nguy hiểm, `open` bị thay bằng stub,
-  RLIMIT_CPU/AS/NOFILE/NPROC + timeout cha (kill nhóm) + cap output 64KB; kết quả JSON một dòng.
-  Test: chặn socket/urllib/os.system/subprocess/open, timeout vòng lặp vô hạn, RAM (Linux),
-  module cho phép chạy đúng. macOS bỏ qua RLIMIT_AS → test RAM skip trên darwin, Linux (CI) chạy.
-- M3 S3.4.2 xong: job `logic.examples` + tool `run_examples_against` (async, operation_id) —
-  chạy logic_tests của nhà xe trên code ứng viên (repo biva-integrations: module chuẩn + hook/custom
-  + params từ profile) trong sandbox; % pass + case fail từng ứng viên, mode api/handoff bỏ qua;
-  code ghép bằng glue wire hook vào đúng tham số entry.
-- M3 S3.4.4 xong: `add_logic_test` (out HOẶC error, note, source item) / `list_logic_tests`;
-  CI repo biva-integrations chạy cases.yaml module bằng pytest (đã có từ S2.5.1). E3.4 đủ 4/4 story.
-- M3 E3.5.1–5.3 xong: migration 000021 (`test_cases`, `test_runs`); reference executor
-  (`biva_worker/executor.py` — LLM purpose `interactive` + tool `query_data` SQL thật, tối đa 1 vòng
-  tool, verdict must_mention/must_not_say/must_call_tool); job `bot.tests` (sinh test từ tri thức —
-  thay bản generated cũ, chạy qua executor, ghi test_runs) + `bot.chat` (sandbox 1 lượt); tools MCP
-  `run_tests` / `sandbox_chat` (async). Đo trên pilot chờ GEMINI key; 👎→lesson/gap: khi có UAT thật.
-- M3 E3.6 xong: job `bot.reflect` (LLM purpose `interactive`): câu hỏi phân tích + knowledge scope,
-  mỗi nhận định kèm [[id]] — kiểm id hợp lệ + cảnh báo câu số liệu thiếu trích dẫn; tool `reflect`
-  (async). `compare_with_industry` (RO, đồng bộ): observation L2 vs L1 theo topic. **M3 hết story
-  code** — các AC đo (golden set, 3 pilot, UAT) chờ dữ liệu thật + GEMINI key.
+Toàn bộ story code của lộ trình M0–M5 đã xong, CI xanh (Go 21 pkg + Python 351 test + compose-smoke).
+Chi tiết từng story nằm trong comment các issue Linear (kèm link CI). Tóm tắt theo epic:
+
+- **M0–M1** nền móng + tri thức + build v1 (queue, MCP + auth, ingest/review, recall, knowledge pack,
+  artifact + validate tĩnh, prompts).
+- **M2** onboarding (coverage/questions/form/`refresh_pages`), stale → refresh, export lên object storage,
+  **tri thức logic trọn E2.5**: repo riêng `github.com/trieungoctam/biva-integrations` (clone `../biva-integrations`)
+  + schema hợp đồng `contracts/schemas/logic/*`, job `index.code` sync repo, feature catalog L1
+  (`kb/L1/xe-khach/features.yaml`), job `logic.spec`, tools `get_operator_logic/get_logic_spec/
+  find_similar_operators/compare_logic/plan_logic_implementation/record_decision/propose_logic_profile`,
+  NO_CAPABILITY, prompt `/implement_operator_logic`.
+- **M3** recall graph/temporal/rerank; consolidate + promote tri thức & logic (PROMOTE qua review,
+  logic_families); CONTRADICTION (LLM nền, live test chờ key); sandbox chống mạng; `run_examples_against`;
+  add/list_logic_tests; reference executor + `run_tests`/`sandbox_chat` + sinh test; `reflect` +
+  `compare_with_industry`.
+- **M4** `check_release_gate`; `request_publish` (staging tự động, production chờ lead) +
+  `rollback_release` < 1 phút; `add_lesson` + prompt `/review_quality`; bộ test chống prompt injection.
+- **M5** platform tools: `list_operators`, `list_promotion_candidates`, `propose_l1_change`,
+  `impact_of_change`, `run_regression_all`.
+
+Việc còn treo (đều ngoài code — cần chủ dự án):
+1. **Dữ liệu pilot thật + golden set** (DYN-110/112) — đo mọi AC số liệu (recall, ≥90% parse, ≥95% alias,
+   spec 3 pilot, demo M2/M3).
+2. **GEMINI key** (`BIVA_TEST_GEMINI_API_KEY`) — chạy live test CONTRADICTION (recall ≥90%) và đo
+   executor/reflect thật.
+3. **Máy amd64 hoặc RAM Docker >10GB** — TEI (semantic + rerank) không chạy được trên laptop này (OOM).
+4. **URL https công khai** (DYN-115) — thử ChatGPT connector (OAuth đã có).
+5. **RLS (S4.4.1)** — hoãn có chủ đích: app đang chạy role owner nên RLS sẽ bị bypass (giả an toàn);
+   làm đúng cần role riêng + SET LOCAL mỗi request (thay đổi kiến trúc connection).
+6. Khi có pilot: chạy `/onboard_operator` → `/build_bot` → `run_tests` → `check_release_gate` →
+   `request_publish`; DYN-65/70/77… chuyển Done khi AC đo được.
+
 - Linear: workspace dpos, project "BIVA Brain"; mỗi story xong thì comment kết quả + link CI rồi chuyển Done
   (chưa đạt hết AC thì để In Progress và ghi rõ phần thiếu).
