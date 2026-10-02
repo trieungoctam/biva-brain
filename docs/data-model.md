@@ -13,7 +13,7 @@ Thiết kế dữ liệu của BIVA Brain trên PostgreSQL 16 (pgvector, pg_trgm
    có CHECK để tầng và scope luôn khớp nhau.
 5. **Data vận hành tách khỏi tri thức mềm**: giá/lịch/điểm đón ở bảng riêng, bot đọc qua tool.
 6. **Không lưu thông tin khách hàng**: transcript (sandbox/UAT, sau này từ runtime) ẩn danh và có `expires_at`.
-7. **Mọi thứ AI viết đều truy về tri thức**: `artifact_citations` và `logic_param_sources` là cơ sở để đánh dấu stale.
+7. **Mọi thứ AI viết đều truy về tri thức**: `artifact_citations` và `logic_param_sources (stale qua migration 000024 khi item nguồn rời active)` là cơ sở để đánh dấu stale.
 
 ## Nhóm bảng
 

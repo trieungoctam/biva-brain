@@ -70,7 +70,10 @@ def clusters(observations: list[dict]) -> list[list[dict]]:
 
     for i in range(len(observations)):
         for j in range(i + 1, len(observations)):
+            # Khác topic = khác mặt thông lệ: không gộp dù câu giống hệt (đo lường mục 5 review).
             if observations[i]["operator"] == observations[j]["operator"]:
+                continue
+            if observations[i]["topic"] != observations[j]["topic"]:
                 continue
             both_emb = bool(observations[i]["embedding"]) and bool(observations[j]["embedding"])
             thr = COSINE_SAME if both_emb else JACCARD_SAME
@@ -106,7 +109,7 @@ async def promote(pool: asyncpg.Pool) -> dict[str, Any]:
         created = 0
         for cluster in clusters(observations):
             topic = cluster[0]["topic"]
-            ops = [o["operator"] for o in cluster]
+            ops = sorted({o["operator"] for o in cluster})  # dedupe: cùng nhà xe nhiều observation
             rep = cluster[0]
             key = f"l1.promoted.{topic}.{rep['id'][:8]}"
             already = await con.fetchval(

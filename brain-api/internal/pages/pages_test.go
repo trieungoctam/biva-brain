@@ -183,3 +183,85 @@ func TestRefreshAndRead(t *testing.T) {
 		t.Fatalf("slug lạ phải ErrUnknownSlug, được %v", err)
 	}
 }
+
+// Item có hiệu lực theo NGÀY (giá Tết, chính sách từ 01/11) không bump knowledge_version —
+// trang dựng từ hôm trước (giờ VN) vẫn phải được coi outdated và dựng lại.
+func TestRefreshRedoesPagesAfterVNDayChange(t *testing.T) {
+	pool := testdb.Pool(t)
+	ctx := context.Background()
+	sfx := fmt.Sprintf("%d", time.Now().UnixNano())
+	op := "pd" + sfx
+	if _, err := pool.Exec(ctx, `INSERT INTO operators (id, name) VALUES ($1, 'P')`, op); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { pool.Exec(ctx, `DELETE FROM operators WHERE id = $1`, op) })
+	if _, err := pool.Exec(ctx, `INSERT INTO items (layer, operator_id, kind, topic, key, text, status)
+		VALUES (2, $1, 'policy', 'fare', 'fare.x', 'Giá cơ sở 320k', 'active')`, op); err != nil {
+		t.Fatal(err)
+	}
+	builder := &pack.Builder{DB: pool, Topics: []pack.TopicSpec{{ID: "fare", Title: "Giá vé", Required: true}}}
+
+	// Dựng trang bình thường, rồi đẩy refreshed_at về hôm trước (giờ VN).
+	if _, err := Refresh(ctx, pool, builder, kb.Template{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE operator_pages SET refreshed_at = now() - interval '25 hours'
+		WHERE operator_id = $1`, op); err != nil {
+		t.Fatal(err)
+	}
+	// Version tri thức KHÔNG đổi — Refresh vẫn phải chọn nhà xe này (điều kiện ngày VN).
+	rows, err := pool.Query(ctx, `
+		SELECT o.id FROM operators o
+		LEFT JOIN knowledge_versions g ON g.scope = '*'
+		LEFT JOIN knowledge_versions v ON v.scope = o.id
+		WHERE concat(COALESCE(g.version, 0), '.', COALESCE(v.version, 0)) <>
+		      COALESCE((SELECT MAX(knowledge_version) FROM operator_pages p WHERE p.operator_id = o.id), '')
+		   OR COALESCE((SELECT MAX(p.refreshed_at) FROM operator_pages p WHERE p.operator_id = o.id), to_timestamp(0))
+		      < date_trunc('day', now() AT TIME ZONE 'Asia/Ho_Chi_Minh') AT TIME ZONE 'Asia/Ho_Chi_Minh'`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, id)
+	}
+	rows.Close()
+	found := false
+	for _, id := range ids {
+		if id == op {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("nhà xe có trang dựng hôm trước phải nằm trong danh outdated (điều kiện ngày VN)")
+	}
+	// Read cũng không dùng cache cũ: sameVNDay sai → rebuild.
+	if _, err := pool.Exec(ctx, `UPDATE operator_pages SET refreshed_at = now() - interval '25 hours'
+		WHERE operator_id = $1`, op); err != nil {
+		t.Fatal(err)
+	}
+	md, err := Read(ctx, pool, builder, kb.Template{}, op, "chinh-sach")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if md == "" {
+		t.Fatal("Read phải dựng lại trang thay vì trả rỗng")
+	}
+	// sameVNDay: hai mốc trong cùng ngày VN (dù khác múi gốc) phải bằng nhau.
+	vnA := time.Date(2026, 10, 31, 23, 30, 0, 0, time.UTC) // = 01/11 06:30 sáng giờ VN
+	vnB := time.Date(2026, 11, 1, 2, 0, 0, 0, time.FixedZone("ICT", 7*3600))
+	if !sameVNDay(vnA, vnB) {
+		t.Fatal("hai mốc sáng sớm 01/11 theo giờ VN phải cùng ngày VN")
+	}
+	if !sameVNDay(vnB, vnB.Add(time.Hour)) {
+		t.Fatal("02:00 → 03:00 cùng ngày VN")
+	}
+	vnC := vnB.Add(26 * time.Hour) // sang 02/11
+	if sameVNDay(vnB, vnC) {
+		t.Fatal("mốc cách 26 tiếng phải khác ngày VN")
+	}
+}

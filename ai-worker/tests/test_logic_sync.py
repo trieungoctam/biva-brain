@@ -202,3 +202,91 @@ def test_yaml_sai_schema_bao_loi_ro(tmp_path):
     doc.pop("entrypoint")
     with pytest.raises(PermanentError, match="entrypoint"):
         logic_sync.validate_or_raise("logic.module", doc, "modules/fare/mini/module.yaml")
+
+
+@needs_db
+def test_item_nguon_doi_profile_logic_stale():
+    """Regression (migration 000024): item là nguồn tham số của profile bị supersede/
+    expire/rút → profile chuyển 'stale'; đồng bộ lại (merge PR) → 'active'."""
+    import asyncio
+    import uuid
+
+    import asyncpg
+
+    from biva_worker.runner import init_connection
+
+    async def t() -> None:
+        pool = await asyncpg.create_pool(DB_URL, init=init_connection)
+        op = "st" + uuid.uuid4().hex[:8]
+        await pool.execute("INSERT INTO operators (id, name) VALUES ($1, 'S')", op)
+        try:
+            item = await pool.fetchval(
+                """INSERT INTO items (layer, operator_id, kind, topic, key, text, value, status)
+                   VALUES (2, $1, 'data', 'fare', 'fare.sg_dl.base', 'Giá cơ sở 320k', '{}', 'active')
+                   RETURNING id::text""",
+                op,
+            )
+            prof = await pool.fetchval(
+                """INSERT INTO logic_profiles (operator_id, capability, mode, module_id, commit)
+                   VALUES ($1, 'fare.standard', 'config', 'fare.standard', 'deadbeef')
+                   RETURNING id::text""",
+                op,
+            )
+            await pool.execute(
+                """INSERT INTO logic_param_sources (profile_id, param_path, item_id)
+                   VALUES ($1::uuid, 'base_fare', $2::uuid)""",
+                prof,
+                item,
+            )
+            # Item nguồn bị thay: cả hai bản ghi trong MỘT transaction (constraint
+            # items_scope_key_validity hoãn; trigger stale cũng hoãn tới commit).
+            # Constraint items_scope_key_validity là immediate: rút bản cũ ra trước
+            # (id bản mới sinh sẵn ở client để gắn superseded_by), rồi mới thêm bản mới.
+            new_item = str(uuid.uuid4())
+            async with pool.acquire() as con:
+                async with con.transaction():
+                    # EXCLUDE items_scope_key_validity là immediate và chỉ áp item active:
+                    # 1) thêm bản mới ở pending, 2) supersede bản cũ, 3) active bản mới.
+                    # Trigger stale (deferred) thấy trạng thái cuối cùng khi commit.
+                    await con.execute(
+                        """INSERT INTO items (id, layer, operator_id, kind, topic, key, text, value, status)
+                           VALUES ($1::uuid, 2, $2, 'data', 'fare', 'fare.sg_dl.base', 'Giá cơ sở 350k',
+                                   '{}', 'pending')""",
+                        new_item,
+                        op,
+                    )
+                    await con.execute(
+                        "UPDATE items SET status = 'superseded', superseded_by = $2::uuid WHERE id = $1::uuid",
+                        item,
+                        new_item,
+                    )
+                    await con.execute("UPDATE items SET status = 'active' WHERE id = $1::uuid", new_item)
+            st = await pool.fetchval("SELECT status FROM logic_profiles WHERE id = $1::uuid", prof)
+            assert st == "stale", f"item nguồn superseded mà profile vẫn {st}"
+
+            # Profile khác của cùng nhà xe không dính (không lấy tham số từ item này).
+            await pool.execute(
+                """INSERT INTO logic_profiles (operator_id, capability, mode, module_id, commit)
+                   VALUES ($1, 'booking.hold', 'config', 'booking.hold', 'deadbeef')""",
+                op,
+            )
+            n = await pool.fetchval(
+                "SELECT count(*) FROM logic_profiles WHERE operator_id = $1 AND status = 'active'", op
+            )
+            assert n == 1, "chỉ profile không liên quan còn active"
+
+            # Đồng bộ lại (upsert của logic_sync) hồi phục về active.
+            await pool.execute(
+                """INSERT INTO logic_profiles (operator_id, capability, mode, module_id, commit, synced_at)
+                   VALUES ($1, 'fare.standard', 'config', 'fare.standard', 'beefcafe', now())
+                   ON CONFLICT (operator_id, capability) DO UPDATE SET
+                       commit = EXCLUDED.commit, status = 'active', synced_at = now()""",
+                op,
+            )
+            st = await pool.fetchval("SELECT status FROM logic_profiles WHERE id = $1::uuid", prof)
+            assert st == "active"
+        finally:
+            await pool.execute("DELETE FROM operators WHERE id = $1", op)
+            await pool.close()
+
+    asyncio.run(t())

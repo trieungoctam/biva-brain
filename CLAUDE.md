@@ -30,6 +30,14 @@ snapshot_id, gate chỉ nhận test của đúng snapshot mới nhất (snapshot
 (d) lỗi DB khi ghi kết quả job từng giết slot worker vĩnh viễn — giờ bắt ở ranh giới slot;
 (e) run_code/git-clone đồng bộ từng chặn event loop → hết lease 60s bị claim lại — sang to_thread;
 (f) clone lỗi để lộ tmpdir; (g) goroutine ticker scheduler tích luỹ qua từng phiên leader.
+Vòng 5 (3 medium cuối cùng sửa được không cần golden set): migration 000024 — item nguồn của
+tham số profile (logic_param_sources) bị supersede/expire/rút giờ đánh profile `stale` ngay
+trong transaction (mở rộng items_mark_stale; logic_sync upsert hồi phục 'active' khi merge PR —
+test hồi quy test_logic_sync); promote chỉ gộp observation CÙNG topic + dedupe operators
+(test: 2 nhà xe topic này + 1 nhà xe topic kia không thành đề xuất); operator_pages outdated
+thêm điều kiện ngày VN (item hiệu lực theo ngày không bump version — Refresh chọn lại nhà xe
+có trang dựng trước 00:00 VN, Read không dùng cache cũ, sameVNDay).
+
 Vòng 4 (sửa nốt medium máy móc được): khoảng hiệu lực đổi sang NỬA MỞ [valid_from, valid_to)
 trừ 4 chỗ Go (`valid_to > T`) + executor Python (cast ngày theo Asia/Ho_Chi_Minh, ngày mặc định
 giờ VN thay vì UTC container — test hồi quy cả hai phía); consolidate lấy advisory lock theo
@@ -38,10 +46,10 @@ scope (chặn lost-update mất câu đã đánh dấu consolidated); recall loa
 lỗi DB khác báo lên (builder không bị báo "chưa có" khi DB lỗi); index.code HEAD không đổi vẫn
 hoàn thiện embedding chunk thiếu (TEI hồi phục là tự chữa); Similar/Compare nạp embedding phía
 spec mình — cosine chạy thật thay vì luôn fallback Jaccard.
-Backlog medium CÒN LẠI (chờ golden set/pilot): stale logic_param_sources (trigger khi item nguồn đổi), chọn target review nhầm bản tương lai,
-promote gom observation khác topic + chép câu riêng nhà xe đại diện lên L1 (cần provenance theo
-mệnh đề), pages không refresh khi sang ngày hiệu lực, propose_l1_change không sửa được key L1
-đang tồn tại, ingest retry bỏ qua bước dở khi gặp document trùng.
+Backlog CÒN LẠI (cần golden set/pilot hoặc đổi semantics review): chọn target review nhắm bản
+tương lai thay vì bản đang áp dụng, promote chép nguyên câu nhà xe đại diện (câu riêng nhà xe đó
+lên L1 — cần provenance theo mệnh đề), propose_l1_change không sửa được key L1 đang tồn tại,
+ingest retry bỏ qua bước dở khi gặp document trùng.
 
 Vòng 2 (sau review) sửa nốt 3 low/medium còn lại: export key thêm nonce (URL không đoán được),
 resource OAuth whitelist chặt (chặn `/mcp/operator/` rỗng + `../`), register hỗ trợ

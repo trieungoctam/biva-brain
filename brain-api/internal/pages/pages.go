@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -81,13 +82,18 @@ func Render(p pack.Pack, tmpl kb.Template) []Page {
 // Refresh (job refresh_pages): dựng lại trang cho mọi nhà xe có version tri thức khác bản đã lưu.
 // Nhà xe dựng lỗi được bỏ qua (log, thử lại lượt sau) để không chặn các nhà xe khác. Trả số nhà xe đã dựng.
 func Refresh(ctx context.Context, db *pgxpool.Pool, b *pack.Builder, tmpl kb.Template) (int, error) {
+	// Tri thức có hiệu lực theo NGÀY (giá Tết, chính sách từ 01/11…): item active từ mai không
+	// đổi knowledge_version hôm nay — sang ngày mai phải dựng lại trang dù version trùng.
+	// Vì thế outdated = version khác HOẶC trang cuối dựng trước 00:00 giờ Việt Nam hôm nay.
 	rows, err := db.Query(ctx, `
 		SELECT o.id, concat(COALESCE(g.version, 0), '.', COALESCE(v.version, 0))
 		FROM operators o
 		LEFT JOIN knowledge_versions g ON g.scope = '*'
 		LEFT JOIN knowledge_versions v ON v.scope = o.id
 		WHERE concat(COALESCE(g.version, 0), '.', COALESCE(v.version, 0)) <>
-		      COALESCE((SELECT MAX(knowledge_version) FROM operator_pages p WHERE p.operator_id = o.id), '')`)
+		      COALESCE((SELECT MAX(knowledge_version) FROM operator_pages p WHERE p.operator_id = o.id), '')
+		   OR COALESCE((SELECT MAX(p.refreshed_at) FROM operator_pages p WHERE p.operator_id = o.id), to_timestamp(0))
+		      < date_trunc('day', now() AT TIME ZONE 'Asia/Ho_Chi_Minh') AT TIME ZONE 'Asia/Ho_Chi_Minh'`)
 	if err != nil {
 		return 0, err
 	}
@@ -137,14 +143,16 @@ func Read(ctx context.Context, db *pgxpool.Pool, b *pack.Builder, tmpl kb.Templa
 	if !known {
 		return "", ErrUnknownSlug
 	}
-	if pageMD, ver, ok, err := load(ctx, db, operatorID, slug); err != nil {
+	if pageMD, ver, at, ok, err := load(ctx, db, operatorID, slug); err != nil {
 		return "", err
 	} else if ok {
 		cur, err := pack.Version(ctx, db, operatorID)
 		if err != nil {
 			return "", err
 		}
-		if ver == cur {
+		// Cùng version nhưng dựng từ hôm trước (giờ VN) vẫn phải dựng lại: item có thể vừa có
+		// hiệu lực theo ngày mà không bump version.
+		if ver == cur && sameVNDay(at, time.Now()) {
 			return pageMD, nil
 		}
 	}
@@ -165,16 +173,25 @@ func Read(ctx context.Context, db *pgxpool.Pool, b *pack.Builder, tmpl kb.Templa
 }
 
 // load đọc một trang đã lưu; ok = false khi chưa có trang nào của slug.
-func load(ctx context.Context, db *pgxpool.Pool, operatorID, slug string) (md, version string, ok bool, err error) {
-	err = db.QueryRow(ctx, `SELECT markdown, knowledge_version FROM operator_pages WHERE operator_id = $1 AND slug = $2`,
-		operatorID, slug).Scan(&md, &version)
+func load(ctx context.Context, db *pgxpool.Pool, operatorID, slug string) (md, version string, at time.Time, ok bool, err error) {
+	err = db.QueryRow(ctx, `SELECT markdown, knowledge_version, refreshed_at
+		FROM operator_pages WHERE operator_id = $1 AND slug = $2`,
+		operatorID, slug).Scan(&md, &version, &at)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return "", "", false, nil
+		return "", "", time.Time{}, false, nil
 	}
 	if err != nil {
-		return "", "", false, err
+		return "", "", time.Time{}, false, err
 	}
-	return md, version, true, nil
+	return md, version, at, true, nil
+}
+
+// sameVNDay: hai mốc thời gian có nằm trong cùng một ngày lịch theo giờ Việt Nam.
+func sameVNDay(a, b time.Time) bool {
+	vn := time.FixedZone("ICT", 7*3600)
+	ay, am, ad := a.In(vn).Date()
+	by, bm, bd := b.In(vn).Date()
+	return ay == by && am == bm && ad == bd
 }
 
 // store upsert cả 5 trang của một nhà xe trong một transaction (các trang luôn cùng knowledge_version).

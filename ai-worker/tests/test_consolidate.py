@@ -212,3 +212,36 @@ def test_apply_review_enqueues_consolidate():
             await pool.execute("DELETE FROM operators WHERE id = $1", op)
 
     asyncio.run(t())
+
+
+@needs_db
+def test_promote_khac_topic_khong_gop():
+    """Regression (review mục 5): observation giống nhau nhưng khác topic không được gộp
+    thành một thông lệ L1 của topic bất kỳ."""
+    import asyncio
+
+    async def t() -> None:
+        pool = await asyncpg.create_pool(DB_URL, init=init_connection)
+        ops = [f"tp{i}{uuid.uuid4().hex[:8]}" for i in range(3)]
+        for op in ops:
+            await pool.execute("INSERT INTO operators (id, name) VALUES ($1, 'T')", op)
+        try:
+            text = "Giá vé đã bao gồm 1 chai nước suối"
+            for i, op in enumerate(ops):
+                topic = "amenities" if i < 2 else "fare"
+                await pool.execute(
+                    """INSERT INTO items (layer, operator_id, kind, topic, text, status)
+                       VALUES (2, $1, 'observation', $2, $3, 'active')""",
+                    op,
+                    topic,
+                    text,
+                )
+            created = await pjob.promote(pool)
+            # Chỉ 2 nhà xe cùng topic amenities — chưa đủ MIN_OPERATORS (3) → không đề xuất nào.
+            assert created["counts"]["promoted_proposals"] == 0, created
+        finally:
+            for op in ops:
+                await pool.execute("DELETE FROM operators WHERE id = $1", op)
+            await pool.close()
+
+    asyncio.run(t())
