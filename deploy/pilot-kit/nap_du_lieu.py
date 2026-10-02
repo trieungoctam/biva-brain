@@ -37,6 +37,42 @@ def _fold(s: str) -> str:
     return re.sub(r"[^a-z0-9]+", "_", s).strip("_")
 
 
+# Self-check: _fold phải khớp chuẩn textnorm của Brain (contracts/textnorm/keys.jsonl).
+# Chạy mỗi lần khởi động — bắt sớm Python/Unicode lạ trên máy nạp (vd Windows + Excel CSV).
+_FOLD_CHECK = [
+    ("Sài Gòn - Đà Lạt", "sai_gon_da_lat"),
+    ("Giường nằm", "giuong_nam"),
+    ("Điều kiện", "dieu_kien"),
+    ("Quận 1 → Đà Lạt (VIP)", "quan_1_da_lat_vip"),
+    ("HOTLINE 1900 6067", "hotline_1900_6067"),
+]
+
+
+def _self_check() -> None:
+    bad = [(raw, _fold(raw), want) for raw, want in _FOLD_CHECK if _fold(raw) != want]
+    if bad:
+        sys.exit("lỗi chuẩn hoá key (Python/Unicode của máy này?): " + "; ".join(
+            f"{r!r}→{g!r} (muốn {w!r})" for r, g, w in bad))
+
+
+def policy_items(rows: list[dict]) -> list[dict]:
+    items = []
+    for r in rows:
+        topic = (r["topic"] or "").strip().lower()
+        text = (r["text"] or "").strip()
+        if not (topic and text):
+            continue
+        raw_key = (r.get("key") or "").strip() or text
+        parts = [_fold(p) for p in raw_key.split(".") if _fold(p)]
+        if parts and parts[0] == topic:  # key đã có topic ở đầu — không lặp lại
+            parts = parts[1:]
+        key = ".".join([topic] + parts)
+        items.append({
+            "kind": "policy", "topic": topic, "key": key, "text": text,
+        })
+    return items
+
+
 def _read_csv(path: Path) -> list[dict]:
     with path.open(encoding="utf-8-sig", newline="") as f:  # BOM từ Excel
         rows = [r for r in csv.DictReader(f) if any((v or "").strip() for v in r.values())]
@@ -132,11 +168,14 @@ def main() -> None:
     ap.add_argument("files", nargs="+", type=Path,
                     help="bang_gia.csv và/hoặc lich_chay.csv")
     a = ap.parse_args()
+    _self_check()
 
     for f in a.files:
         rows = _read_csv(f)
         name = f.name.lower()
-        if "gia" in name:
+        if "chinh_sach" in name or "policy" in name:
+            items, source = policy_items(rows), "other"
+        elif "gia" in name:
             items, source = fare_items(rows), "excel"
         elif "lich" in name or "schedule" in name:
             items, source = schedule_items(rows), "excel"
