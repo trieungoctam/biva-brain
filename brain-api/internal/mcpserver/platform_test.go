@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"context"
+	"strings"
 	"testing"
 )
 
@@ -199,14 +200,19 @@ func TestApprovePublish(t *testing.T) {
 	}
 	defer s.Close()
 
-	relID := rel() // bản production requested duy nhất — preview phải thấy đúng bản này
-	// Preview: thấy bản chờ + token.
+	relID := rel() // bản production requested duy nhất
+	// Bước 1 (liệt kê, không phát token): thấy đúng bản.
 	isErr, out, raw := call(t, s, "approve_publish", map[string]any{})
 	if isErr {
-		t.Fatalf("preview lỗi: %v", raw)
+		t.Fatalf("liệt kê lỗi: %v", raw)
 	}
 	if len(out["pending"].([]any)) != 1 {
-		t.Fatalf("pending = %+v", out)
+		t.Fatalf("pending = %+v", out["pending"])
+	}
+	// Bước 2: preview đúng release_id → token gắn đúng bản đó.
+	isErr, out, raw = call(t, s, "approve_publish", map[string]any{"release_id": relID})
+	if isErr {
+		t.Fatalf("preview lỗi: %v", raw)
 	}
 	na := out["next_actions"].([]any)[0].(string)
 	i := indexStr(na, "confirm_token=")
@@ -237,5 +243,67 @@ func TestApprovePublish(t *testing.T) {
 	if isErr, _, _ = call(t, s, "approve_publish", map[string]any{
 		"release_id": relID, "confirm_token": "ct_khongtontai"}); !isErr {
 		t.Fatal("id đã published phải lỗi")
+	}
+}
+
+// Token approve_publish gắn đúng release_id — duyệt release KHÁC bằng token của bản này phải bị chặn.
+func TestApprovePublishTokenBindsRelease(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	bot := f.opA + ":zalo"
+	if _, err := f.pool.Exec(ctx, `INSERT INTO bots (id, operator_id, channel) VALUES ($1, $2, 'zalo')`,
+		bot, f.opA); err != nil {
+		t.Fatal(err)
+	}
+	mk := func() string {
+		var id string
+		if err := f.pool.QueryRow(ctx, `INSERT INTO snapshots (bot_id, operator_id, version,
+			artifact_versions, definition, created_by) VALUES ($1, $2, (SELECT COALESCE(max(version),0)+1
+			FROM snapshots WHERE bot_id=$1), '{}', '{}', 't') RETURNING id::text`, bot, f.opA).Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		var rel string
+		if err := f.pool.QueryRow(ctx, `INSERT INTO releases (operator_id, bot_channel, snapshot_id,
+			snapshot_ver, stage, status, requested_by)
+			SELECT $1, 'zalo', s.id, s.version, 'production', 'requested', 'ai:t' FROM snapshots s
+			WHERE s.id=$2::uuid RETURNING id::text`, f.opA, id).Scan(&rel); err != nil {
+			t.Fatal(err)
+		}
+		return rel
+	}
+	t.Cleanup(func() { f.pool.Exec(ctx, `DELETE FROM releases WHERE operator_id = $1`, f.opA) })
+	s, err := connect(t, f.url+"/mcp/platform/", f.leadTok)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	r1, r2 := mk(), mk()
+	// Bước 1 (liệt kê): không có token.
+	isErr, out, _ := call(t, s, "approve_publish", map[string]any{})
+	if isErr || len(out["pending"].([]any)) != 2 || strings.HasPrefix(out["next_actions"].([]any)[0].(string), "duyệt: gọi lại với release_id + confirm_token") {
+		t.Fatalf("liệt kê = %+v", out)
+	}
+	// Bước 2: preview đúng r1 → token.
+	isErr, out, _ = call(t, s, "approve_publish", map[string]any{"release_id": r1})
+	if isErr || len(out["pending"].([]any)) != 1 {
+		t.Fatalf("preview = %+v", out)
+	}
+	na := out["next_actions"].([]any)[0].(string)
+	i := strings.Index(na, "confirm_token=")
+	token := na[i+len("confirm_token="):]
+	if j := strings.Index(token, " (hết hạn"); j > 0 {
+		token = token[:j]
+	}
+	// Dùng token của r1 để duyệt r2 → PHẢI BỊ CHỐI (subject không khớp).
+	if isErr, _, _ = call(t, s, "approve_publish", map[string]any{
+		"release_id": r2, "confirm_token": token}); !isErr {
+		t.Fatal("token của r1 không được duyệt r2")
+	}
+	// Duyệt đúng r1 → ok.
+	isErr, out, _ = call(t, s, "approve_publish", map[string]any{
+		"release_id": r1, "confirm_token": token})
+	if isErr || out["approved_release"] != r1 {
+		t.Fatalf("approve r1 = %+v", out)
 	}
 }

@@ -36,6 +36,8 @@ def _limits(cpu_s: int, mem_mb: int):  # chạy trong process con trước khi e
             pass
         resource.setrlimit(resource.RLIMIT_NOFILE, (64, 64))
         resource.setrlimit(resource.RLIMIT_NPROC, (32, 32))
+        resource.setrlimit(resource.RLIMIT_FSIZE, (1024 * 1024, 1024 * 1024))  # ghi tối đa 1MB/file
+        resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
 
     return apply
 

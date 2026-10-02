@@ -133,6 +133,15 @@ ORDER BY published_at DESC LIMIT 3;` — bản mong muốn đang `published`.
 
 ---
 
+## Trước khi lên production (security)
+
+- **Bucket export**: SeaweedFS local để bucket công khai cho tiện demo — production chuyển bucket
+  riêng tư + link presigned hết hạn ngắn (storage/s3.go đã tách public URL riêng).
+- **OAuth register** mở (RFC 7591 không xác thực): bật allowlist client hoặc initial access token;
+  thêm rate limit /oauth/register · /oauth/token · /oauth/authorize theo IP.
+- **BIVA_INTEGRATIONS_REPO** chế độ path chỉ dùng dev; production đặt URL git + token
+  (propose luôn tạo PR, index_code không đọc working tree local).
+
 ## Backup / khôi phục dữ liệu
 
 `deploy/backup.sh` — dump Postgres (custom format, nén) + dump schema-only để đối chiếu;

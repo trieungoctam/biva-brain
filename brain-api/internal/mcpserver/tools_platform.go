@@ -474,36 +474,55 @@ func (s *Server) addApprovePublish(srv *mcp.Server) {
 				return nil, approvePublishOut{}, err
 			}
 			if in.ConfirmToken == "" {
-				rows, err := s.db.Query(ctx, `
+				if in.ReleaseID == "" {
+					// Liệt kê để lead chọn — KHÔNG cấp token ở bước này (token phải gắn đúng release).
+					rows, err := s.db.Query(ctx, `
 					SELECT r.id::text, r.operator_id, r.bot_channel, r.snapshot_ver::int, r.requested_by,
 					       to_char(r.requested_at, 'YYYY-MM-DD HH24:MI')
 					FROM releases r WHERE r.stage = 'production' AND r.status = 'requested'
 					ORDER BY r.requested_at`)
-				if err != nil {
-					return nil, approvePublishOut{}, internal("approve_publish", err)
-				}
-				defer rows.Close()
-				out := approvePublishOut{Pending: []pendingRelease{}}
-				for rows.Next() {
-					var pr pendingRelease
-					if err := rows.Scan(&pr.ReleaseID, &pr.Operator, &pr.Channel, &pr.SnapshotVer,
-						&pr.RequestedBy, &pr.RequestedAt); err != nil {
+					if err != nil {
 						return nil, approvePublishOut{}, internal("approve_publish", err)
 					}
-					out.Pending = append(out.Pending, pr)
+					defer rows.Close()
+					out := approvePublishOut{Pending: []pendingRelease{}}
+					for rows.Next() {
+						var pr pendingRelease
+						if err := rows.Scan(&pr.ReleaseID, &pr.Operator, &pr.Channel, &pr.SnapshotVer,
+							&pr.RequestedBy, &pr.RequestedAt); err != nil {
+							return nil, approvePublishOut{}, internal("approve_publish", err)
+						}
+						out.Pending = append(out.Pending, pr)
+					}
+					out.NextActions = []string{"chọn release_id rồi gọi lại (không token) để xem chi tiết + nhận confirm_token"}
+					return nil, out, nil
 				}
-				token, exp, err := confirm.Issue(ctx, s.db, p.UserID, "", "approve_publish", "*", confirm.DefaultTTL)
+				// Có release_id (chưa có token): preview chi tiết bản ĐÓ rồi cấp token gắn đúng nó.
+				var pr pendingRelease
+				err = s.db.QueryRow(ctx, `
+					SELECT r.id::text, r.operator_id, r.bot_channel, r.snapshot_ver::int, r.requested_by,
+					       to_char(r.requested_at, 'YYYY-MM-DD HH24:MI')
+					FROM releases r WHERE r.id = $1::uuid AND r.stage = 'production' AND r.status = 'requested'`,
+					in.ReleaseID).Scan(&pr.ReleaseID, &pr.Operator, &pr.Channel, &pr.SnapshotVer,
+					&pr.RequestedBy, &pr.RequestedAt)
+				if err != nil {
+					return nil, approvePublishOut{}, errors.New("không tìm thấy bản production requested " + in.ReleaseID)
+				}
+				token, exp, err := confirm.Issue(ctx, s.db, p.UserID, "", "approve_publish",
+					confirm.Subject("approve_publish", in.ReleaseID), confirm.DefaultTTL)
 				if err != nil {
 					return nil, approvePublishOut{}, internal("approve_publish", err)
 				}
-				out.NextActions = []string{"duyệt: gọi lại với release_id + confirm_token=" + token +
-					" (hết hạn " + exp.Format("15:04:05") + ")"}
-				return nil, out, nil
+				return nil, approvePublishOut{Pending: []pendingRelease{pr},
+					NextActions: []string{"duyệt bản " + pr.Operator + "/" + pr.Channel +
+						" v" + fmt.Sprint(pr.SnapshotVer) + ": gọi lại với confirm_token=" + token +
+						" (hết hạn " + exp.Format("15:04:05") + ")"}}, nil
 			}
 			if in.ReleaseID == "" {
 				return nil, approvePublishOut{}, errors.New("có confirm_token thì phải kèm release_id")
 			}
-			if err := confirm.Consume(ctx, s.db, in.ConfirmToken, p.UserID, "", "approve_publish", "*"); err != nil {
+			if err := confirm.Consume(ctx, s.db, in.ConfirmToken, p.UserID, "", "approve_publish",
+				confirm.Subject("approve_publish", in.ReleaseID)); err != nil {
 				return nil, approvePublishOut{}, err
 			}
 			status, err := release.Approve(ctx, s.db, in.ReleaseID, p.Actor())

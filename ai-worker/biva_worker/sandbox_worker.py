@@ -139,6 +139,12 @@ def main() -> None:
     safe_builtins = dict(builtins.__dict__)
     for name in ("open", "input", "breakpoint", "exit", "quit"):
         safe_builtins[name] = _blocked  # hàm thuần không đọc file / console
+    # io đã bị purge khỏi sys.modules + deny ở finder — chặn nốt tham chiếu còn sót.
+    import sys as _sys
+
+    if "io" in _sys.modules:
+        _sys.modules["io"].open = _blocked
+    del _sys
     env: dict = {"__name__": "sandboxed", "__builtins__": safe_builtins}
     exec(compile(job["code"], "<sandbox>", "exec"), env)  # noqa: S102 - đây là mục đích của sandbox
     fn = env.get(job["entry"])

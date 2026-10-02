@@ -52,16 +52,24 @@ def parse_entrypoint(s: str) -> tuple[str, str]:
     return file, func
 
 
+def _safe_read(workdir: Path, path: Path) -> str:
+    """Đọc file chỉ khi kết quả resolve nằm TRONG workdir — chặn entrypoint/hooks chứa '..'."""
+    resolved = path.resolve()
+    if not resolved.is_relative_to(workdir.resolve()):
+        raise PermanentError(f"path thoát khỏi repo: {path}", code="INVALID_PATH")
+    return resolved.read_text(encoding="utf-8")
+
+
 def build_code(
     workdir: Path, module_path: str, entrypoint: str, hook_files: dict[str, str], hooks_base: Path
 ) -> str:
     """Ghép module + hook + glue; ref hook tính từ thư mục nhà xe (quy ước profile.yaml)."""
-    module_code = (workdir / module_path / parse_entrypoint(entrypoint)[0]).read_text(encoding="utf-8")
+    module_code = _safe_read(workdir, workdir / module_path / parse_entrypoint(entrypoint)[0])
     hooks_code = []
     hooks_map: list[list[str]] = []
     for param, ref in hook_files.items():
         f, fn = parse_entrypoint(ref)
-        hooks_code.append((hooks_base / f).read_text(encoding="utf-8"))
+        hooks_code.append(_safe_read(workdir, hooks_base / f))
         hooks_map.append([param, fn])
     return GLUE.format(
         module=module_code,

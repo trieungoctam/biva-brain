@@ -8,6 +8,22 @@ Commit message tiếng Anh.
 Tài liệu thiết kế: `docs/architecture.md`, `docs/mcp.md` (danh mục tool, luật trích dẫn), `docs/data-model.md`,
 `docs/implementation-plan.md` (milestone M0–M5, story S*.*.* ↔ issue Linear DYN-*).
 
+## Security review trước pilot (02/10)
+
+Agent security-review rà 7 mặt; phân quyền đa tenant, tham số hoá SQL, confirm_token, lõi OAuth
+(PKCE, xoay refresh) **sạch**. Đã sửa 4/4 phát hiện nghiêm trọng:
+- HIGH sandbox: builtin `io`/`_io` lọt purge/deny → code không tin cậy đọc secret/ghi đè
+  sandbox_worker.py — đã purge+deny (io, marshal, faulthandler, zipimport, runpy…), stub `io.open`,
+  thêm RLIMIT_FSIZE 1MB + CORE 0; verify `io.open` đọc/ghi đều SANDBOX_BLOCKED.
+- MED git: token nhúng URL push lộ qua stderr khi lỗi — chuyển sang `http.extraheader`, lọc token
+  khỏi thông báo lỗi; workdir trả về nhánh gốc sau push (chế độ path không đọc nhánh chưa duyệt).
+- MED approve_publish: token gắn subject "*" — nay bắt buộc release_id ở preview, token hash đúng
+  release đó (test: token của r1 duyệt r2 bị chặn).
+- MED examples: entrypoint/hooks chứa ".." đọc file ngoài repo — resolve + is_relative_to(workdir).
+Còn nhận biết (chưa sửa, ghi trong runbook): bucket export công khai (kế hoạch presigned cho
+production), OAuth register mở (cần rate limit/allowlist khi lên production), resource rỗng
+`/mcp/operator/` (token match mọi nhà xe — không leo thang vì requireOperator vẫn kiểm).
+
 ## Đo SLO (E-X2 cơ bản)
 
 `deploy/slo.sh` đo p50/p95 các tool chính so mục tiêu §7.3 runbook. Kết quả 02/10/2026 trên stack

@@ -143,12 +143,24 @@ async def propose(pool: asyncpg.Pool, job: Job) -> dict[str, Any]:
         }
 
     workdir, repo_name, tmp = resolve_repo(repo_url)
+    original = _git(["rev-parse", "--abbrev-ref", "HEAD"], cwd=workdir) or "main"
     try:
-        push_url = repo_url
-        if push_url.startswith("https://"):
-            push_url = push_url.replace("https://", f"https://x-access-token:{token}@", 1)
         branch, written = prepare_branch(workdir, operator, profile_yaml, files, actor)
-        _git(["push", "-q", push_url, f"HEAD:refs/heads/{branch}"], cwd=workdir)
+        # Credential qua header thay vì nhúng URL (git in URL ra stderr khi lỗi → lộ token).
+        push = [
+            "-c",
+            "http.https://github.com/.extraheader=AUTHORIZATION: bearer " + token,
+            "push",
+            "-q",
+            repo_url,
+            "HEAD:refs/heads/" + branch,
+        ]
+        try:
+            _git(push, cwd=workdir)
+        except PermanentError as exc:
+            raise PermanentError(str(exc).replace(token, "***"), code=exc.code) from exc
+        # Trả workdir về nhánh gốc: index_code (chế độ path) không đọc nhánh chưa duyệt.
+        _git(["checkout", "-q", original], cwd=workdir)
         owner_repo = repo_url.rstrip("/").removesuffix(".git").replace("https://github.com/", "")
         pr = _github_api(
             f"https://api.github.com/repos/{owner_repo}/pulls",
@@ -169,6 +181,10 @@ async def propose(pool: asyncpg.Pool, job: Job) -> dict[str, Any]:
             "files": written,
         }
     finally:
+        try:
+            _git(["checkout", "-q", original], cwd=workdir)
+        except Exception:
+            pass
         import shutil
 
         if tmp:
