@@ -3,7 +3,11 @@
 Bộ tri thức (về nhà xe và về logic) để AI build chatbot cho nhiều nhà xe khách, dựa trên mô hình memory
 của Hindsight (retain / recall / reflect + consolidation), mở cho builder dùng AI qua MCP.
 
-Trạng thái: **thiết kế đã chốt**, đang làm **M0 — Nền móng** (xem [kế hoạch](docs/implementation-plan.md)). Trọng tâm: **Brain + MCP** — AI của builder dùng tri thức để viết bot; Brain là nguồn sự thật và người kiểm tra.
+Trạng thái (10/2026): **toàn bộ story code của lộ trình M0–M5 đã xong, CI xanh** — 46 tool MCP, 9 resource,
+6 prompt; tri thức logic trong repo riêng [biva-integrations](https://github.com/trieungoctam/biva-brain#logic);
+vòng phát hành (gate → publish → rollback) và platform cho lead. Các AC đo lường đang chờ: dữ liệu 3 nhà xe
+pilot thật, GEMINI key, URL https (xem cuối README). Kế hoạch: [docs/implementation-plan.md](docs/implementation-plan.md).
+Brain là **nguồn sự thật** và **người kiểm tra**; AI của builder dùng tri thức để viết bot.
 
 ## Tài liệu
 
@@ -12,19 +16,22 @@ Trạng thái: **thiết kế đã chốt**, đang làm **M0 — Nền móng** (
 | [docs/architecture.md](docs/architecture.md) | bài toán, phạm vi, phân tầng L0–L3, 5 loại tri thức, luồng Brain, "quên", kiến trúc Go + Python, lộ trình, quyết định đã chốt |
 | [docs/system-architecture.md](docs/system-architecture.md) | kiến trúc hệ thống: containers, components, luồng chạy, triển khai (không GPU), độ tin cậy, bảo mật, observability, CI/CD |
 | [docs/build-flow.md](docs/build-flow.md) | luồng build bot: khởi tạo → thu thập → duyệt → AI viết bot → kiểm tra → xuất & phát hành; vòng cập nhật |
-| [docs/mcp.md](docs/mcp.md) | **giao diện chính**: AI dùng tri thức để build bot — knowledge pack, artifact có trích dẫn, validate, tool, prompts |
+| [docs/mcp.md](docs/mcp.md) | **giao diện chính**: 46 tool · 9 resource · 6 prompt — knowledge pack, artifact có trích dẫn, validate, logic, phát hành |
 | [docs/logic-knowledge.md](docs/logic-knowledge.md) | tri thức logic (code) cho nhà xe: module chung, hồ sơ từng nhà xe, config → hook → custom, ADR |
-| [docs/data-model.md](docs/data-model.md) | data model trên PostgreSQL |
+| [docs/data-model.md](docs/data-model.md) | data model trên PostgreSQL (23 migration) |
+| [docs/runbook.md](docs/runbook.md) | runbook 8 sự cố + backup/khôi phục (`deploy/backup.sh` có verify) |
 | [docs/implementation-plan.md](docs/implementation-plan.md) | kế hoạch triển khai: milestone M0–M5, epic, story, AC, rủi ro, chỉ số thành công |
 
 ## Cấu trúc repo
 
 ```
 contracts/   migrations (golang-migrate) · schemas (JSON Schema) · fixtures dùng chung Go ⇄ Python
-brain-api/   service Go: MCP, REST, scheduler, migrate, kb sync; recall… ở các mốc sau
-ai-worker/   service Python: job nền dùng LLM/NLP (index, ingest…)
-kb/         tri thức nền L0/L1 (YAML, review bằng PR) → brain-api kb sync
-deploy/      docker-compose cho local
+brain-api/   service Go: MCP (operator + platform), REST, scheduler, migrate, kb sync, recall 5 nhánh,
+             export lên object storage, release gate + publish/rollback
+ai-worker/   service Python: queue runner — index (TEI) · ingest (Gemini) · consolidate · promote ·
+             logic (sync repo, spec, propose PR, chạy ví dụ) · sandbox · reference executor · validate LLM
+kb/          tri thức nền L0/L1 (YAML, review bằng PR): rules, template onboarding, entities, feature catalog
+deploy/      docker-compose local · backup + verify · demo promote toàn cục · đo SLO
 docs/        thiết kế
 ```
 
@@ -38,7 +45,8 @@ curl localhost:8080/health/ready
 make down      # dừng (giữ dữ liệu); make clean để xoá volume
 ```
 
-Lần đầu `tei-embed` tải model bge-m3 nên mất vài phút.
+Lần đầu `tei-embed` tải model bge-m3 nên mất vài phút. Máy < 16GB RAM có thể bỏ TEI
+(xem `docs/runbook.md` — recall tự chạy keyword + graph + temporal).
 
 ## Test
 
@@ -50,6 +58,9 @@ make lint      # gofmt, go vet, ruff
 export BIVA_TEST_DATABASE_URL=postgres://user:pass@localhost:5432/biva_test?sslmode=disable
 make test      # test-go chạy migration trước (nên chạy trước test-py)
 ```
+
+Test LLM thật (CONTRADICTION, executor) đặt thêm `BIVA_TEST_GEMINI_API_KEY`; test S3 thật đặt
+`BIVA_TEST_S3_URL`. Không có thì tự skip.
 
 ## Kết nối AI qua MCP
 
@@ -67,30 +78,61 @@ claude mcp add --transport http biva-phuongnam http://localhost:8080/mcp/operato
 Với compose: `docker compose -f deploy/docker-compose.yml exec brain-api brain-api token issue tam`.
 
 ChatGPT (connector): đặt `BIVA_PUBLIC_URL` là URL https công khai rồi thêm connector
-`<BIVA_PUBLIC_URL>/mcp/operator/<id>/` (OAuth); builder dán token cá nhân ở trang cấp quyền — xem [docs/mcp.md](docs/mcp.md#2-kết-nối).
-Tool hiện có: `list_knowledge`, `submit_knowledge`, `ingest`, `get_operation`, `list_review_queue`, `get_review_item`,
-`propose_item`, `apply_review` (preview → `confirm_token` → thực thi). Danh mục đầy đủ: [docs/mcp.md](docs/mcp.md).
+`<BIVA_PUBLIC_URL>/mcp/operator/<id>/` (OAuth 2.1, brain-api là authorization server); builder dán token
+cá nhân ở trang cấp quyền — xem [docs/mcp.md](docs/mcp.md#2-kết-nối).
 
-Luồng một cập nhật của nhà xe: AI phía builder (ChatGPT, coding agent) đọc tin/file/ảnh rồi `submit_knowledge`
-(hoặc gửi nội dung thô qua `ingest` để ai-worker trích bằng Gemini) → diff với tri thức hiện có →
-tự áp dụng phần vô hại (thêm mới không đụng tiền/giờ, nhắc lại) → phần còn lại (giá, giờ, huỷ, mọi sửa/bỏ) chờ
-builder duyệt qua `apply_review`.
+### Vòng đời một bot
+
+1. **Tri thức**: AI phía builder đọc tin/file/ảnh rồi `submit_knowledge` (hoặc `ingest` để ai-worker trích
+   bằng LLM) → diff → phần vô hại tự áp dụng; giá/giờ/huỷ luôn chờ `apply_review` (preview → `confirm_token`).
+   Consolidate gom observation; ≥ 3 nhà xe giống nhau → đề xuất PROMOTE lên L1 cho lead duyệt.
+2. **Build**: prompt `/onboard_operator` → `/build_bot` — AI viết artifact có trích dẫn `[[id]]`,
+   `validate_artifact` kiểm tĩnh (6 mã lỗi có dòng) + CONTRADICTION bằng LLM chạy nền.
+3. **Logic** (repo [biva-integrations](https://github.com/trieungoctam/biva-brain)): `/implement_operator_logic`
+   — spec từ tri thức → tìm nhà xe tương tự → `run_examples_against` chạy ví dụ thật trong sandbox →
+   profile/hook qua PR (custom bắt buộc ADR).
+4. **Phát hành**: `run_tests` (reference executor) → `check_release_gate` → `request_publish`
+   (staging tự động; production chờ lead `approve_publish`) → `rollback_release` < 1 phút.
+
+## Logic
+
+Tri thức logic (code) sống ở repo riêng **biva-integrations** (module chuẩn `fare.standard`, `booking.hold`,
+`schedule.sync_excel` + hồ sơ từng nhà xe, CI chạy ví dụ mỗi PR). Brain đồng bộ qua job `index_code`
+(≤ 1 phút sau merge) và đối chiếu tham số với tri thức — tham số lệch nguồn → hồ sơ stale.
 
 ## LLM và index
 
-- `contracts/llm/llm.yaml`: model Gemini theo tier (*nhỏ* 3.5 Flash → 3.1 Flash-Lite, *mạnh* 3.1 Pro → 2.5 Pro),
-  quota theo purpose, bảng giá. Thư viện: `ai-worker/biva_worker/llm/` (fallback, quota Redis, structured output,
-  ghi `llm_usage`). Cần `GEMINI_API_KEY` khi chạy job dùng LLM.
-- Job `index.items`: ghi `search_text` (tìm được cả có dấu và không dấu) + embedding qua TEI cho item còn thiếu.
+- `contracts/llm/llm.yaml`: model Gemini theo tier, quota theo purpose, bảng giá. Thư viện
+  `ai-worker/biva_worker/llm/` (fallback, quota Redis, structured output, ghi `llm_usage`).
+  Cần `GEMINI_API_KEY` khi chạy job dùng LLM.
+- Job `index.items`: `search_text` (tìm được cả có dấu và không dấu) + embedding qua TEI +
+  nhận diện entity cho graph arm của recall.
 
 ## Queue Go ⇄ Python
 
-brain-api ghi job vào bảng `operations` (`queue.Enqueue`, chống trùng bằng `idempotency_key`); trigger phát
-`NOTIFY biva_operations` để đánh thức ai-worker. ai-worker claim bằng `SKIP LOCKED`, giữ lease bằng heartbeat, thử lại
-có backoff. Worker chết → lease hết → scheduler (chỉ instance leader, advisory lock) gọi
-`operations_requeue_expired()` để trả job về hàng đợi. Cấu hình worker: `BIVA_WORKER_CONCURRENCY` (4),
-`BIVA_WORKER_LEASE_SECONDS` (60).
+brain-api ghi job vào bảng `operations` (chống trùng bằng `idempotency_key`); trigger `NOTIFY` đánh thức
+ai-worker, claim bằng `SKIP LOCKED`, lease + heartbeat, backoff; scheduler (leader qua advisory lock)
+requeue job hết lease. Cấu hình: `BIVA_WORKER_CONCURRENCY` (4), `BIVA_WORKER_LEASE_SECONDS` (60).
 
-CI (`.github/workflows/ci.yml`) chạy `make lint`, `make test` với Postgres pgvector, kiểm tra `go.mod`/`uv.lock` không lệch, và `make smoke` (compose thật: MCP → queue → worker, TEI CPU).
+CI (`.github/workflows/ci.yml`): `make lint`, `make test` với Postgres pgvector + Redis, kiểm tra
+`go.mod`/`uv.lock` không lệch, `make smoke` (compose thật: MCP → queue → worker, TEI CPU).
+Fixture trong `contracts/` được test ở **cả Go và Python** — hai bên phải cho cùng kết quả.
 
-Fixture trong `contracts/fixtures/` và `contracts/textnorm/` được test ở **cả Go và Python**: hai bên phải cho cùng kết quả.
+## Đo lường và vận hành
+
+```bash
+deploy/slo.sh                    # đo p50/p95 tool chính so mục tiêu SLO (docs/runbook.md §7.3)
+deploy/backup.sh                 # backup Postgres; BIVA_RESTORE_VERIFY=1 → khôi phục thử + so khớp
+deploy/demo.sh                   # demo promote toàn cục (3 nhà xe → L1), không cần GEMINI key
+```
+
+Baseline 10/2026 trên stack local: recall p95 14ms (< 150), pack p95 3ms (< 800), validate tĩnh 4ms (< 300),
+stale < 2ms — mọi SLO đạt.
+
+## Đang chờ (ngoài code)
+
+| Cần | Mở khóa |
+|---|---|
+| Chọn 3 nhà xe pilot + dữ liệu thật | demo M5 trên nhà xe thật; đo mọi AC số liệu |
+| `GEMINI_API_KEY` | CONTRADICTION (recall ≥ 90% trên bộ test cài sẵn), executor/reflect thật |
+| URL https công khai | ChatGPT connector (OAuth đã sẵn) |
