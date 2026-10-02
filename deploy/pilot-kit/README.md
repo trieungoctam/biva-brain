@@ -17,8 +17,15 @@ chạy 1 script. Không cần GEMINI key (đường chính `submit_knowledge` kh
 
 ```bash
 python3 nap_du_lieu.py --api http://localhost:8080 --operator <tên_nhà_xe> \
-    --token biva_<token_builder> bang_gia.csv lich_chay.csv
+    --token biva_<token_builder> bang_gia.csv lich_chay.csv chinh_sach.csv
 ```
+
+Xem độ phủ mục bắt buộc bất cứ lúc nào (theo template ngành, kèm mục còn thiếu và cần gì):
+
+```bash
+python3 nap_du_lieu.py --api ... --operator ... --token ... --coverage
+```
+`✓` đã có tri thức riêng · `≈` đang dùng thông lệ chung (L1) · `?` mâu thuẫn mở · `✗` còn thiếu.
 
 Giá/lịch là topic rủi ro cao (fare/schedule) → vào **review queue chờ duyệt**, không tự áp
 (đúng thiết kế an toàn). Sau khi `get_operation` thấy done: `list_review_queue` →

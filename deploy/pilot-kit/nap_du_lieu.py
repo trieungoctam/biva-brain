@@ -129,16 +129,13 @@ def schedule_items(rows: list[dict]) -> list[dict]:
     return items
 
 
-def submit(api: str, token: str, operator: str, items: list[dict], source: str) -> dict:
+def _call(api: str, token: str, operator: str, tool: str, args: dict):
+    """Gọi tool MCP của nhà xe; trả (structuredContent, text)."""
     req = urllib.request.Request(
         f"{api.rstrip('/')}/mcp/operator/{operator}/",
         data=json.dumps({
             "jsonrpc": "2.0", "id": 1, "method": "tools/call",
-            "params": {"name": "submit_knowledge", "arguments": {
-                "source": source,
-                "source_excerpt": f"nạp pilot kit {date.today().isoformat()}",
-                "items": items,
-            }},
+            "params": {"name": tool, "arguments": args},
         }).encode(),
         headers={"Authorization": f"Bearer {token}",
                  "Content-Type": "application/json",
@@ -154,10 +151,38 @@ def submit(api: str, token: str, operator: str, items: list[dict], source: str) 
     result = d["result"]
     if result.get("isError"):
         text = result["content"][0]["text"] if result.get("content") else ""
-        sys.exit(f"submit_knowledge lỗi: {text[:500]}")
-    sc = result.get("structuredContent") or {}
+        sys.exit(f"{tool} lỗi: {text[:500]}")
+    return result.get("structuredContent") or {}, ""
+
+
+def submit(api: str, token: str, operator: str, items: list[dict], source: str) -> dict:
+    sc, _ = _call(api, token, operator, "submit_knowledge", {
+        "source": source,
+        "source_excerpt": f"nạp pilot kit {date.today().isoformat()}",
+        "items": items,
+    })
     return {"operation_id": sc.get("operation_id"),
             "next": sc.get("next_actions", [])}
+
+
+def coverage(api: str, token: str, operator: str) -> None:
+    """In độ phủ mục bắt buộc theo template ngành + gợi ý bước kế tiếp (get_coverage)."""
+    sc, text = _call(api, token, operator, "get_coverage", {})
+    pct, total = sc.get("required_percent", 0), sc.get("required_total", 0)
+    print(f"Độ phủ mục bắt buộc: {sc.get('required_covered', 0)}/{total} ({pct:.0%})")
+    for sec in sc.get("sections", []):
+        mark = {"covered": "✓", "industry_default": "≈", "ambiguous": "?", "missing": "✗"}.get(
+            sec.get("status"), " ")
+        extra = ""
+        if sec.get("status") == "industry_default":
+            extra = " (đang dùng thông lệ chung — có tri thức riêng sẽ tự thay)"
+        if sec.get("status") == "ambiguous":
+            extra = " (mâu thuẫn đang mở — list_review_queue để chọn)"
+        print(f"  {mark} {sec.get('title')} [{sec.get('topic')}] — {sec.get('items', 0)} item{extra}")
+        if sec.get("status") == "missing":
+            print(f"      cần: {'; '.join(sec.get('facts', [])[:4])}")
+    for n in sc.get("next_actions", []):
+        print(f"→ {n}")
 
 
 def main() -> None:
@@ -165,10 +190,17 @@ def main() -> None:
     ap.add_argument("--api", default="http://localhost:8080")
     ap.add_argument("--operator", required=True)
     ap.add_argument("--token", required=True)
-    ap.add_argument("files", nargs="+", type=Path,
-                    help="bang_gia.csv và/hoặc lich_chay.csv")
+    ap.add_argument("--coverage", action="store_true",
+                    help="chỉ xem độ phủ mục bắt buộc (get_coverage), không nạp")
+    ap.add_argument("files", nargs="*", type=Path,
+                    help="bang_gia.csv / lich_chay.csv / chinh_sach.csv")
     a = ap.parse_args()
     _self_check()
+    if a.coverage:
+        coverage(a.api, a.token, a.operator)
+        return
+    if not a.files:
+        ap.error("cần file để nạp, hoặc --coverage để xem độ phủ")
 
     for f in a.files:
         rows = _read_csv(f)
