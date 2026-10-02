@@ -249,6 +249,12 @@ func (s *Server) addGuide(srv *mcp.Server, operatorID string) {
 			return userPrompt("Triển khai logic của nhà xe "+operatorID, implementLogicPrompt), nil
 		})
 
+	srv.AddPrompt(&mcp.Prompt{Name: "review_quality", Title: "Rà chất lượng bot",
+		Description: "Đọc artifact + coverage + lessons, chỉ ra chỗ yếu, đề xuất lesson/test case"},
+		func(context.Context, *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+			return userPrompt("Rà chất lượng bot của nhà xe "+operatorID, reviewQualityPrompt), nil
+		})
+
 	srv.AddPrompt(&mcp.Prompt{Name: "refresh_bot", Title: "Cập nhật bot sau khi tri thức đổi",
 		Description: "Sửa đúng các đoạn artifact bị tri thức mới làm lỗi thời (list_stale), artifact khác giữ nguyên"},
 		func(context.Context, *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
@@ -335,3 +341,12 @@ const implementLogicPrompt = `Tri thức logic của nhà xe cần triển khai 
 5. Nếu phải custom: record_decision (ADR) TRƯỚC — ghi id nó trả về vào phần decision của capability.
 6. Viết profile.yaml theo schema logic.profile (mọi tham số phải có source là id item tri thức) + file hook/custom; gọi propose_logic_profile rồi get_operation — nhận PR hoặc patch (chưa có token thì tạo PR tay theo nội dung trả về).
 7. Sau khi PR merge: job index_code đồng bộ trong ≤ 1 phút; get_operator_logic kiểm lại — capability phải có profile active. Validate lại tool_spec: tool khai báo capability phải có profile active (NO_CAPABILITY).`
+
+const reviewQualityPrompt = `Rà chất lượng bot của nhà xe theo góc nhìn vận hành, rồi đề xuất cải thiện:
+
+1. get_artifact lần lượt từng kind — đọc kỹ nội dung, chú ý câu mập mờ, câu không truy được nguồn, chỗ dùng thông lệ chung mà chưa nhãn.
+2. get_coverage — mục nào thiếu/mơ hồ, mục nào đang dùng thông lệ L1 mà nhà xe nên xác nhận lại.
+3. list_stale — phần nào tri thức đã đổi mà bot chưa theo.
+4. recall_knowledge vài câu khách hay hỏi — kiểm bot có tri thức trả lời không; câu bot không trả lời được → thiếu tri thức, đề xuất hỏi nhà xe (generate_questions).
+5. Tổng hợp báo cáo: (a) chỗ yếu của artifact kèm dòng, (b) tri thức thiếu, (c) đề xuất lesson (add_lesson với type do/dont) cho lỗi hay gặp, (d) đề xuất test case cho chỗ mưa gió.
+Chỉ nêu vấn đề có bằng chứng (dòng/trích dẫn); mỗi đề xuất kèm next action cụ thể.`

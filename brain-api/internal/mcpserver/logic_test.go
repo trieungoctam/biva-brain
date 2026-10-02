@@ -227,3 +227,52 @@ func TestLogicTestsTools(t *testing.T) {
 		t.Fatalf("test = %+v", first)
 	}
 }
+
+// S4.3.1: add_lesson — L2 thẳng; promote=true → item L1 pending + review PROMOTE.
+func TestAddLessonTool(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	s, err := connect(t, f.url+"/mcp/operator/"+f.opA+"/", f.builderTok)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	isErr, out, _ := call(t, s, "add_lesson", map[string]any{
+		"text": "Không nhầm bến Miền Đông mới/cũ", "type": "dont"})
+	if isErr || out["item_id"] == "" || out["promoted"] != false {
+		t.Fatalf("L2 = %+v", out)
+	}
+	var kind, status string
+	var layer int
+	if err := f.pool.QueryRow(ctx, `SELECT kind, layer::int, status FROM items WHERE id = $1::uuid`,
+		out["item_id"].(string)).Scan(&kind, &layer, &status); err != nil {
+		t.Fatal(err)
+	}
+	if kind != "lesson" || layer != 2 || status != "active" {
+		t.Fatalf("item = %s %d %s", kind, layer, status)
+	}
+
+	isErr, out, _ = call(t, s, "add_lesson", map[string]any{
+		"text": "Xác nhận bến trước khi báo giờ đón", "type": "do", "promote": true})
+	if isErr || out["promoted"] != true || out["review_id"] == "" {
+		t.Fatalf("promote = %+v", out)
+	}
+	var ck, risk, rstatus string
+	if err := f.pool.QueryRow(ctx, `SELECT change_kind, risk, status FROM review_items WHERE id = $1::uuid`,
+		out["review_id"].(string)).Scan(&ck, &risk, &rstatus); err != nil {
+		t.Fatal(err)
+	}
+	if ck != "PROMOTE" || risk != "high" || rstatus != "open" {
+		t.Fatalf("review = %s %s %s", ck, risk, rstatus)
+	}
+	var l1 int
+	var istatus string
+	if err := f.pool.QueryRow(ctx, `SELECT layer::int, status FROM items WHERE id = $1::uuid`,
+		out["item_id"].(string)).Scan(&l1, &istatus); err != nil {
+		t.Fatal(err)
+	}
+	if l1 != 1 || istatus != "pending" {
+		t.Fatalf("L1 pending = %d %s", l1, istatus)
+	}
+}

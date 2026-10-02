@@ -148,7 +148,7 @@ Cột **Mốc** = mốc dự kiến (xem lộ trình trong [architecture.md](arc
 | `get_review_item` | M1 | RO | trước/sau, nguồn, artifact/hồ sơ logic bị ảnh hưởng |
 | `propose_item` | M1 | | AI đề xuất item mới/sửa/bỏ (topic thuộc template, `reason` = nguồn) → review queue; **không bao giờ tự áp dụng** |
 | `apply_review` | M1 | C | approve/reject; reject cần `reason`. Token gắn với (người gọi, review, quyết định), dùng một lần |
-| `add_lesson` | M2 | | bài học đúng/sai ở L2 (L1/L0 → tạo request) |
+| `add_lesson` | M4 ✅ | | ghi bài học L2 của nhà xe (kind=lesson, type do/dont, topic code:<capability> nếu về code); promote=true → item L1 pending + review PROMOTE chờ lead duyệt |
 | `generate_questions` | M2 | RO | câu hỏi cho mục chưa phủ (bắt buộc trước), không dùng LLM: mục < 30% nhà xe khác quy định riêng → câu **xác nhận nhanh** theo thông lệ L1; còn lại → câu hỏi mở của template; CONFLICT → câu xin xác nhận; kèm `message` gộp sẵn gửi Zalo |
 | `create_form` / `get_form` | M2 | | link form (`/f/<token>`, token chỉ lưu SHA-256, dùng một lần, mặc định 14 ngày) để nhà xe trả lời trên điện thoại → job `ingest` (`source=form`) → review; `get_form` xem câu trả lời + `operation_id` |
 

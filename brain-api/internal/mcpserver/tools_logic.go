@@ -522,3 +522,83 @@ func lines(s *string) []string {
 	}
 	return out
 }
+
+type addLessonIn struct {
+	Text     string `json:"text" jsonschema:"bài học: một câu đúng/sai rút ra (vd 'Không nhầm bến Miền Đông mới/cũ')"`
+	Type     string `json:"type" jsonschema:"do | dont" jsonschema_enums:"do,dont"`
+	Topic    string `json:"topic,omitempty" jsonschema:"topic code:<capability> nếu bài học về code, vd code:fare"`
+	Promote  bool   `json:"promote,omitempty" jsonschema:"true = đề xuất lên thông lệ L1 (lead duyệt qua review)"`
+	SourceID string `json:"source_item,omitempty" jsonschema:"id item làm bằng chứng"`
+}
+
+const addLessonDesc = "Ghi bài học ở L2 của nhà xe (kind=lesson): điều đúng nên làm lại / sai cần tránh. " +
+	"promote=true thì tạo đề xuất đưa lên L1 (chờ lead duyệt như mọi đề xuất). " +
+	"Ngược với policy: lesson là kinh nghiệm vận hành, không phải cam kết với khách."
+
+type addLessonOut struct {
+	ItemID      string   `json:"item_id,omitempty"`
+	ReviewID    string   `json:"review_id,omitempty"`
+	Promoted    bool     `json:"promoted"`
+	NextActions []string `json:"next_actions"`
+}
+
+func (s *Server) addLessonTool(srv *mcp.Server, operatorID string) {
+	mcp.AddTool(srv, &mcp.Tool{Name: "add_lesson", Description: addLessonDesc,
+		Annotations: writeTool},
+		func(ctx context.Context, req *mcp.CallToolRequest, in addLessonIn) (*mcp.CallToolResult, addLessonOut, error) {
+			p, err := callerOf(req)
+			if err != nil {
+				return nil, addLessonOut{}, err
+			}
+			text := strings.TrimSpace(in.Text)
+			if text == "" || (in.Type != "do" && in.Type != "dont") {
+				return nil, addLessonOut{}, errors.New("cần text và type (do | dont)")
+			}
+			topic := in.Topic
+			if topic == "" {
+				topic = "other"
+			}
+			if in.Promote {
+				// Đề xuất lên L1: pending item + review (lead duyệt như mọi PROMOTE).
+				tx, err := s.db.Begin(ctx)
+				if err != nil {
+					return nil, addLessonOut{}, internal("add_lesson", err)
+				}
+				defer tx.Rollback(ctx)
+				var itemID, reviewID string
+				if err := tx.QueryRow(ctx, `
+					INSERT INTO items (layer, operator_id, kind, topic, key, text, status, metadata)
+					VALUES (1, NULL, 'lesson', $3, 'l1.lesson.' || substr(md5($1::text), 1, 10), $1, 'pending',
+					        jsonb_build_object('source', 'add_lesson', 'type', $2::text, 'requested_by', $4::text))
+					RETURNING id::text`,
+					text, in.Type, topic, p.Actor()).Scan(&itemID); err != nil {
+					return nil, addLessonOut{}, internal("add_lesson", err)
+				}
+				if err := tx.QueryRow(ctx, `
+					INSERT INTO review_items (operator_id, key, topic, change_kind, risk, item_id,
+						reason, proposed_by)
+					VALUES ($1, 'l1.lesson.' || substr(md5($2::text), 1, 10), $3, 'PROMOTE', 'high', $4::uuid,
+						'đề xuất bài học lên thông lệ L1 (add_lesson)', $5)
+					RETURNING id::text`,
+					operatorID, text, topic, itemID, p.Actor()).Scan(&reviewID); err != nil {
+					return nil, addLessonOut{}, internal("add_lesson", err)
+				}
+				if err := tx.Commit(ctx); err != nil {
+					return nil, addLessonOut{}, internal("add_lesson", err)
+				}
+				return nil, addLessonOut{ItemID: itemID, ReviewID: reviewID, Promoted: true,
+					NextActions: []string{"list_review_queue — chờ lead duyệt đề xuất L1"}}, nil
+			}
+			var id string
+			if err := s.db.QueryRow(ctx, `
+				INSERT INTO items (layer, operator_id, kind, topic, key, text, status, metadata)
+				VALUES (2, $1, 'lesson', $2, 'lesson.' || substr(md5($3::text || $4::text), 1, 12), $3, 'active',
+				        jsonb_build_object('type', $4::text, 'source', 'add_lesson', 'by', $5::text))
+				RETURNING id::text`,
+				operatorID, topic, text, in.Type, p.Actor()).Scan(&id); err != nil {
+				return nil, addLessonOut{}, internal("add_lesson", err)
+			}
+			return nil, addLessonOut{ItemID: id,
+				NextActions: []string{"bài học đã vào L2 — get_knowledge_pack sẽ thấy"}}, nil
+		})
+}
