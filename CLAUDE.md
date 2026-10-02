@@ -122,5 +122,9 @@ cd ai-worker && uv run pytest -q
   tool, verdict must_mention/must_not_say/must_call_tool); job `bot.tests` (sinh test từ tri thức —
   thay bản generated cũ, chạy qua executor, ghi test_runs) + `bot.chat` (sandbox 1 lượt); tools MCP
   `run_tests` / `sandbox_chat` (async). Đo trên pilot chờ GEMINI key; 👎→lesson/gap: khi có UAT thật.
+- M3 E3.6 xong: job `bot.reflect` (LLM purpose `interactive`): câu hỏi phân tích + knowledge scope,
+  mỗi nhận định kèm [[id]] — kiểm id hợp lệ + cảnh báo câu số liệu thiếu trích dẫn; tool `reflect`
+  (async). `compare_with_industry` (RO, đồng bộ): observation L2 vs L1 theo topic. **M3 hết story
+  code** — các AC đo (golden set, 3 pilot, UAT) chờ dữ liệu thật + GEMINI key.
 - Linear: workspace dpos, project "BIVA Brain"; mỗi story xong thì comment kết quả + link CI rồi chuyển Done
   (chưa đạt hết AC thì để In Progress và ghi rõ phần thiếu).

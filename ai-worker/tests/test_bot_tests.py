@@ -11,6 +11,7 @@ import asyncpg
 import pytest
 
 from biva_worker import bot_tests
+from biva_worker import reflect as reflect_mod
 from biva_worker.executor import verdict
 from biva_worker.llm import LLMClient
 from biva_worker.llm import load as llm_load
@@ -161,3 +162,63 @@ def test_verdict():
     assert not ok and "query_data" in why
     ok, why = verdict("giá 400k nhé", [], {"must_not_say": ["400k"]})
     assert not ok and "400k" in why
+
+
+@needs_db
+def test_reflect_and_compare(tmp_path):
+    async def t() -> None:
+        pool = await asyncpg.create_pool(DB_URL, init=init_connection)
+        op = f"rf{uuid.uuid4().hex[:8]}"
+        await pool.execute("DELETE FROM operators WHERE id = $1", op)
+        await pool.execute("INSERT INTO operators (id, name) VALUES ($1, 'R')", op)
+        try:
+            item = await pool.fetchval(
+                """INSERT INTO items (layer, operator_id, kind, topic, text, status)
+                   VALUES (2, $1, 'policy', 'pets', 'Nhà xe nhận chó nhỏ có lồng', 'active')
+                   RETURNING id::text""",
+                op,
+            )
+
+            class ReflectLLM:
+                async def complete(self, step, req, schema=None):
+                    text = (
+                        f"Nhà xe cho phép chó có lồng [[{item}]].\n"
+                        "Hiện vận hành 3 chuyến mỗi ngày với tổng 45 ghế các loại."
+                    )
+                    return RawResponse(text, "end_turn", step.model.name, Usage(50, 30))
+
+            run = reflect_mod.handler(pool, client_with(ReflectLLM()))
+            res = await run(
+                Job(
+                    str(uuid.uuid4()),
+                    "bot.reflect",
+                    op,
+                    {"operator_id": op, "question": "chính sách chó mèo?"},
+                    1,
+                    5,
+                    {},
+                )
+            )
+            assert "[[" + item + "]]" in res["answer"]
+            assert res["counts"]["citations"] == 1
+            assert any("chưa có trích dẫn" in w for w in res["warnings"]), res  # câu 50k thiếu trích dẫn
+
+            # compare_with_industry: observation L2 + L1 cùng topic.
+            await pool.execute(
+                """INSERT INTO items (layer, operator_id, kind, topic, key, text, status)
+                   VALUES (2, $1, 'observation', 'pets', 'obs.pets', '- Nhà xe nhận chó nhỏ có lồng', 'active')""",
+                op,
+            )
+            await pool.execute(
+                """INSERT INTO items (layer, operator_id, kind, topic, key, text, status)
+                   VALUES (1, NULL, 'observation', 'pets', 'obs.pets', '- Không nhận chó mèo', 'active')"""
+            )
+            cmp = await run(Job(str(uuid.uuid4()), "bot.compare", op, {"operator_id": op}, 1, 5, {}))
+            assert cmp["topics"][0]["topic"] == "pets"
+            assert cmp["topics"][0]["operator"] == ["Nhà xe nhận chó nhỏ có lồng"]
+            assert cmp["topics"][0]["industry"] == ["Không nhận chó mèo"]
+        finally:
+            await pool.execute("DELETE FROM operators WHERE id = $1", op)
+            await pool.execute("DELETE FROM items WHERE operator_id IS NULL AND kind = 'observation'")
+
+    asyncio.run(t())

@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/trieungoctam/biva-brain/brain-api/internal/kb"
@@ -432,4 +433,92 @@ func (s *Server) addLogicTestsTools(srv *mcp.Server, operatorID string) {
 			}
 			return nil, out, nil
 		})
+}
+
+type reflectIn struct {
+	Question string `json:"question" jsonschema:"câu hỏi phân tích (vd 'chính sách huỷ vé của nhà xe có gì khác thông lệ?')"`
+}
+
+const (
+	reflectDesc = "Agent phân tích tri thức cho builder: trả lời câu hỏi dựa trên tri thức đã duyệt, " +
+		"mỗi nhận định kèm trích dẫn [[id]] (kiểm tự động: id không hợp lệ / câu số liệu thiếu trích dẫn → cảnh báo). " +
+		"Async: operation_id."
+	compareIndustryDesc = "Chỗ nhà xe khác thông lệ ngành: so observation của nhà xe với thông lệ L1 " +
+		"theo từng topic (từ job consolidate)."
+)
+
+func (s *Server) addReflectTools(srv *mcp.Server, operatorID string) {
+	mcp.AddTool(srv, &mcp.Tool{Name: "reflect", Description: reflectDesc,
+		Annotations: &mcp.ToolAnnotations{IdempotentHint: false, DestructiveHint: ptr(false), OpenWorldHint: ptr(false)}},
+		func(ctx context.Context, _ *mcp.CallToolRequest, in reflectIn) (*mcp.CallToolResult, testJobOut, error) {
+			if strings.TrimSpace(in.Question) == "" {
+				return nil, testJobOut{}, errors.New("thiếu question")
+			}
+			opID, _, err := queue.Enqueue(ctx, s.db, queue.Job{Kind: "bot.reflect", OperatorID: operatorID,
+				Payload: map[string]string{"question": in.Question}})
+			if err != nil {
+				return nil, testJobOut{}, internal("reflect", err)
+			}
+			return nil, testJobOut{OperationID: opID, NextActions: []string{
+				"get_operation(operation_id=" + opID + ") — câu trả lời có trích dẫn + warnings"}}, nil
+		})
+	mcp.AddTool(srv, &mcp.Tool{Name: "compare_with_industry", Description: compareIndustryDesc, Annotations: readOnly},
+		func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, compareIndustryOut, error) {
+			out, err := compareIndustry(ctx, s.db, operatorID)
+			if err != nil {
+				return nil, compareIndustryOut{}, internal("compare_with_industry", err)
+			}
+			return nil, out, nil
+		})
+}
+
+type compareIndustryOut struct {
+	Topics []industryTopic `json:"topics"`
+}
+
+type industryTopic struct {
+	Topic    string   `json:"topic"`
+	Operator []string `json:"operator"`
+	Industry []string `json:"industry,omitempty"`
+}
+
+func compareIndustry(ctx context.Context, db *pgxpool.Pool, operator string) (compareIndustryOut, error) {
+	rows, err := db.Query(ctx, `
+		WITH own AS (
+			SELECT topic, text FROM items
+			WHERE operator_id = $1 AND kind = 'observation' AND layer = 2 AND status = 'active'
+		), l1 AS (
+			SELECT topic, text FROM items
+			WHERE operator_id IS NULL AND kind = 'observation' AND layer = 1 AND status = 'active'
+		)
+		SELECT o.topic, o.text, l1.text FROM own o LEFT JOIN l1 ON l1.topic = o.topic`, operator)
+	if err != nil {
+		return compareIndustryOut{}, err
+	}
+	defer rows.Close()
+	out := compareIndustryOut{Topics: []industryTopic{}}
+	for rows.Next() {
+		var t industryTopic
+		var own, ind *string
+		if err := rows.Scan(&t.Topic, &own, &ind); err != nil {
+			return compareIndustryOut{}, err
+		}
+		t.Operator = lines(own)
+		t.Industry = lines(ind)
+		out.Topics = append(out.Topics, t)
+	}
+	return out, rows.Err()
+}
+
+func lines(s *string) []string {
+	if s == nil {
+		return []string{}
+	}
+	var out []string
+	for _, l := range strings.Split(*s, "\n") {
+		if strings.HasPrefix(l, "- ") {
+			out = append(out, l[2:])
+		}
+	}
+	return out
 }

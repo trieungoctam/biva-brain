@@ -134,8 +134,8 @@ Cột **Mốc** = mốc dự kiến (xem lộ trình trong [architecture.md](arc
 | `query_data` | M1 | RO | data vận hành (tuyến, giá, lịch, điểm đón) hiệu lực vào `date`: lọc chính xác theo `topics`, `match` (đủ từ, không dấu; tên nơi/bến/loại xe khớp mọi alias), `facts`; `include_upcoming` → bản sẽ có hiệu lực (giá mới đã chốt) |
 | `get_source` | M1 | RO | nguồn của một item (nhận cả `[[id]]`): tin/tài liệu gốc, kênh, ai gửi, ai duyệt, các lần nhà xe nhắc lại; L0/L1 → file `kb/` |
 | `get_coverage` | M2 | RO | theo template: `covered` · `industry_default` (đang dùng thông lệ L1) · `ambiguous` (CONFLICT đang mở) · `missing`; % mục bắt buộc đã phủ |
-| `compare_with_industry` | M3 | RO | chỗ nhà xe khác thông lệ, bao nhiêu nhà xe khác cũng vậy |
-| `reflect` | M3 | RO | câu hỏi phân tích, trả lời có trích dẫn |
+| `compare_with_industry` | M3 ✅ | RO | chỗ nhà xe khác thông lệ: observation của nhà xe vs thông lệ L1 theo topic (từ job consolidate); "bao nhiêu nhà xe khác cũng vậy" bổ sung khi có dữ liệu nhiều nhà xe |
+| `reflect` | M3 ✅ | | async: agent phân tích tri thức cho builder — trả lời câu hỏi dựa trên tri thức đã duyệt, mỗi nhận định kèm [[id]]; kiểm tự động (id không hợp lệ, câu số liệu thiếu trích dẫn → warnings) |
 
 ### 5.2 Ghi tri thức (qua review)
 | Tool | Mốc | Cờ | Mô tả |

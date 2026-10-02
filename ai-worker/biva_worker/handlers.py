@@ -1,5 +1,5 @@
 """Handler theo ``kind``: ping, index/code, logic.spec/propose, consolidate, promote,
-validate, logic.examples, bot.tests/chat, ingest."""
+validate, logic.examples, bot.tests/chat/reflect/compare, ingest."""
 
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ from biva_worker import (
     logic_spec,
     logic_sync,
     promote,
+    reflect,
     validate_llm,
 )
 from biva_worker.embed import Embedder
@@ -46,5 +47,7 @@ def build(pool: asyncpg.Pool, embedder: Embedder, llm: LLMClient) -> dict[str, H
         "logic.examples": examples.handler(pool),
         "bot.tests": bot_tests.handler(pool, llm),
         "bot.chat": bot_tests.handler(pool, llm),
+        "bot.reflect": reflect.handler(pool, llm),
+        "bot.compare": reflect.handler(pool, llm),
         "ingest": ingest_job.handler(pool, llm),
     }
