@@ -144,6 +144,23 @@ ORDER BY published_at DESC LIMIT 3;` — bản mong muốn đang `published`.
 - Verify khi tái diễn: `docker logs brain-api | grep -c "trở thành leader"` tăng đúng 1 sau
   mỗi lần mất-lại; job ping mới → status=done.
 
+## Chaos: worker chết giữa job (đã kiểm chứng 02/10)
+
+Giả lập worker chết giữa job (không cần SIGKILL thật — kết quả tương đương):
+```sql
+UPDATE operations SET status='running', lease_until = now() - interval '2 seconds',
+  locked_by='deadworker' WHERE id='<job-id>'::uuid;
+```
+Scheduler chạy `requeue_expired` mỗi 15s → job về queued → worker khác claim và xử lý
+(attempts tăng 1). Đã kiểm chứng: attempts 1→2, status done, result "pong".
+Lưu ý: side effect của job phải idempotent — ingest đã chạy một transaction tất-cả-hoặc-không-gì
+nên job bị claim lại sau khi chết giữa chừng xử lý lại từ đầu, không nhân đôi.
+
+## Backup/restore — tái kiểm chứng sau migration 24–25 (02/10)
+
+`BIVA_RESTORE_VERIFY=1 deploy/backup.sh` → 39/39 bảng, 45/45 items, 119/119 operations
+khớp tuyệt đối giữa bản và DB scratch.
+
 ## Trước khi lên production (security)
 
 - **Bucket export**: key export đã có nonce ngẫu nhiên (URL không đoán được kể cả bucket công khai);
