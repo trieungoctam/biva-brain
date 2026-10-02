@@ -178,8 +178,8 @@ Cột **Mốc** = mốc dự kiến (xem lộ trình trong [architecture.md](arc
 | `validate_artifact` | M1 | RO | kiểm tĩnh theo §4 (UNCITED, STALE_CITATION — kể cả thông lệ L1 nay đã có tri thức nhà xe thay, MISSING_LOCKED, UNLABELED_DEFAULT, HARDCODED_DATA, COVERAGE); lỗi có dòng + item + cách sửa; ghi `valid`/`invalid` vào artifact |
 | `list_stale` | M2 | RO | bản mới nhất của artifact bị stale, mỗi chỗ có dòng, nội dung dòng, tri thức cũ/mới, lý do (`superseded` · `expired` · `retracted` · `overridden_default` · `new_locked_rule`) và cách sửa; hồ sơ logic: khi có E2.5 |
 | `export_bot` | M2 | | lắp snapshot (bảng `snapshots`) từ bản mới nhất của các artifact — chỉ khi đủ artifact bắt buộc và tất cả `valid` (draft/invalid/stale → lỗi nêu cách xử lý); cùng bộ version → dùng lại snapshot. Trả nội dung `json` (Bot Definition, giữ danh sách trích dẫn) · `markdown` (system prompt ghép sẵn) · `faq_csv`; `[[id]]` bị bỏ khỏi nội dung. Có `BIVA_S3_ENDPOINT` → lưu bản xuất lên object storage (SeaweedFS) và trả thêm `download_url` (path công khai `exports/<nhà xe>/<kênh>/v<n>/<file>`) |
-| `run_tests` | M3 | | regression L0/L1 + test sinh từ L2 bằng reference executor |
-| `sandbox_chat` | M3 | | chat thử bot đang build (reference executor) |
+| `run_tests` | M3 ✅ | | async: sinh test từ tri thức nhà xe (policy → must_mention, data → must_call_tool) rồi chạy toàn bộ qua reference executor (LLM + tool query_data thật của Brain) → % pass + case fail (kỳ vọng vs nhận được), ghi test_runs |
+| `sandbox_chat` | M3 ✅ | | async: chat thử 1 lượt với snapshot mới nhất qua reference executor — UAT thủ công, không phục vụ khách thật |
 | `request_publish` | M4 | C | đánh dấu bản phát hành; production cần lead duyệt |
 
 ### 5.5 Platform (`/mcp/platform/`)

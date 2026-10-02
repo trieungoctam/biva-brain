@@ -1,0 +1,163 @@
+"""E3.5: sinh test từ tri thức, run_tests + sandbox_chat qua executor (LLM scripted)."""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import os
+import uuid
+
+import asyncpg
+import pytest
+
+from biva_worker import bot_tests
+from biva_worker.executor import verdict
+from biva_worker.llm import LLMClient
+from biva_worker.llm import load as llm_load
+from biva_worker.llm.client import RawResponse, Usage
+from biva_worker.runner import Job, PermanentError, init_connection
+
+DB_URL = os.environ.get("BIVA_TEST_DATABASE_URL")
+needs_db = pytest.mark.skipif(not DB_URL, reason="đặt BIVA_TEST_DATABASE_URL")
+
+DEFINITION = {
+    "bot_id": None,
+    "operator": None,
+    "channel": "zalo",
+    "snapshot_version": 1,
+    "artifacts": {
+        "system_prompt": {"content": "Bạn là bot nhà xe. Giá vé luôn gọi tool query_data."},
+        "faq": {"content": "### Chó mèo?\nNhà xe không nhận chó mèo."},
+    },
+}
+
+
+class ScriptedLLM:
+    """Lượt 1 gọi tool khi câu hỏi chứa 'giá'; lượt sau trả lời dùng kết quả tool."""
+
+    def __init__(self) -> None:
+        self.turn = 0
+
+    async def complete(self, step, req, schema) -> RawResponse:
+        has_tool_ctx = "tool query_data trả về" in req.messages[0]["content"]
+        wants_tool = "giá" in req.messages[0]["content"].lower() and not has_tool_ctx
+        if wants_tool:
+            data = {"reply": "", "tool": "query_data", "args": {"topic": "fare"}}
+        else:
+            extra = "350.000đ" if has_tool_ctx else "Dạ nhà xe không nhận chó mèo ạ."
+            data = {"reply": extra}
+        self.turn += 1
+        return RawResponse(json.dumps(data), "end_turn", step.model.name, Usage(50, 30))
+
+
+def client_with(fake) -> LLMClient:
+    return LLMClient(llm_load(), providers={"gemini": fake})
+
+
+@needs_db
+def test_run_tests_and_sandbox_chat(tmp_path):
+    async def t() -> None:
+        pool = await asyncpg.create_pool(DB_URL, init=init_connection)
+        op = f"bt{uuid.uuid4().hex[:8]}"
+        await pool.execute("DELETE FROM operators WHERE id = $1", op)
+        await pool.execute("INSERT INTO operators (id, name) VALUES ($1, 'B')", op)
+        try:
+            await pool.execute(
+                """INSERT INTO items (layer, operator_id, kind, topic, text, status)
+                   VALUES (2, $1, 'policy', 'pets', 'Không nhận chó mèo trên xe', 'active')""",
+                op,
+            )
+            await pool.execute(
+                """INSERT INTO items (layer, operator_id, kind, topic, text, status)
+                   VALUES (2, $1, 'data', 'fare', 'Giá Sài Gòn Đà Lạt giường nằm 350000đ', 'active')""",
+                op,
+            )
+            # Snapshot.
+            await pool.execute(
+                "INSERT INTO bots (id, operator_id, channel) VALUES ($1, $2, 'zalo')", op + ":zalo", op
+            )
+            snap = dict(DEFINITION, bot_id=op + ":zalo", operator=op)
+            await pool.execute(
+                """INSERT INTO snapshots (bot_id, operator_id, version, artifact_versions, definition, created_by)
+                   VALUES ($1, $2, 1, '{}', $3::jsonb, 't')""",
+                op + ":zalo",
+                op,
+                snap,
+            )
+            run = bot_tests.handler(pool, client_with(ScriptedLLM()))
+
+            # run_tests: sinh test từ tri thức (policy pets + data fare) rồi chạy qua executor.
+            res = await run(Job(str(uuid.uuid4()), "bot.tests", op, {"operator_id": op}, 1, 5, {}))
+            assert res["counts"]["total"] >= 2, res
+            # Case data phải gọi tool; case policy phải nhắc từ khoá.
+            assert res["counts"]["passed"] == res["counts"]["total"], res["failed_cases"]
+
+            # test_runs ghi nhận kết quả.
+            row = await pool.fetchrow(
+                "SELECT total, passed FROM test_runs WHERE operator_id = $1 ORDER BY created_at DESC LIMIT 1",
+                op,
+            )
+            assert row["total"] == res["counts"]["total"] and row["passed"] == res["counts"]["passed"]
+
+            # Sinh lại idempotent: retire bản cũ, không đúp.
+            n_active = await pool.fetchval(
+                "SELECT count(*) FROM test_cases WHERE operator_id = $1 AND status = 'active'", op
+            )
+            assert n_active == res["counts"]["total"]
+
+            # sandbox_chat: 1 lượt — câu giá đi qua tool, câu thường không.
+            chat = await run(
+                Job(
+                    str(uuid.uuid4()),
+                    "bot.chat",
+                    op,
+                    {"operator_id": op, "message": "Giá xe đi Đà Lạt bao nhiêu?"},
+                    1,
+                    5,
+                    {},
+                )
+            )
+            assert "350.000đ" in chat["reply"] and chat["tools_called"], chat
+            chat2 = await run(
+                Job(
+                    str(uuid.uuid4()),
+                    "bot.chat",
+                    op,
+                    {"operator_id": op, "message": "Cho em chó lên xe được không?"},
+                    1,
+                    5,
+                    {},
+                )
+            )
+            assert "chó mèo" in chat2["reply"] and not chat2["tools_called"], chat2
+
+            # Chưa có snapshot → lỗi rõ (channel khác).
+            with pytest.raises(PermanentError, match="snapshot"):
+                await run(
+                    Job(
+                        str(uuid.uuid4()),
+                        "bot.chat",
+                        op,
+                        {"operator_id": op, "channel": "web", "message": "hi"},
+                        1,
+                        5,
+                        {},
+                    )
+                )
+        finally:
+            await pool.execute("DELETE FROM operators WHERE id = $1", op)
+
+    asyncio.run(t())
+
+
+def test_verdict():
+    ok, why = verdict(
+        "Giá vé là 350.000đ ạ.",
+        [{"tool": "query_data", "args": {}}],
+        {"must_call_tool": ["query_data"], "must_mention": ["350.000"]},
+    )
+    assert ok, why
+    ok, why = verdict("350.000đ", [], {"must_call_tool": ["query_data"]})
+    assert not ok and "query_data" in why
+    ok, why = verdict("giá 400k nhé", [], {"must_not_say": ["400k"]})
+    assert not ok and "400k" in why

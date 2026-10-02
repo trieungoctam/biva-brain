@@ -13,6 +13,7 @@ import (
 	"github.com/trieungoctam/biva-brain/brain-api/internal/export"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/kb"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/pack"
+	"github.com/trieungoctam/biva-brain/brain-api/internal/queue"
 )
 
 // ─────────────────────────────── kiểu vào/ra ───────────────────────────────
@@ -409,4 +410,55 @@ func (s *Server) botSpec(ctx context.Context, operatorID string, in specIn) (*mc
 	}
 	out.NextActions = append(out.NextActions, "viết từng artifact theo artifacts[].purpose rồi save_artifact")
 	return nil, out, nil
+}
+
+type runTestsIn struct {
+	Channel string `json:"channel,omitempty" jsonschema:"zalo (mặc định) | messenger | web"`
+}
+
+type sandboxChatIn struct {
+	Message string `json:"message" jsonschema:"tin nhắn của khách (giả lập)"`
+	Channel string `json:"channel,omitempty" jsonschema:"zalo (mặc định) | messenger | web"`
+}
+
+const (
+	runTestsDesc = "Chạy test bot bằng reference executor (LLM + tool query_data của Brain, không phục vụ " +
+		"khách thật): sinh test từ tri thức nhà xe + regression, chạy từng case, trả % pass và case fail " +
+		"(kỳ vọng vs nhận được). Async: operation_id."
+	sandboxChatDesc = "Chat thử một lượt với bot (snapshot mới nhất) qua reference executor — UAT thủ công. " +
+		"Async: operation_id."
+)
+
+type testJobOut struct {
+	OperationID string   `json:"operation_id"`
+	NextActions []string `json:"next_actions"`
+}
+
+func (s *Server) addTestTools(srv *mcp.Server, operatorID string) {
+	mcp.AddTool(srv, &mcp.Tool{Name: "run_tests", Description: runTestsDesc,
+		Annotations: &mcp.ToolAnnotations{IdempotentHint: true, DestructiveHint: ptr(false), OpenWorldHint: ptr(false)}},
+		func(ctx context.Context, _ *mcp.CallToolRequest, in runTestsIn) (*mcp.CallToolResult, testJobOut, error) {
+			opID, _, err := queue.Enqueue(ctx, s.db, queue.Job{Kind: "bot.tests", OperatorID: operatorID,
+				Payload: map[string]string{"channel": in.Channel}})
+			if err != nil {
+				return nil, testJobOut{}, internal("run_tests", err)
+			}
+			return nil, testJobOut{OperationID: opID, NextActions: []string{
+				"get_operation(operation_id=" + opID + ") — % pass + case fail",
+				"case fail → sửa artifact hoặc thêm tri thức rồi chạy lại"}}, nil
+		})
+	mcp.AddTool(srv, &mcp.Tool{Name: "sandbox_chat", Description: sandboxChatDesc,
+		Annotations: &mcp.ToolAnnotations{IdempotentHint: false, DestructiveHint: ptr(false), OpenWorldHint: ptr(false)}},
+		func(ctx context.Context, _ *mcp.CallToolRequest, in sandboxChatIn) (*mcp.CallToolResult, testJobOut, error) {
+			if strings.TrimSpace(in.Message) == "" {
+				return nil, testJobOut{}, errors.New("thiếu message")
+			}
+			opID, _, err := queue.Enqueue(ctx, s.db, queue.Job{Kind: "bot.chat", OperatorID: operatorID,
+				Payload: map[string]string{"message": in.Message, "channel": in.Channel}})
+			if err != nil {
+				return nil, testJobOut{}, internal("sandbox_chat", err)
+			}
+			return nil, testJobOut{OperationID: opID, NextActions: []string{
+				"get_operation(operation_id=" + opID + ") — câu trả lời + tool đã gọi"}}, nil
+		})
 }

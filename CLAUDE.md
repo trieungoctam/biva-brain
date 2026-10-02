@@ -117,5 +117,10 @@ cd ai-worker && uv run pytest -q
   code ghép bằng glue wire hook vào đúng tham số entry.
 - M3 S3.4.4 xong: `add_logic_test` (out HOẶC error, note, source item) / `list_logic_tests`;
   CI repo biva-integrations chạy cases.yaml module bằng pytest (đã có từ S2.5.1). E3.4 đủ 4/4 story.
+- M3 E3.5.1–5.3 xong: migration 000021 (`test_cases`, `test_runs`); reference executor
+  (`biva_worker/executor.py` — LLM purpose `interactive` + tool `query_data` SQL thật, tối đa 1 vòng
+  tool, verdict must_mention/must_not_say/must_call_tool); job `bot.tests` (sinh test từ tri thức —
+  thay bản generated cũ, chạy qua executor, ghi test_runs) + `bot.chat` (sandbox 1 lượt); tools MCP
+  `run_tests` / `sandbox_chat` (async). Đo trên pilot chờ GEMINI key; 👎→lesson/gap: khi có UAT thật.
 - Linear: workspace dpos, project "BIVA Brain"; mỗi story xong thì comment kết quả + link CI rồi chuyển Done
   (chưa đạt hết AC thì để In Progress và ghi rõ phần thiếu).
