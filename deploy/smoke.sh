@@ -33,11 +33,18 @@ sfx=$(date +%s)
 $C exec -T brain-api brain-api operator add "smoke$sfx" "Smoke $sfx"
 $C exec -T brain-api brain-api user add "smoke$sfx" --email "smoke$sfx@biva.local" --name Smoke --role builder
 $C exec -T brain-api brain-api user grant "smoke$sfx" "smoke$sfx"
-token=$($C exec -T brain-api brain-api token issue "smoke$sfx" --name smoke --ttl 1h | tail -1)
+# Retry 1 lần: trên runner CI từng có lượt exit 255 không output ngay sau grant (flake
+# hạ tầng docker/runner) — marker + retry giúp lần tái phát biết chính xác lệnh nào chết.
+capture() { # capture <mô tả> <lệnh...> — chạy, echo marker, retry một lần nếu lỗi
+  local what=$1; shift
+  echo "→ $what"
+  "$@" || { echo "✗ $what lỗi lần 1 — thử lại"; "$@"; }
+}
+token=$(capture "token issue" bash -c   "$C exec -T brain-api brain-api token issue 'smoke$sfx' --name smoke --ttl 1h | tail -1")
 
 # Job ping → ai-worker phải xử lý xong.
-job=$($C exec -T postgres psql -U biva -d biva -Atc \
-  "INSERT INTO operations (kind, operator_id) VALUES ('system.ping', 'smoke$sfx') RETURNING id" | head -1)
+job=$(capture "psql insert operations" bash -c \
+  "$C exec -T postgres psql -U biva -d biva -Atc \"INSERT INTO operations (kind, operator_id) VALUES ('system.ping', 'smoke$sfx') RETURNING id\" | head -1")
 wait_for "ai-worker xử lý job $job" 60 bash -c \
   "$C exec -T postgres psql -U biva -d biva -Atc \"SELECT status FROM operations WHERE id='$job'\" | grep -qx done"
 
