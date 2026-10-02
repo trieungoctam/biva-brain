@@ -135,12 +135,14 @@ ORDER BY published_at DESC LIMIT 3;` — bản mong muốn đang `published`.
 
 ## Trước khi lên production (security)
 
-- **Bucket export**: SeaweedFS local để bucket công khai cho tiện demo — production chuyển bucket
-  riêng tư + link presigned hết hạn ngắn (storage/s3.go đã tách public URL riêng).
-- **OAuth register** mở (RFC 7591 không xác thực): bật allowlist client hoặc initial access token;
-  thêm rate limit /oauth/register · /oauth/token · /oauth/authorize theo IP.
+- **Bucket export**: key export đã có nonce ngẫu nhiên (URL không đoán được kể cả bucket công khai);
+  production nên thêm bucket riêng tư + link presigned hết hạn ngắn (storage/s3.go tách public URL riêng).
+- **OAuth register**: đặt `BIVA_OAUTH_REGISTRATION_SECRET` để bắt buộc initial access token khi đăng ký
+  client (RFC 7591 §5); rate limit /oauth/register · /oauth/token · /oauth/authorize theo IP khi lên internet.
 - **BIVA_INTEGRATIONS_REPO** chế độ path chỉ dùng dev; production đặt URL git + token
   (propose luôn tạo PR, index_code không đọc working tree local).
+- Resource OAuth đã được whitelist chặt (issuer · /mcp/platform/ · /mcp/operator/<id>/ một segment);
+  thêm scope mới thì phải kiểm scope khi Verify token.
 
 ## Backup / khôi phục dữ liệu
 

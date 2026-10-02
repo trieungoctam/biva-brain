@@ -8,7 +8,9 @@ package export
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/csv"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -227,7 +229,9 @@ func Export(ctx context.Context, db *pgxpool.Pool, in Input) (Result, error) {
 	}
 	res.Bytes = len(res.Content)
 	if in.Store != nil {
-		key := fmt.Sprintf("exports/%s/%s/v%d/%s", in.OperatorID, in.Channel, snapVersion, res.Filename)
+		// Thành phần ngẫu nhiên: URL tải không đoán được kể cả khi bucket công khai (capability URL).
+		nonce := hex.EncodeToString(random8())
+		key := fmt.Sprintf("exports/%s/%s/v%d/%s-%s", in.OperatorID, in.Channel, snapVersion, nonce, res.Filename)
 		url, err := in.Store.Upload(ctx, key, storage.ContentType(in.Format), []byte(res.Content))
 		if err != nil {
 			return res, fmt.Errorf("lưu bản xuất lên object storage: %w", err)
@@ -302,4 +306,12 @@ func FAQCSV(faq string) string {
 	}
 	w.Flush()
 	return buf.String()
+}
+
+func random8() []byte {
+	b := make([]byte, 8)
+	if _, err := rand.Read(b); err != nil {
+		panic(err)
+	}
+	return b
 }

@@ -20,9 +20,9 @@ Agent security-review rà 7 mặt; phân quyền đa tenant, tham số hoá SQL,
 - MED approve_publish: token gắn subject "*" — nay bắt buộc release_id ở preview, token hash đúng
   release đó (test: token của r1 duyệt r2 bị chặn).
 - MED examples: entrypoint/hooks chứa ".." đọc file ngoài repo — resolve + is_relative_to(workdir).
-Còn nhận biết (chưa sửa, ghi trong runbook): bucket export công khai (kế hoạch presigned cho
-production), OAuth register mở (cần rate limit/allowlist khi lên production), resource rỗng
-`/mcp/operator/` (token match mọi nhà xe — không leo thang vì requireOperator vẫn kiểm).
+Vòng 2 (sau review) sửa nốt 3 low/medium còn lại: export key thêm nonce (URL không đoán được),
+resource OAuth whitelist chặt (chặn `/mcp/operator/` rỗng + `../`), register hỗ trợ
+`BIVA_OAUTH_REGISTRATION_SECRET`, consent hiển thị client_id. Ghi hướng dẫn trong runbook.
 
 ## Đo SLO (E-X2 cơ bản)
 

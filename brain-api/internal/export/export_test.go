@@ -88,8 +88,14 @@ func TestExport(t *testing.T) {
 	// Có Store → upload đúng key/content-type, trả download_url (DYN-74).
 	up := &fakeUploader{}
 	st, err := Export(ctx, pool, Input{OperatorID: op, Format: "faq_csv", Required: in.Required, Actor: "ai:t", Store: up})
-	if err != nil || st.DownloadURL != "http://s3.test/biva-exports/exports/"+op+"/zalo/v1/"+op+"-zalo-v1-faq.csv" {
+	// Key có nonce ngẫu nhiên → URL không đoán được kể cả khi bucket công khai.
+	wantPrefix := "http://s3.test/biva-exports/exports/" + op + "/zalo/v1/"
+	if err != nil || !strings.HasPrefix(st.DownloadURL, wantPrefix) {
 		t.Fatalf("store = %+v %v", st, err)
+	}
+	guessable := wantPrefix + op + "-zalo-v1-faq.csv"
+	if st.DownloadURL == guessable || len(strings.TrimPrefix(st.DownloadURL, wantPrefix)) < 8 {
+		t.Fatalf("download_url phải chứa nonce không đoán được: %q", st.DownloadURL)
 	}
 	if up.contentType != "text/csv; charset=utf-8" || up.body != st.Content || up.key == "" {
 		t.Fatalf("upload = %+v", up)

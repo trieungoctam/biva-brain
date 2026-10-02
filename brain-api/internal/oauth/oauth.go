@@ -23,6 +23,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"os"
 	"slices"
 	"strings"
 	"time"
@@ -119,6 +120,15 @@ func validRedirect(raw string) bool {
 }
 
 func (s *Server) register(w http.ResponseWriter, r *http.Request) {
+	// BIVA_OAUTH_REGISTRATION_SECRET (tuỳ chọn, RFC 7591 §5 initial access token): đặt thì
+	// register yêu cầu Bearer đúng giá trị — production đóng cửa đăng ký tự do.
+	if sec := os.Getenv("BIVA_OAUTH_REGISTRATION_SECRET"); sec != "" {
+		got := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if subtle.ConstantTimeCompare([]byte(got), []byte(sec)) != 1 {
+			oauthError(w, http.StatusUnauthorized, "invalid_token", "cần initial access token để đăng ký client")
+			return
+		}
+	}
 	var m oauthex.ClientRegistrationMetadata
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&m); err != nil {
 		oauthError(w, http.StatusBadRequest, "invalid_client_metadata", "body phải là JSON metadata của client")
@@ -197,10 +207,29 @@ func (s *Server) parseAuthRequest(ctx context.Context, v url.Values) (authReques
 		return a, "response_type phải là code"
 	case a.Method != "S256" || len(a.Challenge) < 43:
 		return a, "cần PKCE: code_challenge_method=S256 và code_challenge"
-	case a.Resource != "" && a.Resource != s.Issuer && !strings.HasPrefix(a.Resource, s.Issuer+"/"):
-		return a, "resource không thuộc máy chủ này"
+	case a.Resource != "" && !s.validResource(a.Resource):
+		return a, "resource không hợp lệ (phải là máy chủ này, /mcp/platform/ hoặc /mcp/operator/<nhà xe>/)"
 	}
 	return a, ""
+}
+
+// validResource (RFC 8707): chỉ nhận đúng issuer, endpoint platform, hoặc endpoint của MỘT nhà xe
+// (id không rỗng — resource "/mcp/operator/" rỗng từng match prefix mọi endpoint, giờ từ chối).
+func (s *Server) validResource(resource string) bool {
+	if resource == s.Issuer {
+		return true
+	}
+	if rest, ok := strings.CutPrefix(resource, s.Issuer+"/"); ok {
+		if rest == "mcp/platform/" {
+			return true
+		}
+		if op, ok2 := strings.CutPrefix(rest, "mcp/operator/"); ok2 {
+			op = strings.TrimSuffix(op, "/")
+			// một segment, không chứa ".." / "/" (chặn /mcp/operator/../platform/)
+			return op != "" && !strings.ContainsAny(op, "/.") && strings.HasSuffix(rest, "/")
+		}
+	}
+	return false
 }
 
 var page = template.Must(template.New("authorize").Parse(`<!doctype html>
@@ -211,7 +240,7 @@ input[type=password]{width:100%;padding:.6rem;font:inherit;box-sizing:border-box
 .err{color:#b00020}.muted{color:#555;font-size:.9rem}</style></head><body>
 <h1>Kết nối BIVA Brain</h1>
 {{if .Fatal}}<p class="err">{{.Fatal}}</p>{{else}}
-<p><b>{{.Req.ClientName}}</b> muốn truy cập tri thức BIVA Brain{{if .Operator}} của nhà xe <b>{{.Operator}}</b>{{end}} thay mặt bạn.</p>
+<p><b>{{.Req.ClientName}}</b> <span class="muted">({{.Req.ClientID}})</span> muốn truy cập tri thức BIVA Brain{{if .Operator}} của nhà xe <b>{{.Operator}}</b>{{end}} thay mặt bạn.</p>
 {{if .Error}}<p class="err">{{.Error}}</p>{{end}}
 <form method="post" action="/oauth/authorize">
 <label for="t">Token cá nhân (biva_…, cấp bởi quản trị bằng <code>brain-api token issue</code>)</label>
