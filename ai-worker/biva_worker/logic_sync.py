@@ -126,6 +126,22 @@ def module_context(path: Path, root: Path) -> tuple[str | None, str | None]:
     return module_id, operator
 
 
+async def _embed_missing(pool: asyncpg.Pool, embedder: Embedder, repo: str, commit: str) -> int:
+    """Nhúng các chunk của (repo, commit) còn thiếu vector; TEI lỗi thì raise RetryableError."""
+    rows = await pool.fetch(
+        "SELECT id, text FROM code_chunks WHERE repo = $1 AND commit = $2 AND embedding IS NULL",
+        repo,
+        commit,
+    )
+    if rows:
+        vectors = await embedder.embed([r["text"] for r in rows])
+        await pool.executemany(
+            "UPDATE code_chunks SET embedding = $2::vector WHERE id = $1",
+            [(r["id"], to_pgvector(v)) for r, v in zip(rows, vectors, strict=True)],
+        )
+    return len(rows)
+
+
 # ───────────────────────────────────── Đồng bộ ─────────────────────────────────────
 
 
@@ -137,11 +153,26 @@ async def sync(pool: asyncpg.Pool, embedder: Embedder, source: str) -> dict[str,
         commit = _git(["rev-parse", "HEAD"], cwd=workdir)
         row = await pool.fetchrow("SELECT commit FROM logic_syncs WHERE repo = $1", repo)
         if row and row["commit"] == commit:
+            # HEAD không đổi, nhưng lần trước TEI có thể lỗi → chunk còn embedding NULL.
+            # Phải hoàn thiện nốt: không thì chunk thiếu vector mãi đến khi repo có commit mới.
+            missing = await pool.fetchval(
+                "SELECT count(*) FROM code_chunks WHERE repo = $1 AND commit = $2 AND embedding IS NULL",
+                repo,
+                commit,
+            )
+            if not missing:
+                return {
+                    "status": "done",
+                    "summary": "HEAD không đổi — bỏ qua",
+                    "commit": commit,
+                    "changed": False,
+                }
             return {
                 "status": "done",
-                "summary": "HEAD không đổi — bỏ qua",
+                "summary": f"HEAD không đổi — hoàn thiện embedding cho {missing} chunk",
                 "commit": commit,
                 "changed": False,
+                "embedded": await _embed_missing(pool, embedder, repo, commit),
             }
 
         counts = {"modules": 0, "profiles": 0, "tests": 0, "chunks": 0}
@@ -340,18 +371,7 @@ async def sync(pool: asyncpg.Pool, embedder: Embedder, source: str) -> dict[str,
     # Embedding sau transaction: TEI lỗi không làm hỏng đồng bộ — chunk vẫn tìm được bằng keyword.
     embedded = 0
     try:
-        rows = await pool.fetch(
-            "SELECT id, text FROM code_chunks WHERE repo = $1 AND commit = $2 AND embedding IS NULL",
-            repo,
-            commit,
-        )
-        if rows:
-            vectors = await embedder.embed([r["text"] for r in rows])
-            await pool.executemany(
-                "UPDATE code_chunks SET embedding = $2::vector WHERE id = $1",
-                [(r["id"], to_pgvector(v)) for r, v in zip(rows, vectors, strict=True)],
-            )
-            embedded = len(rows)
+        embedded = await _embed_missing(pool, embedder, repo, commit)
     except RetryableError as exc:
         return {
             "status": "done",

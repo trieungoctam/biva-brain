@@ -64,6 +64,13 @@ async def consolidate(pool: asyncpg.Pool, operator_id: str | None) -> dict[str, 
     """operator_id None = scope L0/L1 (thông lệ ngành). Trả số observation cập nhật/tạo."""
     async with pool.acquire() as con:
         async with con.transaction():
+            # Serialize theo scope: hai job consolidate chạy chồng (queue concurrency>1 hoặc
+            # enqueue từ nhiều review) từng đọc cùng snapshot observation + nguồn, ghi đè lẫn
+            # nhau và đánh dấu nguồn consolidated dù câu của nó đã bị bản ghi sau xoá mất.
+            await con.execute(
+                "SELECT pg_advisory_xact_lock(hashtext($1))",
+                "consolidate:" + (operator_id or "L0L1"),
+            )
             where_scope = (
                 "operator_id IS NULL AND layer <= 1"
                 if operator_id is None

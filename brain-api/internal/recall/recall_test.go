@@ -303,6 +303,37 @@ func TestRecallBudgetAndBoost(t *testing.T) {
 	}
 }
 
+// Khoảng hiệu lực NỬA MỞ [valid_from, valid_to): đúng mốc chuyển (valid_to cũ = valid_from mới)
+// chỉ bản MỚI có hiệu lực — bản cũ hết ngay tại mốc, không trả cả hai giá trong cùng ngày.
+func TestQueryDataHalfOpen(t *testing.T) {
+	e := setup(t)
+	ctx := context.Background()
+	switchDay := e.day("2026-11-01")
+	oldFare := e.insertIt(2, e.op, "data", "fare", "fare.sg_dl", "SG→ĐL 320.000đ",
+		map[string]any{"value": []byte(`{"facts": {"gia_ve": "320000"}}`),
+			"valid_from": e.day("2026-01-01"), "valid_to": switchDay})
+	newFare := e.insertIt(2, e.op, "data", "fare", "fare.sg_dl", "SG→ĐL 350.000đ",
+		map[string]any{"value": []byte(`{"facts": {"gia_ve": "350000"}}`),
+			"valid_from": switchDay})
+
+	for _, tc := range []struct {
+		day  string
+		want string // id bản phải thấy; "" = không thấy bản nào
+	}{
+		{"2026-10-31", oldFare},
+		{"2026-11-01", newFare}, // mốc chuyển: chỉ bản mới
+		{"2026-12-01", newFare},
+	} {
+		res, err := QueryData(ctx, e.pool, DataQuery{OperatorID: e.op, Topics: []string{"fare"}, At: e.day(tc.day)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(res.Rows) != 1 || res.Rows[0].ID != tc.want {
+			t.Fatalf("ngày %s: muốn %s, được %+v", tc.day, tc.want, res.Rows)
+		}
+	}
+}
+
 func TestQueryData(t *testing.T) {
 	e := setup(t)
 	ctx := context.Background()

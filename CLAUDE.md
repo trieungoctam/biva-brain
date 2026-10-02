@@ -30,13 +30,18 @@ snapshot_id, gate chỉ nhận test của đúng snapshot mới nhất (snapshot
 (d) lỗi DB khi ghi kết quả job từng giết slot worker vĩnh viễn — giờ bắt ở ranh giới slot;
 (e) run_code/git-clone đồng bộ từng chặn event loop → hết lease 60s bị claim lại — sang to_thread;
 (f) clone lỗi để lộ tmpdir; (g) goroutine ticker scheduler tích luỹ qua từng phiên leader.
-Backlog medium CHƯA sửa (chờ golden set/pilot): stale logic_param_sources, valid_to nửa mở
-(query_data trả giá cũ+ mới ngày chuyển), chọn target review nhầm bản tương lai, hydrate recall
-không snapshot nhất quán, consolidate lost-update (cần advisory lock), promote gom sai topic +
-chép câu riêng nhà xe đại diện lên L1, embedding code không tự hoàn thiện sau TEI lỗi, pages
-không refresh khi sang ngày hiệu lực, cosine trong compare luôn fallback Jaccard, lỗi DB bị coi
-là "chưa có profile logic" trong overview, timezone executor (UTC vs +07), propose_l1_change
-không sửa được key L1 đang tồn tại, ingest retry bỏ qua bước dở khi gặp document trùng.
+Vòng 4 (sửa nốt medium máy móc được): khoảng hiệu lực đổi sang NỬA MỞ [valid_from, valid_to)
+trừ 4 chỗ Go (`valid_to > T`) + executor Python (cast ngày theo Asia/Ho_Chi_Minh, ngày mặc định
+giờ VN thay vì UTC container — test hồi quy cả hai phía); consolidate lấy advisory lock theo
+scope (chặn lost-update mất câu đã đánh dấu consolidated); recall load lọc lại status='active'
+(item superseded giữa chừng không trả về); logic Overview chỉ nuốt đúng ErrNoRows/ErrNoSpec,
+lỗi DB khác báo lên (builder không bị báo "chưa có" khi DB lỗi); index.code HEAD không đổi vẫn
+hoàn thiện embedding chunk thiếu (TEI hồi phục là tự chữa); Similar/Compare nạp embedding phía
+spec mình — cosine chạy thật thay vì luôn fallback Jaccard.
+Backlog medium CÒN LẠI (chờ golden set/pilot): stale logic_param_sources (trigger khi item nguồn đổi), chọn target review nhầm bản tương lai,
+promote gom observation khác topic + chép câu riêng nhà xe đại diện lên L1 (cần provenance theo
+mệnh đề), pages không refresh khi sang ngày hiệu lực, propose_l1_change không sửa được key L1
+đang tồn tại, ingest retry bỏ qua bước dở khi gặp document trùng.
 
 Vòng 2 (sau review) sửa nốt 3 low/medium còn lại: export key thêm nonce (URL không đoán được),
 resource OAuth whitelist chặt (chặn `/mcp/operator/` rỗng + `../`), register hỗ trợ

@@ -222,3 +222,59 @@ def test_reflect_and_compare(tmp_path):
             await pool.execute("DELETE FROM items WHERE operator_id IS NULL AND kind = 'observation'")
 
     asyncio.run(t())
+
+
+# Regression: khoảng hiệu lực NỬA MỞ [valid_from, valid_to) + cast ngày theo giờ Việt Nam.
+def test_query_data_khoang_nua_mo_va_timezone_vn():
+    import asyncio
+    import os
+
+    import asyncpg
+
+    from biva_worker.executor import query_data
+    from biva_worker.runner import init_connection
+
+    db_url = os.environ.get("BIVA_TEST_DATABASE_URL")
+    if not db_url:
+        pytest.skip("đặt BIVA_TEST_DATABASE_URL để chạy test query_data")
+
+    async def t() -> None:
+        import datetime as dt
+        import uuid
+
+        pool = await asyncpg.create_pool(db_url, init=init_connection)
+        op = "exe" + uuid.uuid4().hex[:8]
+        await pool.execute("INSERT INTO operators (id, name) VALUES ($1, 'E')", op)
+        try:
+
+            async def ins(key: str, text: str, vf: str, vt: str | None) -> None:
+                vf_dt = dt.datetime.fromisoformat(vf)
+                vt_dt = dt.datetime.fromisoformat(vt) if vt else None
+                await pool.execute(
+                    """INSERT INTO items (layer, operator_id, kind, topic, key, text, value, status,
+                       valid_from, valid_to)
+                       VALUES (2, $1, 'data', 'fare', $2, $3, '{}', 'active', $4::timestamptz, $5::timestamptz)""",
+                    op,
+                    key,
+                    text,
+                    vf_dt,
+                    vt_dt,
+                )
+
+            # Giá cũ hết hiệu lực 00:00+07 ngày 01/11; giá mới bắt đầu đúng mốc đó.
+            await ins("fare.sg_dl.old", "SG-DL 320k", "2026-01-01 00:00:07+07", "2026-11-01 00:00:07+07")
+            await ins("fare.sg_dl.new", "SG-DL 350k", "2026-11-01 00:00:07+07", None)
+
+            async def only(day: str) -> list[str]:
+                r = await query_data(pool, op, {"topic": "fare", "date": day})
+                return sorted(r["results"])
+
+            assert await only("2026-10-31") == ["SG-DL 320k"]
+            assert await only("2026-11-01") == ["SG-DL 350k"], "mốc chuyển chỉ còn giá mới"
+            assert await only("2026-12-01") == ["SG-DL 350k"]
+        finally:
+            await pool.execute("DELETE FROM items WHERE operator_id = $1", op)
+            await pool.execute("DELETE FROM operators WHERE id = $1", op)
+            await pool.close()
+
+    asyncio.run(t())

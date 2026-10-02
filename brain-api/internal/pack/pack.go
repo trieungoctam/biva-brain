@@ -206,7 +206,7 @@ func (b *Builder) build(ctx context.Context, q Query) (Pack, error) {
 			metadata, updated_at
 		FROM items
 		WHERE status = 'active' AND kind <> 'observation' AND (layer <= 1 OR (layer = 2 AND operator_id = $1))
-			AND (valid_from IS NULL OR valid_from <= $3) AND (valid_to IS NULL OR valid_to >= $2)
+			AND (valid_from IS NULL OR valid_from <= $3) AND (valid_to IS NULL OR valid_to > $2)
 		ORDER BY layer, topic, key NULLS LAST, valid_from NULLS FIRST, id`, q.OperatorID, start, end)
 	if err != nil {
 		return Pack{}, err

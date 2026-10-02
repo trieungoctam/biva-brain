@@ -14,6 +14,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"sort"
@@ -23,6 +24,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/trieungoctam/biva-brain/brain-api/internal/textnorm"
+
+	"github.com/jackc/pgx/v5"
 )
 
 // Spec: logic spec của một nhà xe theo một capability (bảng logic_specs).
@@ -152,9 +155,15 @@ func Similar(ctx context.Context, db *pgxpool.Pool, operator, capability string,
 	}
 	weight := func(id string) float64 { return math.Log(1 + n/(1+df[id])) }
 
+	// Vector của chính spec đang hỏi (corpus[0] dựng trong bộ nhớ, không có embedding) —
+	// không nạp thì cosine không bao giờ chạy, rule_text_similarity luôn 0 thay vì tương quan.
 	var mineEmb []float32
-	if len(corpus) > 0 && corpus[0].operator == mine.Operator {
-		mineEmb = corpus[0].embedding
+	var mineEmbText string
+	if err := db.QueryRow(ctx, `
+		SELECT coalesce(embedding::text, '') FROM logic_specs
+		WHERE capability = $1 AND status = 'active' AND operator_id = $2`, capability, operator).
+		Scan(&mineEmbText); err == nil {
+		mineEmb = parseVector(mineEmbText)
 	}
 	mineRules := textnorm.SearchText(corpus[0].rulesText)
 
@@ -388,15 +397,26 @@ func Overview(ctx context.Context, db *pgxpool.Pool, operator string, capabiliti
 			SELECT mode, module_id, coalesce(hooks::text, '{}'), status, commit
 			FROM logic_profiles WHERE operator_id = $1 AND capability = $2`, operator, cap.ID).
 			Scan(&mode, &module, &hooks, &status, &commit)
-		if err == nil {
+		switch {
+		case err == nil:
 			prof = &ProfileSummary{Mode: mode, Module: module, Status: status, Commit: commit}
 			_ = json.Unmarshal([]byte(hooks), &prof.Hooks)
+		case errors.Is(err, pgx.ErrNoRows):
+			// nhà xe chưa cấu hình capability này — bình thường
+		default:
+			return nil, fmt.Errorf("đọc logic_profiles %s/%s: %w", operator, cap.ID, err)
 		}
 		st.Profile = prof
-		if spec, err := GetSpec(ctx, db, operator, cap.ID); err == nil {
+		spec, err := GetSpec(ctx, db, operator, cap.ID)
+		switch {
+		case err == nil:
 			st.Spec = &SpecSummary{FeatureCount: len(spec.Features), RuleCount: len(spec.RulesText),
 				ExampleCount: spec.ExampleCount}
 			st.Proposed = len(spec.Proposed)
+		case errors.Is(err, ErrNoSpec):
+			// chưa chạy logic.spec — bình thường
+		default:
+			return nil, fmt.Errorf("đọc logic spec %s/%s: %w", operator, cap.ID, err)
 		}
 		states = append(states, st)
 	}
@@ -453,7 +473,12 @@ func Compare(ctx context.Context, db *pgxpool.Pool, operator, other, capability 
 	}
 	total := float64(n) + 1
 	weight := func(id string) float64 { return math.Log(1 + total/(1+df[id])) }
-	c := compare(mine, nil, textnorm.SearchText(strings.Join(mine.RulesText, " ")), r, weight)
+	var mineEmbText string
+	_ = db.QueryRow(ctx, `
+		SELECT coalesce(embedding::text, '') FROM logic_specs
+		WHERE capability = $1 AND status = 'active' AND operator_id = $2`, capability, operator).
+		Scan(&mineEmbText)
+	c := compare(mine, parseVector(mineEmbText), textnorm.SearchText(strings.Join(mine.RulesText, " ")), r, weight)
 	return &c, nil
 }
 

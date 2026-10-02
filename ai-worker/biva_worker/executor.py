@@ -60,17 +60,23 @@ async def query_data(pool: asyncpg.Pool, operator: str, args: dict) -> dict:
     date = (args.get("date") or "").strip()
     match = (args.get("match") or "").strip()
     import datetime as _dt
+    from zoneinfo import ZoneInfo
 
-    as_of = _dt.date.fromisoformat(date) if date else _dt.date.today()
+    # Ngày mặc định theo giờ Việt Nam (container chạy UTC: 00:00–06:59 VN còn là hôm qua);
+    # cast ngày theo Asia/Ho_Chi_Minh (cast theo session UTC làm giá từ 00:00+07 lệch 1 ngày);
+    # khoảng hiệu lực NỬA MỎ [valid_from, valid_to): ngày valid_to không còn thuộc bản cũ.
+    tz = "Asia/Ho_Chi_Minh"
+    as_of = _dt.date.fromisoformat(date) if date else _dt.datetime.now(ZoneInfo(tz)).date()
     rows = await pool.fetch(
         """SELECT text FROM items
            WHERE operator_id = $1 AND status = 'active' AND kind = 'data' AND topic = $2
-             AND (valid_from IS NULL OR valid_from::date <= $3)
-             AND (valid_to IS NULL OR valid_to::date >= $3)
+             AND (valid_from IS NULL OR (valid_from AT TIME ZONE $4::text)::date <= $3)
+             AND (valid_to IS NULL OR (valid_to AT TIME ZONE $4::text)::date > $3)
            ORDER BY updated_at DESC LIMIT 10""",
         operator,
         topic,
         as_of,
+        tz,
     )
     if match:
         m = match.lower()

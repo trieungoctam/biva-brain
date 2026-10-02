@@ -110,7 +110,7 @@ type armHit struct {
 const scopeFilter = `status = 'active'
 	AND kind <> 'observation' -- observation chỉ dùng nội bộ cho consolidate/promote
 	AND (layer <= 1 OR operator_id = $1)
-	AND (valid_from IS NULL OR valid_from <= $5) AND (valid_to IS NULL OR valid_to >= $2)
+	AND (valid_from IS NULL OR valid_from <= $5) AND (valid_to IS NULL OR valid_to > $2)
 	AND (cardinality($3::text[]) = 0 OR topic = ANY($3))
 	AND (cardinality($4::text[]) = 0 OR kind = ANY($4))`
 
@@ -381,7 +381,7 @@ func (r *Recaller) temporal(ctx context.Context, q Query, tsq string) ([]armHit,
 const graphScopeFilter = `i.status = 'active'
 	AND i.kind <> 'observation'
 	AND (i.layer <= 1 OR i.operator_id = $1)
-	AND (i.valid_from IS NULL OR i.valid_from <= $5) AND (i.valid_to IS NULL OR i.valid_to >= $2)
+	AND (i.valid_from IS NULL OR i.valid_from <= $5) AND (i.valid_to IS NULL OR i.valid_to > $2)
 	AND (cardinality($3::text[]) = 0 OR i.topic = ANY($3))
 	AND (cardinality($4::text[]) = 0 OR i.kind = ANY($4))`
 
@@ -445,11 +445,13 @@ func (r *Recaller) load(ctx context.Context, ids []string) ([]Hit, error) {
 	if len(ids) == 0 {
 		return nil, nil
 	}
+	// Chỉ nạp item còn active: giữa lúc các nhánh tìm và lúc nạp, apply_review có thể đã
+	// supersede item — trả nội dung cũ sẽ sai (không có snapshot đọc chung giữa các câu lệnh).
 	rows, err := r.DB.Query(ctx, `SELECT i.id::text, i.layer, i.locked, i.kind, i.topic, i.key, i.text, i.value,
 			i.valid_from, i.valid_to, i.proof_count, i.created_at, i.metadata,
 			d.id::text, d.source, d.received_at
 		FROM items i LEFT JOIN documents d ON d.id = i.document_id
-		WHERE i.id = ANY($1::uuid[])`, ids)
+		WHERE i.id = ANY($1::uuid[]) AND i.status = 'active'`, ids)
 	if err != nil {
 		return nil, err
 	}

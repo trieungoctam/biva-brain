@@ -63,7 +63,7 @@ func QueryData(ctx context.Context, db *pgxpool.Pool, q DataQuery) (DataResult, 
 			(valid_from IS NOT NULL AND valid_from > $6) AS upcoming
 		FROM items
 		WHERE operator_id = $1 AND layer = 2 AND kind = 'data' AND status = 'active'
-			AND (valid_to IS NULL OR valid_to >= $2)
+			AND (valid_to IS NULL OR valid_to > $2)
 			AND ($4 OR valid_from IS NULL OR valid_from <= $6)
 			AND (cardinality($3::text[]) = 0 OR topic = ANY($3))
 		ORDER BY topic, key NULLS LAST, valid_from NULLS FIRST, id LIMIT $5`,
