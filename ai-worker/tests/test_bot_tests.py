@@ -261,9 +261,12 @@ def test_query_data_khoang_nua_mo_va_timezone_vn():
                     vt_dt,
                 )
 
-            # Giá cũ hết hiệu lực 00:00+07 ngày 01/11; giá mới bắt đầu đúng mốc đó.
-            await ins("fare.sg_dl.old", "SG-DL 320k", "2026-01-01 00:00:07+07", "2026-11-01 00:00:07+07")
+            # HAI dạng valid_to thực tế trong hệ thống:
+            # (a) ingest ghi ngày cuối 23:59:59 (giá thường hết 31/10);
+            # (b) apply_review cắt midnight-exclusive (giá Tết từ 04/02/2027).
+            await ins("fare.sg_dl.old", "SG-DL 320k", "2026-01-01 00:00:07+07", "2026-10-31 23:59:59+07")
             await ins("fare.sg_dl.new", "SG-DL 350k", "2026-11-01 00:00:07+07", None)
+            await ins("fare.sg_dl.tet", "SG-DL Tết 450k", "2027-02-04 00:00:07+07", "2027-02-12 23:59:59+07")
 
             async def only(day: str) -> list[str]:
                 r = await query_data(pool, op, {"topic": "fare", "date": day})
@@ -272,6 +275,11 @@ def test_query_data_khoang_nua_mo_va_timezone_vn():
             assert await only("2026-10-31") == ["SG-DL 320k"]
             assert await only("2026-11-01") == ["SG-DL 350k"], "mốc chuyển chỉ còn giá mới"
             assert await only("2026-12-01") == ["SG-DL 350k"]
+            # Biên Tết (giá 350k vô hạn nên luôn có; Tết chỉ trong khoảng của nó):
+            assert await only("2027-02-03") == ["SG-DL 350k"]
+            assert await only("2027-02-04") == ["SG-DL 350k", "SG-DL Tết 450k"]
+            assert await only("2027-02-12") == ["SG-DL 350k", "SG-DL Tết 450k"]
+            assert await only("2027-02-13") == ["SG-DL 350k"]
         finally:
             await pool.execute("DELETE FROM items WHERE operator_id = $1", op)
             await pool.execute("DELETE FROM operators WHERE id = $1", op)

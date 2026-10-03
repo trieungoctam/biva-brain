@@ -113,6 +113,22 @@ Vòng 2 (sau review) sửa nốt 3 low/medium còn lại: export key thêm nonce
 resource OAuth whitelist chặt (chặn `/mcp/operator/` rỗng + `../`), register hỗ trợ
 `BIVA_OAUTH_REGISTRATION_SECRET`, consent hiển thị client_id. Ghi hướng dẫn trong runbook.
 
+## Quality review lần 2 (agent reviewer, diff cbe11c9..HEAD) — 10 finding, sửa đủ trong 1 vòng
+
+2 high: nap_du_lieu.py THIẾU import os (CLI gãy hoàn toàn — r40 chỉ fix golden.py, bỏ sót);
+form trả lời ngắn "Có"/dài >2000 làm ingest fail vĩnh viễn SAU khi form khóa (schema 5–2000).
+4 medium form/kit: item form giờ text = "Câu hỏi: X → Trả lời: Y" (tự hiểu được — "Đúng rồi"
+từng thành toàn bộ policy rồi THAY thông lệ L1 trong pack); key = topic + 6 token + hash 4
+byte toàn câu hỏi (hai câu cùng tiền tố "Nhà xe có áp dụng…" không còn gộp key); kit CSV
+dùng csv module (ô "2,4,6" quote giữ nguyên, lệch cột chặn rõ — split() từng cắt mất ngày
+chạy trong CHÍNH template); _money từ chối thập phân ("320000.00" từng thành 32000000).
+2 medium khác: executor đổi so GIAO KHOẢNG timestamp (valid_to > ĐẦU NGÀY strict — tương
+thích cả hai dạng lưu: ingest "D 23:59:59" lẫn apply_review midnight-exclusive; cast date
+từng làm mất NGÀY CUỐI còn hiệu lực); golden.py fold_key theo SEGMENT (giữ dấu chấm —
+_fold cả chuỗi từng khiến route.diem_dung == route.diem.dung, pass giả). 2 low: coverage %
+hiển thị 100x; clientIP lấy RemoteAddr làm chính (XFF chỉ tham chiếu — kẻ dò token từng
+ngụy trang IP được). Test hồi quy: form quality (3 câu, 2 cùng tiền tố), biên Tết 4 ngày.
+
 ## Census tăng trưởng bảng (03/10, khép sau purge_operations)
 
 Chỉ HAI bảng tăng theo timer: operations (promote 288/ngày + index.code 1.440/ngày khi

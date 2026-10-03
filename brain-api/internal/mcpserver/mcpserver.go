@@ -173,7 +173,7 @@ func (s *Server) verify(ctx context.Context, token string, r *http.Request) (*au
 	if errors.Is(err, authz.ErrInvalidToken) {
 		// Token sai phải để lại dấu ở LOG (không ghi audit_log — quét token sẽ khuếch đại
 		// tải DB): WARN kèm IP + endpoint để phát hiện dò token khi rà nhật ký.
-		slog.Warn("mcp: token không hợp lệ", "ip", clientIP(r), "path", r.URL.Path)
+		slog.Warn("mcp: token không hợp lệ", "ip", clientIP(r), "xff", forwardedFor(r), "path", r.URL.Path)
 		return nil, fmt.Errorf("%w", auth.ErrInvalidToken)
 	}
 	if err != nil {
@@ -304,14 +304,17 @@ func (s *Server) WithStorage(st *storage.S3) *Server {
 	return s
 }
 
-// clientIP: ưu thiện X-Forwarded-For (qua proxy), fallback RemoteAddr.
+// clientIP: RemoteAddr là CHÍNH (X-Forwarded-For do client kiểm soát hoàn toàn khi chưa
+// cấu hình proxy tin cậy — dùng nó làm chân trị giúp kẻ dò token nguỵ trang IP, review q2).
 func clientIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		return strings.TrimSpace(strings.Split(xff, ",")[0])
-	}
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		return r.RemoteAddr
 	}
 	return host
+}
+
+// forwardedFor: tham chiếu thêm (nếu có) — đọc kèm RemoteAddr để đối chiếu khi rà log.
+func forwardedFor(r *http.Request) string {
+	return strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-For"), ",")[0])
 }

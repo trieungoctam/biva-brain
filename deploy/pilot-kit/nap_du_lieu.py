@@ -20,7 +20,9 @@ from __future__ import annotations
 
 import argparse
 import csv
+import io
 import json
+import os
 import re
 import sys
 import unicodedata
@@ -80,17 +82,20 @@ def _read_csv(path: Path) -> list[dict]:
     lines = [ln for ln in text.splitlines() if ln.strip()]
     if not lines:
         sys.exit(f"{path}: file rỗng")
-    # Locale Excel VN hay xuất ';' — đánh giá bằng dòng đầu, mặc định ','
+    # Locale Excel VN hay xuất ';' — sniff bằng dòng đầu, dùng csv module để đúng
+    # quoting (ô chứa dấu phẩy/phẩy chấm như "2,4,6" hay "350,000 VNĐ").
     delim = ";" if lines[0].count(";") > lines[0].count(",") else ","
-    header = [h.strip().lower() for h in lines[0].split(delim)]
-    rows = []
-    for ln in lines[1:]:
-        vals = [v.strip() for v in ln.split(delim)]
-        row = dict(zip(header, vals))  # cột thừa bị bỏ, cột thiếu rỗng
-        if any(row.values()):
-            rows.append(row)
-    if not rows:
+    reader = csv.reader(io.StringIO(text), delimiter=delim)
+    rows_raw = [r for r in reader if any(c.strip() for c in r)]
+    if not rows_raw:
         sys.exit(f"{path}: không có dòng dữ liệu")
+    header = [h.strip().lower() for h in rows_raw[0]]
+    rows = []
+    for ln in rows_raw[1:]:
+        if len(ln) != len(header):
+            sys.exit(f"{path}: dòng có {len(ln)} cột, header có {len(header)} — kiểm tra ô chứa "
+                     f"'{delim}' chưa được quote")
+        rows.append({h: v.strip() for h, v in zip(header, ln)})
     return rows
 
 
@@ -99,10 +104,14 @@ def _money(v: str) -> int:
     cleaned = (str(v or "").strip()
                .replace("\u00a0", " ")
                .lower().replace("vnđ", "").replace("vnd", "").replace("đ", "")
-               .replace(" ", "").replace(".", "").replace(",", ""))
-    if not cleaned.isdigit():
-        sys.exit(f"giá vé {v!r} không đọc được — ghi số thuần, vd 320000 (hoặc 320.000đ)")
-    return int(cleaned)
+               .replace(" ", ""))
+    if re.fullmatch(r"\d+", cleaned):
+        return int(cleaned)
+    # Chỉ nhận nhóm hàng nghìn 3 chữ số ("320.000", "1.200.000") — từ chối thập phân
+    # ("320000.00" từng bị nối thành 32000000 = giá sai 100 lần, câm lặng).
+    if re.fullmatch(r"\d{1,3}([.,]\d{3})+", cleaned):
+        return int(re.sub(r"[.,]", "", cleaned))
+    sys.exit(f"giá vé {v!r} không đọc được — ghi số thuần, vd 320000 (hoặc 320.000đ)")
 
 
 def fare_items(rows: list[dict]) -> list[dict]:
@@ -196,7 +205,7 @@ def coverage(api: str, token: str, operator: str) -> None:
     """In độ phủ mục bắt buộc theo template ngành + gợi ý bước kế tiếp (get_coverage)."""
     sc, text = _call(api, token, operator, "get_coverage", {})
     pct, total = sc.get("required_percent", 0), sc.get("required_total", 0)
-    print(f"Độ phủ mục bắt buộc: {sc.get('required_covered', 0)}/{total} ({pct:.0%})")
+    print(f"Độ phủ mục bắt buộc: {sc.get('required_covered', 0)}/{total} ({pct:.0f}%)")
     for sec in sc.get("sections", []):
         mark = {"covered": "✓", "industry_default": "≈", "ambiguous": "?", "missing": "✗"}.get(
             sec.get("status"), " ")

@@ -25,6 +25,12 @@ from pathlib import Path
 from nap_du_lieu import _fold  # cùng chuẩn hoá key với loader
 
 
+def fold_key(k: str) -> str:
+    """Fold TỪNG SEGMENT (giữ dấu chấm) — _fold cả chuỗi làm route.diem_dung
+    == route.diem.dung, gây pass giả."""
+    return ".".join(_fold(seg) for seg in k.split("."))
+
+
 def recall(api: str, token: str, operator: str, question: str, top: int) -> list[dict]:
     req = urllib.request.Request(
         f"{api.rstrip('/')}/mcp/operator/{operator}/",
@@ -77,9 +83,9 @@ def main() -> None:
         raw_want = (r.get("key_du_kien") or "").strip()
         if not raw_want:
             print(f"? [{i}] thiếu key_du_kien — CSV cần quote câu chứa dấu phẩy")
-        want = _fold(raw_want)
+        want = fold_key(raw_want)
         hits = recall(a.api, a.token, a.operator, q, a.top)
-        got_keys = [_fold(h.get("key") or "") for h in hits]
+        got_keys = [fold_key(h.get("key") or "") for h in hits]
         ok = want in got_keys
         passed += ok
         mark = "✓" if ok else "✗"

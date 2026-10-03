@@ -67,11 +67,15 @@ async def query_data(pool: asyncpg.Pool, operator: str, args: dict) -> dict:
     # khoảng hiệu lực NỬA MỎ [valid_from, valid_to): ngày valid_to không còn thuộc bản cũ.
     tz = "Asia/Ho_Chi_Minh"
     as_of = _dt.date.fromisoformat(date) if date else _dt.datetime.now(ZoneInfo(tz)).date()
+    # Giao KHOẢNG theo timestamp (không cast date): valid_to trong hệ thống có HAI dạng —
+    # ingest ghi "D 23:59:59+07" (ngày cuối còn hiệu lực), apply_review ghi nửa đêm
+    # (exclusive). Điều kiện valid_to > ĐẦU NGÀY (strict) đúng cho cả hai: 23:59:59 của ngày
+    # D > D 00:00 (còn), midnight của ngày sau > D 00:00 (hết từ D).
     rows = await pool.fetch(
         """SELECT text FROM items
            WHERE operator_id = $1 AND status = 'active' AND kind = 'data' AND topic = $2
-             AND (valid_from IS NULL OR (valid_from AT TIME ZONE $4::text)::date <= $3)
-             AND (valid_to IS NULL OR (valid_to AT TIME ZONE $4::text)::date > $3)
+             AND (valid_from IS NULL OR valid_from < (($3::date + 1)::timestamp AT TIME ZONE $4))
+             AND (valid_to IS NULL OR valid_to > ($3::date::timestamp AT TIME ZONE $4))
            ORDER BY updated_at DESC LIMIT 10""",
         operator,
         topic,

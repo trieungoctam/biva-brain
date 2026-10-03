@@ -113,3 +113,55 @@ func roundTrip(v map[string]any) any {
 	}
 	return out
 }
+
+// (review q2) Item form phải: tự hiểu được (câu hỏi + trả lời, không chỉ "Đúng rồi"),
+// key phân biệt hai câu cùng tiền tố, và text luôn ≥5 ký tự (schema ingest).
+func TestFormItemExtractionQuality(t *testing.T) {
+	pool := testdb.Pool(t)
+	ctx := context.Background()
+	op := "fq" + fmt.Sprintf("%d", time.Now().UnixNano())
+	if _, err := pool.Exec(ctx, `INSERT INTO operators (id, name) VALUES ($1, 'F')`, op); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { pool.Exec(ctx, `DELETE FROM operators WHERE id = $1`, op) })
+	// submit form với câu xác nhận ngắn + hai câu cùng tiền tố
+	mux := http.NewServeMux()
+	(&Handler{DB: pool}).Mount(mux)
+	fsrv := httptest.NewServer(mux)
+	defer fsrv.Close()
+	created, err := Create(ctx, pool, fsrv.URL, op, "", []Question{
+		{Topic: "boarding", Question: "Nhà xe có áp dụng như sau không: khách nên có mặt trước 30 phút?"},
+		{Topic: "boarding", Question: "Nhà xe có áp dụng như sau không: khách mang giấy tờ tuỳ thân?"},
+		{Topic: "pets", Question: "Có nhận chó mèo không?"},
+	}, "user:b", time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Submit qua handler thật (bỏ trống câu pets → 2 item)
+	if resp, err := http.PostForm(created.URL, url.Values{
+		"a0": {"Đúng rồi"}, "a1": {"Có"}, "a2": {""}}); err != nil || resp.StatusCode != 200 {
+		t.Fatalf("submit: %v %v", resp, err)
+	}
+	var payload map[string]any
+	pool.QueryRow(ctx, `SELECT payload FROM operations WHERE id = (SELECT operation_id FROM forms WHERE id = $1::uuid)`,
+		created.ID).Scan(&payload)
+	items, _ := payload["items"].([]any)
+	if len(items) != 2 { // câu pets bỏ trống → không thành item
+		t.Fatalf("items = %d, muốn 2", len(items))
+	}
+	keys := map[string]bool{}
+	for _, it := range items {
+		m, _ := it.(map[string]any)
+		keys[m["key"].(string)] = true
+		text := m["text"].(string)
+		if !strings.Contains(text, "Câu hỏi:") || !strings.Contains(text, "Trả lời:") {
+			t.Fatalf("text thiếu ngữ cảnh: %q", text)
+		}
+		if len([]rune(text)) < 5 || len([]rune(text)) > 2000 {
+			t.Fatalf("text ngoài khoảng schema: %d runes", len([]rune(text)))
+		}
+	}
+	if len(keys) != 2 {
+		t.Fatalf("hai câu cùng tiền tố phải KHÁC key: %v", keys)
+	}
+}

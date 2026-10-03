@@ -266,19 +266,30 @@ func (h *Handler) accept(ctx context.Context, f formRow, answers []Answer, conte
 	// (câu hỏi sinh từ template nên đã gắn topic). Đường chính theo kiến trúc — form không
 	// phụ thuộc GEMINI key; nội dung thô vẫn giữ trong payload.content để duyệt lại/ingest LLM
 	// sau này nếu cần trích facts chi tiết hơn.
+	//
+	// text = CÂU HỎI + CÂU TRẢ LỜI: item tự hiểu được (câu "Đúng rồi" từng thành toàn bộ
+	// policy rồi thay thông lệ L1 trong pack — review q2); đồng thời bảo đảm ≥5 ký tự của
+	// schema ingest (câu trả lời 1 từ từng làm payload bị từ chối vĩnh viễn sau khi form đã
+	// khóa submitted). Key = topic + 6 token + hash 8 ký tự của TOÀN BỘ câu hỏi: hai câu
+	// xác nhận cùng tiền tố ("Nhà xe có áp dụng như sau không…") không còn gộp chung key.
 	items := []map[string]any{}
 	for _, a := range answers {
-		text := strings.TrimSpace(a.Answer)
-		if text == "" {
+		ans := strings.TrimSpace(a.Answer)
+		if ans == "" {
 			continue
+		}
+		text := "Câu hỏi: " + a.Question + " → Trả lời: " + ans
+		if utf8.RuneCountInString(text) > 2000 { // schema ingest: 5–2000 ký tự
+			text = string([]rune(text)[:1997]) + "…"
 		}
 		toks := textnorm.Tokens(a.Question)
 		if len(toks) > 6 {
 			toks = toks[:6]
 		}
+		sum := sha256.Sum256([]byte(a.Question))
 		items = append(items, map[string]any{
 			"kind": "policy", "topic": a.Topic,
-			"key":  a.Topic + ".q_" + strings.Join(toks, "_"),
+			"key":  fmt.Sprintf("%s.q_%s_%x", a.Topic, strings.Join(toks, "_"), sum[:4]),
 			"text": text,
 		})
 	}
