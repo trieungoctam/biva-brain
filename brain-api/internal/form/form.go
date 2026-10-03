@@ -291,14 +291,18 @@ func (h *Handler) accept(ctx context.Context, f formRow, answers []Answer, conte
 			}
 			return string([]rune(s)[:n-1]) + "…"
 		}
+		// Ngân sách theo công thức q5: câu hỏi được DỰNG trước min(độ dài, 200) rune —
+		// ngữ cảnh luôn giữ được; câu trả lời lấy phần còn lại của 1979 (không bao giờ
+		// âm, không panic ở biên 1978 như bản budget-200 cứng; không cắt câu trả lời
+		// nhiều hơn mức cần khi câu hỏi ngắn).
 		const budget = 2000 - 9 - 12 // "Câu hỏi: " + " → Trả lời: "
-		ansLen := utf8.RuneCountInString(ans)
-		ansBudget := budget - 1
-		if ansLen > ansBudget {
-			ansBudget = budget - 200 // câu hỏi ngắn lại còn ≥199 rune
+		qLen := utf8.RuneCountInString(a.Question)
+		qKeep := qLen
+		if qKeep > 200 {
+			qKeep = 200
 		}
-		a_ := clip(ans, ansBudget)
-		q := clip(a.Question, budget-utf8.RuneCountInString(a_)-1)
+		a_ := clip(ans, budget-qKeep)
+		q := clip(a.Question, budget-utf8.RuneCountInString(a_))
 		text := "Câu hỏi: " + q + " → Trả lời: " + a_
 		toks := textnorm.Tokens(a.Question)
 		if len(toks) > 6 {

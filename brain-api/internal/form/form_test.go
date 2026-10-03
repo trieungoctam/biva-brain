@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -211,6 +212,47 @@ func TestFormItemExtractionQuality(t *testing.T) {
 	k3 := items3[0].(map[string]any)["key"].(string)
 	if len(k3) > 200 {
 		t.Fatalf("key %d > 200", len(k3))
+	}
+	if !regexp.MustCompile(`^payment\.q_so_tai_khoan_[0-9a-f]{8}$`).MatchString(k3) {
+		t.Fatalf("key phải kết thúc bằng hash 8 hex: %q", k3)
+	}
+
+	// (q5) Biên budget động: câu trả lời 1977/1978/1979/4000 rune — không panic, tổng ≤2000,
+	// câu hỏi không bị rút còn "…", lỗi Check có "1500".
+	for _, ansLen := range []int{1977, 1978, 1979, 4000} {
+		muxN := http.NewServeMux()
+		(&Handler{DB: pool}).Mount(muxN)
+		srvN := httptest.NewServer(muxN)
+		cN, err := Create(ctx, pool, srvN.URL, op, "", []Question{
+			{Topic: "luggage", Question: "Quy định hành lý như thế nào ạ?"}}, "user:b", time.Hour)
+		if err != nil {
+			t.Fatal(err)
+		}
+		longAns := strings.Repeat("h", ansLen)
+		resp, err := http.PostForm(cN.URL, url.Values{"a0": {longAns}})
+		srvN.Close()
+		if err != nil || resp.StatusCode != 200 {
+			t.Fatalf("ans=%d submit: %v %v", ansLen, resp, err)
+		}
+		var pN map[string]any
+		pool.QueryRow(ctx, `SELECT payload FROM operations WHERE id =
+			(SELECT operation_id FROM forms WHERE id = $1::uuid)`, cN.ID).Scan(&pN)
+		its, _ := pN["items"].([]any)
+		if len(its) != 1 {
+			t.Fatalf("ans=%d: items=%d", ansLen, len(its))
+		}
+		txt := its[0].(map[string]any)["text"].(string)
+		if utf8.RuneCountInString(txt) > 2000 {
+			t.Fatalf("ans=%d: text %d > 2000", ansLen, utf8.RuneCountInString(txt))
+		}
+		if !strings.Contains(txt, "Quy định hành lý") {
+			t.Fatalf("ans=%d: câu hỏi bị rút mất ngữ cảnh: %q", ansLen, txt[:40])
+		}
+	}
+	_, err = Create(ctx, pool, srv2.URL, op, "", []Question{
+		{Topic: "luggage", Question: strings.Repeat("x", 1501)}}, "user:b", time.Hour)
+	if err == nil || !strings.Contains(err.Error(), "1500") {
+		t.Fatalf("Check phải báo 1500: %v", err)
 	}
 	txt3 := items3[0].(map[string]any)["text"].(string)
 	if !strings.Contains(txt3, "Vietcombank") || utf8.RuneCountInString(txt3) > 2000 {
