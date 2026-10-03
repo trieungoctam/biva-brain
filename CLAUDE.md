@@ -113,6 +113,13 @@ Vòng 2 (sau review) sửa nốt 3 low/medium còn lại: export key thêm nonce
 resource OAuth whitelist chặt (chặn `/mcp/operator/` rỗng + `../`), register hỗ trợ
 `BIVA_OAUTH_REGISTRATION_SECRET`, consent hiển thị client_id. Ghi hướng dẫn trong runbook.
 
+## Census tăng trưởng bảng (03/10, khép sau purge_operations)
+
+Chỉ HAI bảng tăng theo timer: operations (promote 288/ngày + index.code 1.440/ngày khi
+production có BIVA_INTEGRATIONS_REPO — local tắt vì env trống) — cả hai bị purge vòng 37
+chặn 30 ngày. Còn lại tăng theo usage (documents/snapshots/test_runs… tỉ lệ thuận) hoặc
+cố ý giữ: audit_log (bền vĩnh viễn, không purge — backup.sh là phương tiện lưu trữ).
+
 ## Verify live từng nhánh recall (03/10)
 
 - **graph arm (E2.2)**: query nhắc thực thể ("xe đi Đà Lạt mấy giờ") → `arms=['keyword','graph']`,
