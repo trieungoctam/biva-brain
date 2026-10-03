@@ -113,6 +113,12 @@ Vòng 2 (sau review) sửa nốt 3 low/medium còn lại: export key thêm nonce
 resource OAuth whitelist chặt (chặn `/mcp/operator/` rỗng + `../`), register hỗ trợ
 `BIVA_OAUTH_REGISTRATION_SECRET`, consent hiển thị client_id. Ghi hướng dẫn trong runbook.
 
+## Tag baseline (r57): brain `v0.2.0-pilot-ready` + integrations `v0.2.0-pilot-ready`
+
+Brain v0.1.0 (r30) cũ ~25 commit hành vi (form always-review + sanitize, purge operations,
+platform resources, lazy template…). v0.2.0 tag tại HEAD đã certify (lint + 23 pkg Go + 362
+pytest). Cả hai repo giờ có CẶP tag pilot: v0.1/v0.2 để rollback theo giai đoạn.
+
 ## rf3 integrations (r56) — HỘI TỤ: 1 low (docstring còn mô tả fallback đã bỏ — builder đọc
 get_logic_module sẽ không bắt ValueError) + 1 info (dict comprehension last-wins khi key NFC
 trùng, lệch luật first-non-empty của read_worksheet). Cả hai đóng. Chuỗi integrations khép:
