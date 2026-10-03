@@ -43,6 +43,14 @@ list_stale JOIN ràng operator (chặn leak chéo tenant qua logic_param_sources
 ownership khi ghi — bộ test cũ tự dùng nguồn chéo, đã sửa fixture), OAuth resource bắt buộc
 (RFC 8707). SLO đo lại sau 36 fix: recall p95 8,8ms — không suy giảm.
 
+Tập dượt /build_bot (DYN-65, 03/10): đóng vai AI builder làm theo prompt từng bước trên stack
+local — KẾT QUẢ ĐẠT (5 artifact valid + snapshot v1). Học được (đã sửa/nắm pattern): mọi câu
+thông tin phải có [[id]] kể cả câu vai trò (tạo item kind=persona rồi trích); fallbacks giữ
+chung chung "Chưa rõ: chuyển nhân viên" (nhắc chủ đề cụ thể = bị coi là mang thông tin);
+hướng dẫn tool nằm ở tool_spec. Fix kèm: save_artifact với base_version trên kind CHƯA TỪNG
+tồn tại từng báo "đã có version mới hơn (v0…)" lạc hướng — giờ báo "chưa có artifact … bỏ
+base_version" (test hồi quy).
+
 Vòng 20–22 (audit/visibility + form không-LLM): release.publish/approve/rollback và oauth.
 register/token/refresh/family_revoke giờ ghi audit_log (test assert đủ); token SAI (401) ghi
 WARN log kèm IP/path (không đụng DB — chống khuếch đại khi bị quét). Form submit trích

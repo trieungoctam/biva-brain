@@ -102,3 +102,23 @@ func TestSaveGetList(t *testing.T) {
 		t.Fatalf("audit = %d", n)
 	}
 }
+
+// base_version trên kind CHƯA TỪNG có artifact → báo "chưa có" rõ ràng (từng trả
+// "đã có version mới hơn (v0, bạn sửa từ v1)" — lạc hướng cho builder).
+func TestSaveBaseVersionOnMissingKindClearMessage(t *testing.T) {
+	pool := testdb.Pool(t)
+	ctx := context.Background()
+	op := "bv" + fmt.Sprintf("%d", time.Now().UnixNano())
+	if _, err := pool.Exec(ctx, `INSERT INTO operators (id, name) VALUES ($1, 'B')`, op); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { pool.Exec(ctx, `DELETE FROM operators WHERE id = $1`, op) })
+	if _, err := pool.Exec(ctx, `INSERT INTO bots (id, operator_id, channel) VALUES ($1, $2, 'zalo')`, op+":zalo", op); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Save(ctx, pool, SaveInput{OperatorID: op, Kind: "faq", Content: "Nội dung mẫu đủ dài.",
+		BaseVersion: 1, Author: "t"})
+	if err == nil || !strings.Contains(err.Error(), "chưa có artifact") {
+		t.Fatalf("muốn thông báo 'chưa có artifact', được: %v", err)
+	}
+}

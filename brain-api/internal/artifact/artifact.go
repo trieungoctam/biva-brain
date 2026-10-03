@@ -188,6 +188,10 @@ func Save(ctx context.Context, db *pgxpool.Pool, in SaveInput) (SaveResult, erro
 		return res, nil
 	}
 	if in.BaseVersion > 0 && in.BaseVersion != curVersion {
+		if curVersion == 0 {
+			// Kind này CHƯA TỪNG có artifact — nói thẳng thay vì "v0 mới hơn v1" gây lạc hướng.
+			return res, fmt.Errorf("chưa có artifact %s nào của bot này — bỏ base_version để tạo bản đầu", in.Kind)
+		}
 		return res, fmt.Errorf("%w (v%d, bạn sửa từ v%d) — get_artifact bản mới rồi sửa lại trên đó", ErrConflict,
 			curVersion, in.BaseVersion)
 	}
