@@ -290,6 +290,7 @@ func (s *Server) newPlatformServer() *mcp.Server {
 	})
 	addPlatformTools(srv, s.db)
 	s.addSharedCatalogResources(srv) // lead đọc L0/L1 từ chính endpoint platform
+	s.addStaticDocResources(srv)     // + 2 guides + template ngành (DYN-111 duyệt template)
 	s.addPlatformMgmt(srv)
 	s.addImpactTool(srv)
 	s.addRegressionTool(srv)

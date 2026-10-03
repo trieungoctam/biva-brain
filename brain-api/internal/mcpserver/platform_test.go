@@ -460,7 +460,8 @@ func TestPlatformEndpointHasCatalogResources(t *testing.T) {
 			}
 		}
 	}
-	for _, want := range []string{"biva://platform/rules", "biva://industry/lessons", "biva://logic/modules"} {
+	for _, want := range []string{"biva://platform/rules", "biva://industry/lessons",
+		"biva://logic/modules", "biva://industry/template", "biva://guides/citation"} {
 		if !uris[want] {
 			t.Fatalf("thiếu %s trong %v", want, uris)
 		}

@@ -201,18 +201,7 @@ func (s *Server) addGuide(srv *mcp.Server, operatorID string) {
 			return nil, rep, nil
 		})
 
-	static := []struct{ uri, name, desc, text string }{
-		{"biva://guides/citation", "guides/citation", "Hợp đồng trích dẫn [[id]] và các mã lỗi của validate_artifact", citationGuideMD},
-		{"biva://guides/workflow", "guides/workflow", "Quy trình build bot và xử lý cập nhật của nhà xe", workflowGuideMD},
-		{"biva://industry/template", "industry/template", "Template ngành: mục tri thức, capability, artifact cần có", s.templateMD()},
-	}
-	for _, r := range static {
-		text := r.text
-		srv.AddResource(&mcp.Resource{URI: r.uri, Name: r.name, Description: r.desc, MIMEType: "text/markdown"},
-			func(context.Context, *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
-				return textResource(r.uri, text), nil
-			})
-	}
+	s.addStaticDocResources(srv)
 	profileURI := "biva://operator/" + operatorID + "/profile"
 	srv.AddResource(&mcp.Resource{URI: profileURI, Name: "pages/profile", MIMEType: "text/markdown",
 		Description: "Hồ sơ tri thức của nhà xe (chính sách, data, mục còn thiếu) — bản đọc nhanh"},
@@ -359,6 +348,30 @@ const reviewQualityPrompt = `Rà chất lượng bot của nhà xe theo góc nh�
 4. recall_knowledge vài câu khách hay hỏi — kiểm bot có tri thức trả lời không; câu bot không trả lời được → thiếu tri thức, đề xuất hỏi nhà xe (generate_questions).
 5. Tổng hợp báo cáo: (a) chỗ yếu của artifact kèm dòng, (b) tri thức thiếu, (c) đề xuất lesson (add_lesson với type do/dont) cho lỗi hay gặp, (d) đề xuất test case cho chỗ mưa gió.
 Chỉ nêu vấn đề có bằng chứng (dòng/trích dẫn); mỗi đề xuất kèm next action cụ thể.`
+
+// addStaticDocResources: 3 tài liệu tĩnh không phụ thuộc nhà xe (2 guides + template ngành)
+// — mount cho cả endpoint nhà xe lẫn platform (lead duyệt template ở DYN-111 cần đọc được).
+func (s *Server) addStaticDocResources(srv *mcp.Server) {
+	static := []struct{ uri, name, desc, text string }{
+		{"biva://guides/citation", "guides/citation", "Hợp đồng trích dẫn [[id]] và các mã lỗi của validate_artifact", citationGuideMD},
+		{"biva://guides/workflow", "guides/workflow", "Quy trình build bot và xử lý cập nhật của nhà xe", workflowGuideMD},
+	}
+	for _, r := range static {
+		text := r.text
+		srv.AddResource(&mcp.Resource{URI: r.uri, Name: r.name, Description: r.desc, MIMEType: "text/markdown"},
+			func(context.Context, *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
+				return textResource(r.uri, text), nil
+			})
+	}
+	// Template render LAZY: platform server dựng TRƯỚC WithTemplate — snapshot lúc đăng ký
+	// sẽ bắt bản rỗng (bug từng xảy ra: platform trả 159 chars, operator 2017).
+	srv.AddResource(&mcp.Resource{
+		URI: "biva://industry/template", Name: "industry/template", MIMEType: "text/markdown",
+		Description: "Template ngành: mục tri thức, capability, artifact cần có",
+	}, func(context.Context, *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
+		return textResource("biva://industry/template", s.templateMD()), nil
+	})
+}
 
 // addSharedCatalogResources: 3 resource phạm vi NỀN TẢNG (lessons, modules, L0) — mount cho
 // CẢ endpoint nhà xe lẫn endpoint platform: lead làm việc ở /mcp/platform/ cần đọc được
