@@ -47,7 +47,8 @@ Tập dượt /refresh_bot (03/10): ĐẠT — stale reason JSON đủ để bui
 (line, line_text kèm trích dẫn cũ, new_text, superseded_by); làm theo prompt (get_artifact →
 sửa đúng dòng → save base_version + note → validate) cho valid ngay và list_stale về 0.
 Tình trạng tập dượt prompt: build_bot ✓ · refresh_bot ✓ · process_update ✓ (flow kit r16) ·
-onboard_operator ✓ (chuỗi r22) · còn lại review_quality (RO) và implement_operator_logic
+onboard_operator ✓ (chuỗi r22) · review_quality ✓ (r29: các tool prompt引用 đều chạy —
+add_lesson field là "type" do/dont, lesson vào pack lessons ngay) · implement_operator_logic
 (các bước riêng đã test r12).
 
 Tập dượt /build_bot (DYN-65, 03/10): đóng vai AI builder làm theo prompt từng bước trên stack
