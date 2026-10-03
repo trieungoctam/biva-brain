@@ -48,8 +48,10 @@ Tập dượt /refresh_bot (03/10): ĐẠT — stale reason JSON đủ để bui
 sửa đúng dòng → save base_version + note → validate) cho valid ngay và list_stale về 0.
 Tình trạng tập dượt prompt: build_bot ✓ · refresh_bot ✓ · process_update ✓ (flow kit r16) ·
 onboard_operator ✓ (chuỗi r22) · review_quality ✓ (r29: các tool prompt引用 đều chạy —
-add_lesson field là "type" do/dont, lesson vào pack lessons ngay) · implement_operator_logic
-(các bước riêng đã test r12).
+add_lesson field là "type" do/dont, lesson vào pack lessons ngay) · implement_operator_logic ✓
+(r30: bước 1-2 chạy; 3-5 chặn ĐÚNG theo prompt vì chưa có logic.spec — job này cần LLM theo
+thiết kế M3; bước 6 propose_logic_profile nhận profile_yaml + files, enqueue job đúng).
+6/6 prompt đã tập dượt. Tag `v0.1.0-pilot-ready` = mốc rollback trước khi dữ liệu pilot vào.
 
 Tập dượt /build_bot (DYN-65, 03/10): đóng vai AI builder làm theo prompt từng bước trên stack
 local — KẾT QUẢ ĐẠT (5 artifact valid + snapshot v1). Học được (đã sửa/nắm pattern): mọi câu
