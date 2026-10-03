@@ -113,6 +113,15 @@ Vòng 2 (sau review) sửa nốt 3 low/medium còn lại: export key thêm nonce
 resource OAuth whitelist chặt (chặn `/mcp/operator/` rỗng + `../`), register hỗ trợ
 `BIVA_OAUTH_REGISTRATION_SECRET`, consent hiển thị client_id. Ghi hướng dẫn trong runbook.
 
+## Verify live từng nhánh recall (03/10)
+
+- **graph arm (E2.2)**: query nhắc thực thể ("xe đi Đà Lạt mấy giờ") → `arms=['keyword','graph']`,
+  item route (item_entities: hcm + da_lat) lên top-1 nhờ phiếu RRF. Entity dict = bản nháp
+  DYN-113 (đủ 20+ tỉnh/thành); extraction tại ingest đã chạy (item_entities có dữ liệu).
+- **temporal arm**: cần `valid_at` rõ trong query + item có mùa (giá Tết) — chưa có dữ liệu
+  mùa thật trên stack demo nên chưa verify live; unit test đậy (recall_test).
+- **semantic arm**: verify trong CI compose-smoke với TEI thật (r25 kèm guard xếp hạng).
+
 ## Đo SLO (E-X2 cơ bản)
 
 `deploy/slo.sh` đo p50/p95 các tool chính so mục tiêu §7.3 runbook. Kết quả 02/10/2026 trên stack
