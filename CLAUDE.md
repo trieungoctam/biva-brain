@@ -113,6 +113,17 @@ Vòng 2 (sau review) sửa nốt 3 low/medium còn lại: export key thêm nonce
 resource OAuth whitelist chặt (chặn `/mcp/operator/` rỗng + `../`), register hỗ trợ
 `BIVA_OAUTH_REGISTRATION_SECRET`, consent hiển thị client_id. Ghi hướng dẫn trong runbook.
 
+## review-of-fix-2 integrations (r55) — fallback tái tạo lỗi "nuốt im lặng"; đóng sạch
+
+Fallback "dòng không trống đầu" của r54 tái tạo CHÍNH lỗi r53 sửa: sheet có tiêu đề + header
+riêng (chưa khai columns) → tiêu đề thành header → mọi dòng trượt mapping → bị bỏ như "dòng
+trống" → trips+errors CÙNG RỖNG. Bỏ fallback, raise kèm expected. Kèm: NFC giờ đồng bộ HAI
+phía (read_worksheet NFC hoá key nhưng parse_rows không NFC alias → alias NFD trượt);
+_as_date aware datetime đổi về +07 trước khi lấy ngày (17:00+00:00 = 00:00+07 hôm sau —
+payload Z-suffix từng mất phụ thu chuyến 00:00–07:00). Sandbox proof 13/13 trên HEAD cuối.
+Chuỗi integrations: review → fix → regression → fix → regression → fix = lặp đúng chu kỳ
+brain; lần fix cuối (bỏ fallback) là RÚT LẠI thay đổi thay vì thêm lớp — bài học sở hữu.
+
 ## review-of-fix integrations (r54) — chính fix r53 tạo 1 HIGH regression
 
 read_worksheet dò header theo BỘ TÊN CỨNG (chuẩn + 4 alias Việt) — header RIÊNG qua params
