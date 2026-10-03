@@ -94,5 +94,25 @@ hit = next((h for h in res["items"] if h["id"] == os.environ["ITEM"]), None)
 assert hit and "semantic" in hit["arms"] and not res.get("degraded"), res
 print("✓ recall_knowledge: nhánh semantic (TEI) tìm ra item, %d ms" % res["took_ms"])
 ' <<<"$out" || { echo "✗ recall_knowledge: $out"; exit 1; }
+
+  # Regression xếp hạng (golden set, câu "hiếm token"): keyword-only từng cho L0/L1 boilerplate
+  # (chứa "nhà xe") tràn top trên item hotline của chính nhà xe. Chế độ semantic (production)
+  # phải tìm ra đúng item.
+  hl=$(psql_q "INSERT INTO items (layer, operator_id, kind, topic, text, status)
+    VALUES (2, 'smoke$sfx', 'policy', 'contact', 'Hotline hỗ trợ khách 24/7: 1900 6067', 'active')
+    RETURNING id" | head -1)
+  psql_q "INSERT INTO operations (kind, operator_id) VALUES ('index.items', 'smoke$sfx')" >/dev/null
+  wait_for "index.items nhúng hotline $hl" 120 bash -c \
+    "$C exec -T postgres psql -U biva -d biva -Atc \"SELECT embedding IS NOT NULL FROM items WHERE id='$hl'\" | grep -qx t"
+  out=$(mcp '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"recall_knowledge","arguments":{"query":"Hotline của nhà xe số mấy"}}}')
+  HL=$hl python3 -c '
+import json, os, sys
+raw = sys.stdin.read()
+msg = json.loads(next((l[5:] for l in raw.splitlines() if l.startswith("data:")), raw))
+res = msg["result"]["structuredContent"]
+keys = [h.get("key", "") for h in res["items"][:5]]
+assert any(h["id"] == os.environ["HL"] for h in res["items"][:5]), {"top5": keys, "degraded": res.get("degraded")}
+print("✓ xếp hạng: query hiếm token (hotline) — item của nhà xe trong top-5 (semantic)")
+' <<<"$out" || { echo "✗ xếp hạng hotline: $out"; exit 1; }
 fi
 echo "smoke OK"
