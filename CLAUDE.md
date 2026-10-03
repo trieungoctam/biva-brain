@@ -113,6 +113,19 @@ Vòng 2 (sau review) sửa nốt 3 low/medium còn lại: export key thêm nonce
 resource OAuth whitelist chặt (chặn `/mcp/operator/` rỗng + `../`), register hỗ trợ
 `BIVA_OAUTH_REGISTRATION_SECRET`, consent hiển thị client_id. Ghi hướng dẫn trong runbook.
 
+## review-of-fix integrations (r54) — chính fix r53 tạo 1 HIGH regression
+
+read_worksheet dò header theo BỘ TÊN CỨNG (chuẩn + 4 alias Việt) — header RIÊNG qua params
+columns (chính lý do columns tồn tại!) giờ raise ValueError thay vì parse; NFD cũng không
+khớp. Sửa: dò theo chuẩn ∪ alias(columns) + fallback dòng không trống đầu (không raise).
+Kèm: số dòng lỗi lệch khi header không dòng 1 (giờ mỗi row mang __line = dòng Excel thật);
+on_expire từng chỉ chạy khi gọi sweep trực tiếp — hold/release/can_hold giờ nhận+forward
+như glue gọi; time-format chỉ áp cột gio (ô khác bị nuốt thành '00:00'); fare bump version 2
+(đổi hành vi tuổi 4 — Brain impact_of_change keyed theo version); _as_date đưa datetime/ISO
+có giờ về ngày (giờ từng làm mất phụ thu im lặng); naive/aware trộn trong hold so được
+(gán +07 cho naive khi so). CI integrations xanh sau 4 lần ruff-mới-hơn-local (B023, DTZ001,
+UTC alias, import org) — lần sau chạy `uvx ruff check` phiên bản mới nhất trước khi push.
+
 ## biva-integrations review trọn (r53) — 15 finding, sửa bản lề + hợp đồng sandbox
 
 Lần review agent đầu tiên CHẺN (lần trước chết DNS). Headline: test trong repo tự đổi kiểu
