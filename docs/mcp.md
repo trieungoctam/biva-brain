@@ -206,7 +206,7 @@ Cột **Mốc** = mốc dự kiến (xem lộ trình trong [architecture.md](arc
 | `biva://guides/citation` | hướng dẫn hợp đồng trích dẫn cho AI |
 | `biva://guides/workflow` | quy trình build bot / xử lý cập nhật |
 
-Đủ 9 resource của mục này: 3 guides/template (M1), 5 trang pages + profile (M2),
+Đủ 12 resource của mục này (đếm theo URI trên endpoint nhà xe): 3 guides/template (M1), 5 trang pages + profile (M2),
 lessons/modules/L0/artifacts (bổ sung sau).
 `biva://operator/{id}/profile` (bản đọc nhanh, dựng trực tiếp từ knowledge pack). M2: 5 trang `pages/<slug>.md`
 dựng sẵn bởi job `refresh_pages` (scheduler leader, mỗi phút theo version tri thức; bảng `operator_pages`);

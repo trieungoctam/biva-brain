@@ -3,7 +3,7 @@
 Bộ tri thức (về nhà xe và về logic) để AI build chatbot cho nhiều nhà xe khách, dựa trên mô hình memory
 của Hindsight (retain / recall / reflect + consolidation), mở cho builder dùng AI qua MCP.
 
-Trạng thái (10/2026): **toàn bộ story code của lộ trình M0–M5 đã xong, CI xanh** — 46 tool MCP, 9 resource,
+Trạng thái (10/2026): **toàn bộ story code của lộ trình M0–M5 đã xong, CI xanh** — 46 tool MCP, 12 resource (endpoint nhà xe),
 6 prompt; tri thức logic trong repo riêng [biva-integrations](https://github.com/trieungoctam/biva-brain#logic);
 vòng phát hành (gate → publish → rollback) và platform cho lead. Các AC đo lường đang chờ: dữ liệu 3 nhà xe
 pilot thật, GEMINI key, URL https (xem cuối README). Kế hoạch: [docs/implementation-plan.md](docs/implementation-plan.md).
@@ -16,7 +16,7 @@ Brain là **nguồn sự thật** và **người kiểm tra**; AI của builder 
 | [docs/architecture.md](docs/architecture.md) | bài toán, phạm vi, phân tầng L0–L3, 5 loại tri thức, luồng Brain, "quên", kiến trúc Go + Python, lộ trình, quyết định đã chốt |
 | [docs/system-architecture.md](docs/system-architecture.md) | kiến trúc hệ thống: containers, components, luồng chạy, triển khai (không GPU), độ tin cậy, bảo mật, observability, CI/CD |
 | [docs/build-flow.md](docs/build-flow.md) | luồng build bot: khởi tạo → thu thập → duyệt → AI viết bot → kiểm tra → xuất & phát hành; vòng cập nhật |
-| [docs/mcp.md](docs/mcp.md) | **giao diện chính**: 46 tool · 9 resource · 6 prompt — knowledge pack, artifact có trích dẫn, validate, logic, phát hành |
+| [docs/mcp.md](docs/mcp.md) | **giao diện chính**: 46 tool · 12 resource (endpoint nhà xe) · 6 prompt — knowledge pack, artifact có trích dẫn, validate, logic, phát hành |
 | [docs/logic-knowledge.md](docs/logic-knowledge.md) | tri thức logic (code) cho nhà xe: module chung, hồ sơ từng nhà xe, config → hook → custom, ADR |
 | [docs/data-model.md](docs/data-model.md) | data model trên PostgreSQL (23 migration) |
 | [docs/runbook.md](docs/runbook.md) | runbook 8 sự cố + backup/khôi phục (`deploy/backup.sh` có verify) |
