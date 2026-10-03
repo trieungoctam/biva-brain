@@ -216,12 +216,17 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--api", default="http://localhost:8080")
     ap.add_argument("--operator", required=True)
-    ap.add_argument("--token", required=True)
+    ap.add_argument("--token", default=os.environ.get("BIVA_TOKEN", ""),
+                    help="mặc định lấy từ biến môi trường BIVA_TOKEN (không lộ qua ps/history)")
     ap.add_argument("--coverage", action="store_true",
                     help="chỉ xem độ phủ mục bắt buộc (get_coverage), không nạp")
     ap.add_argument("files", nargs="*", type=Path,
                     help="bang_gia.csv / lich_chay.csv / chinh_sach.csv")
     a = ap.parse_args()
+    if not a.token:
+        ap.error("cần token: đặt biến môi trường BIVA_TOKEN=biva_... hoặc dùng --token")
+    if a.api.startswith("http://") and "localhost" not in a.api and "127.0.0.1" not in a.api:
+        print("CẢNH BÁO: --api là http:// ngoài localhost — token đi cleartext!", file=sys.stderr)
     _self_check()
     if a.coverage:
         coverage(a.api, a.token, a.operator)

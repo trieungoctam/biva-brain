@@ -480,3 +480,27 @@ func listResources(t *testing.T, s *mcp.ClientSession) (bool, []any, any) {
 	}
 	return false, out, nil
 }
+
+// create_form với topic ngoài template phải bị chặn NGAY (review r3: topic lạ làm job
+// ingest fail vĩnh viễn sau khi nhà xe đã trả lời — mất dữ liệu đầu vào thật).
+func TestCreateFormRejectsInvalidTopic(t *testing.T) {
+	f := setup(t)
+	s, err := connect(t, f.url+"/mcp/operator/"+f.opA+"/", f.builderTok)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	isErr, _, text := call(t, s, "create_form", map[string]any{
+		"questions": []map[string]any{
+			{"topic": "topic_khong_ton_tai", "question": "Câu hỏi sao?"}},
+	})
+	if !isErr || !strings.Contains(text, "topic không hợp lệ") {
+		t.Fatalf("muốn lỗi topic không hợp lệ, được: isErr=%v text=%v", isErr, text)
+	}
+	var n int
+	f.pool.QueryRow(context.Background(),
+		`SELECT count(*) FROM forms WHERE operator_id = $1`, f.opA).Scan(&n)
+	if n != 0 {
+		t.Fatal("không được tạo form khi topic sai")
+	}
+}

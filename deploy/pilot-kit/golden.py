@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import os
 import sys
 import urllib.request
 from pathlib import Path
@@ -54,11 +55,16 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--api", default="http://localhost:8080")
     ap.add_argument("--operator", required=True)
-    ap.add_argument("--token", required=True)
+    ap.add_argument("--token", default=os.environ.get("BIVA_TOKEN", ""),
+                    help="mặc định lấy từ biến môi trường BIVA_TOKEN (không lộ qua ps/history)")
     ap.add_argument("--top", type=int, default=5, help="điểm pass nếu item đúng trong top-k")
     ap.add_argument("--pass-rate", type=float, default=0.9, help="ngưỡng AC (mặc định 0.90)")
     ap.add_argument("golden", type=Path)
     a = ap.parse_args()
+    if not a.token:
+        ap.error("cần token: đặt biến môi trường BIVA_TOKEN=biva_... hoặc dùng --token")
+    if a.api.startswith("http://") and "localhost" not in a.api and "127.0.0.1" not in a.api:
+        print("CẢNH BÁO: --api là http:// ngoài localhost — token đi cleartext!", file=sys.stderr)
 
     rows = [r for r in csv.DictReader(a.golden.open(encoding="utf-8-sig"))
             if (r.get("cau_hoi") or "").strip()]

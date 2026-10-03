@@ -97,6 +97,13 @@ func (s *Server) addOnboardTools(srv *mcp.Server, operatorID string) {
 			if err := form.Check(qs); err != nil {
 				return nil, createFormOut{}, err
 			}
+			// Topic phải thuộc template (hoặc "other") — topic lạ làm job ingest fail vĩnh viễn
+			// SAU khi nhà xe đã trả lời: câu trả lời thật kẹt trong form đã submitted (review r3).
+			for _, q := range qs {
+				if err := s.checkTopics([]string{q.Topic}); err != nil {
+					return nil, createFormOut{}, err
+				}
+			}
 			c, err := form.Create(ctx, s.db, s.publicURL, operatorID, in.Title, qs, p.Actor(), time.Duration(days)*24*time.Hour)
 			if err != nil {
 				return nil, createFormOut{}, internal("create_form", err)
