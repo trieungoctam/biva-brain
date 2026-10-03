@@ -360,8 +360,10 @@ const reviewQualityPrompt = `Rà chất lượng bot của nhà xe theo góc nh�
 5. Tổng hợp báo cáo: (a) chỗ yếu của artifact kèm dòng, (b) tri thức thiếu, (c) đề xuất lesson (add_lesson với type do/dont) cho lỗi hay gặp, (d) đề xuất test case cho chỗ mưa gió.
 Chỉ nêu vấn đề có bằng chứng (dòng/trích dẫn); mỗi đề xuất kèm next action cụ thể.`
 
-// addCatalogResources: 4 resource còn lại của mục 6 docs/mcp.md — lessons ngành, module logic, L0, artifact.
-func (s *Server) addCatalogResources(srv *mcp.Server, operatorID string) {
+// addSharedCatalogResources: 3 resource phạm vi NỀN TẢNG (lessons, modules, L0) — mount cho
+// CẢ endpoint nhà xe lẫn endpoint platform: lead làm việc ở /mcp/platform/ cần đọc được
+// L0/L1 từ endpoint của mình (từng list 0 resource ở đó).
+func (s *Server) addSharedCatalogResources(srv *mcp.Server) {
 	srv.AddResource(&mcp.Resource{
 		URI: "biva://industry/lessons", Name: "industry/lessons",
 		MIMEType: "text/markdown", Description: "Bài học đúng chung / sai chung của ngành (kể cả bài học về code)",
@@ -439,6 +441,10 @@ func (s *Server) addCatalogResources(srv *mcp.Server, operatorID string) {
 		return textResource("biva://platform/rules", b.String()), nil
 	})
 
+}
+
+// addOperatorCatalogResources: template artifact theo bot — chỉ có nghĩa ở endpoint nhà xe.
+func (s *Server) addOperatorCatalogResources(srv *mcp.Server, operatorID string) {
 	srv.AddResourceTemplate(&mcp.ResourceTemplate{
 		URITemplate: "biva://operator/{operator}/bots/{+bot}/artifacts/{kind}",
 		Name:        "bots/artifacts", MIMEType: "text/markdown",

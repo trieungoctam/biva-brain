@@ -272,7 +272,8 @@ func (s *Server) operatorServer(operatorID string) *mcp.Server {
 	s.addRunExamplesTool(srv, operatorID)
 	s.addLogicTestsTools(srv, operatorID)
 	s.addLogicSearchTools(srv, operatorID)
-	s.addCatalogResources(srv, operatorID)
+	s.addSharedCatalogResources(srv)
+	s.addOperatorCatalogResources(srv, operatorID)
 	s.addTestTools(srv, operatorID)
 	s.addReflectTools(srv, operatorID)
 	s.addReleaseTools(srv, operatorID)
@@ -288,6 +289,7 @@ func (s *Server) newPlatformServer() *mcp.Server {
 		Instructions: "BIVA Brain — tri thức L0/L1 (nền tảng, ngành). Chỉ dành cho lead.",
 	})
 	addPlatformTools(srv, s.db)
+	s.addSharedCatalogResources(srv) // lead đọc L0/L1 từ chính endpoint platform
 	s.addPlatformMgmt(srv)
 	s.addImpactTool(srv)
 	s.addRegressionTool(srv)

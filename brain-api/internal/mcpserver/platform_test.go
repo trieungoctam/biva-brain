@@ -4,6 +4,8 @@ import (
 	"context"
 	"strings"
 	"testing"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // S5.1.1: platform tools — lead mới vào được; list_operators/promotion/propose_l1_change.
@@ -435,4 +437,45 @@ func TestListStaleShowsStaleLogicParams(t *testing.T) {
 	if got["replaced_by"] != repl || got["new_item_text"] != "Giá cơ sở 350k" {
 		t.Fatalf("thay thế = %v", got)
 	}
+}
+
+// Endpoint PLATFORM phải có resource nền tảng (L0/L1) cho lead — từng list 0 resource
+// ở đó (biva://platform/rules chỉ tồn tại trên endpoint nhà xe).
+func TestPlatformEndpointHasCatalogResources(t *testing.T) {
+	f := setup(t)
+	s, err := connect(t, f.url+"/mcp/platform/", f.leadTok)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	isErr, out, raw := listResources(t, s)
+	if isErr {
+		t.Fatalf("list lỗi: %v", raw)
+	}
+	uris := map[string]bool{}
+	for _, r := range out {
+		if m, ok := r.(map[string]any); ok {
+			if u, ok := m["uri"].(string); ok {
+				uris[u] = true
+			}
+		}
+	}
+	for _, want := range []string{"biva://platform/rules", "biva://industry/lessons", "biva://logic/modules"} {
+		if !uris[want] {
+			t.Fatalf("thiếu %s trong %v", want, uris)
+		}
+	}
+}
+
+func listResources(t *testing.T, s *mcp.ClientSession) (bool, []any, any) {
+	t.Helper()
+	res, err := s.ListResources(context.Background(), nil)
+	if err != nil {
+		return true, nil, err
+	}
+	out := make([]any, 0, len(res.Resources))
+	for _, r := range res.Resources {
+		out = append(out, map[string]any{"uri": r.URI, "name": r.Name})
+	}
+	return false, out, nil
 }
