@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
@@ -69,9 +70,22 @@ func Check(qs []Question) error {
 	return nil
 }
 
+// MaxOpenForms: số form đang mở tối đa của một nhà xe — chống builder AI bị dụ gọi
+// create_form hàng loạt bơm item chờ duyệt (s4).
+const MaxOpenForms = 3
+
 // Create: form mới; URL = publicURL/f/<token>.
 func Create(ctx context.Context, db *pgxpool.Pool, publicURL, operatorID, title string, qs []Question, actor string,
 	ttl time.Duration) (Created, error) {
+	var open int
+	if err := db.QueryRow(ctx, `SELECT count(*) FROM forms WHERE operator_id = $1 AND status = 'open'`,
+		operatorID).Scan(&open); err != nil {
+		return Created{}, err
+	}
+	if open >= MaxOpenForms {
+		return Created{}, fmt.Errorf("nhà xe đang có %d form mở (tối đa %d) — đợi nhà xe trả lời hoặc hết hạn", open, MaxOpenForms)
+	}
+
 	var c Created
 	if err := Check(qs); err != nil {
 		return c, err
@@ -277,7 +291,7 @@ func (h *Handler) accept(ctx context.Context, f formRow, answers []Answer, conte
 	// xác nhận cùng tiền tố ("Nhà xe có áp dụng như sau không…") không còn gộp chung key.
 	items := []map[string]any{}
 	for _, a := range answers {
-		ans := strings.TrimSpace(a.Answer)
+		ans := sanitizeAnswer(strings.TrimSpace(a.Answer))
 		if ans == "" {
 			continue
 		}
@@ -323,9 +337,12 @@ func (h *Handler) accept(ctx context.Context, f formRow, answers []Answer, conte
 			"kind": "policy", "topic": a.Topic, "key": key, "text": text,
 		})
 	}
+	// (s4) Form là đường CÔNG KHAI (link /f/ có thể bị forward): item từ form LUÔN chờ
+	// builder duyệt — không auto-apply — đúng lời hứa in trên trang submit và chặn chuỗi
+	// injection "trả lời mồi → auto-apply → pack → builder AI ghi vào artifact".
 	payload := map[string]any{"operator_id": f.operatorID, "source": "form", "content": content,
 		"received_at": time.Now().UTC().Format(time.RFC3339), "submitted_by": "form:" + f.id,
-		"items": items}
+		"require_review": true, "items": items}
 	var opID string
 	if err := tx.QueryRow(ctx, `INSERT INTO operations (kind, operator_id, payload, idempotency_key)
 		VALUES ('ingest', $1, $2, $3) RETURNING id::text`, f.operatorID, payload, "form:"+f.id).Scan(&opID); err != nil {
@@ -345,4 +362,22 @@ func (h *Handler) accept(ctx context.Context, f formRow, answers []Answer, conte
 		return err
 	}
 	return tx.Commit(ctx)
+}
+
+// sanitizeAnswer: bỏ ký tự điều khiển/bidi (Cf/Cc — tấn công hiển thị U+202E sắp lại chữ),
+// trung hoà cú pháp trích dẫn "[[" (không cho [[uuid]] nhét trong text mạo citation).
+func sanitizeAnswer(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		if r == '\n' || r == '\t' {
+			b.WriteRune(r)
+			continue
+		}
+		if unicode.Is(unicode.Cf, r) || unicode.Is(unicode.Cc, r) {
+			continue // RLO/LRM/ZWSP, control — bỏ, không cắt lặng phần còn lại
+		}
+		b.WriteRune(r)
+	}
+	return strings.ReplaceAll(b.String(), "[[", "[ [")
 }

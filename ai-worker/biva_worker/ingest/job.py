@@ -279,9 +279,10 @@ async def ingest(pool: asyncpg.Pool, llm: LLMClient, job: Job) -> dict[str, Any]
         async with conn.transaction():
             doc_id, reviews = await _write(conn, payload, job, h, decisions)
             if doc_id is not None:
+                require_review = bool(payload.get("require_review"))
                 for review_id, risk in reviews:
-                    if risk != "low" or not auto:
-                        continue
+                    if risk != "low" or not auto or require_review:
+                        continue  # form (đường công khai) luôn chờ builder duyệt (s4)
                     res = json.loads(
                         await conn.fetchval("SELECT apply_review($1::uuid, $2)::text", review_id, ACTOR)
                     )

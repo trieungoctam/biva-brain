@@ -71,6 +71,10 @@
       "items": {
         "$ref": "#/$defs/item"
       }
+    },
+    "require_review": {
+      "type": "boolean",
+      "description": "true = mọi review chờ builder duyệt, không auto-apply (dùng cho form — đường công khai)"
     }
   },
   "$defs": {
