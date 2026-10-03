@@ -7,6 +7,8 @@ package scheduler
 import (
 	"context"
 	"log/slog"
+	"os"
+	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -35,7 +37,33 @@ func DefaultTasks() []Task {
 	return []Task{
 		{Name: "requeue_expired", Every: 15 * time.Second, Run: RequeueExpired},
 		{Name: "expire_items", Every: time.Minute, Run: ExpireItems},
+		// Lịch sử job (done/failed) chỉ để chẩn đoán gần đây — promote enqueue job mỗi
+		// 5 phút nên bảng operations lớn vô hạn nếu không dọn (đo live: 115 row/10h).
+		{Name: "purge_operations", Every: time.Hour, Run: PurgeOperations},
 	}
+}
+
+// PurgeOperations: xoá job kết thúc (done/failed) cũ hơn BIVA_OPERATIONS_RETENTION_DAYS
+// (mặc định 30 ngày; 0 = tắt). audit_log là nhật ký lâu dài và KHÔNG bị dọn.
+func PurgeOperations(ctx context.Context, db *pgxpool.Pool) error {
+	days := 30
+	if v := os.Getenv("BIVA_OPERATIONS_RETENTION_DAYS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			days = n
+		}
+	}
+	if days <= 0 {
+		return nil
+	}
+	tag, err := db.Exec(ctx, `DELETE FROM operations
+		WHERE status IN ('done', 'failed') AND created_at < now() - make_interval(days => $1)`, days)
+	if err != nil {
+		return err
+	}
+	if n := tag.RowsAffected(); n > 0 {
+		slog.Info("scheduler: dọn lịch sử job cũ", "xoá", n, "giữ_lại_ngày", days)
+	}
+	return nil
 }
 
 // ExpireItems (S2.3.2): item active đã quá valid_to → expired. Trigger của migration 000011 đánh dấu artifact trích

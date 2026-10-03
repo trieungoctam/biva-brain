@@ -173,6 +173,12 @@ không job nào chết. Queue nằm trong Postgres nên không bị ảnh hưở
 không treo, brain-api sống; `docker start s3` → export chạy lại được ngay (URL tải có
 nonce không đoán được). Outage matrix đầy đủ: postgres ✓ · redis ✓ (fail-open) · s3 ✓.
 
+## Giữ kích thước bảng operations
+
+Scheduler chạy `purge_operations` mỗi giờ: xoá job done/failed cũ hơn
+`BIVA_OPERATIONS_RETENTION_DAYS` (mặc định 30; 0 = tắt). Cần lịch sử lâu hơn để điều tra?
+Tăng biến này hoặc backup trước khi giảm — audit_log KHÔNG bị dọn (chỉ operations).
+
 ## Phát hiện dò token trong log
 
 Token sai → 401 + dòng WARN `mcp: token không hợp lệ` kèm `ip` và `path` (không ghi

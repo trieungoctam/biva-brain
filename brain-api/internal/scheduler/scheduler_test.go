@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/trieungoctam/biva-brain/brain-api/internal/testdb"
@@ -113,5 +115,39 @@ func TestRequeueExpired(t *testing.T) {
 		if status != want || lockedBy != nil {
 			t.Errorf("job %s: status=%s locked_by=%v, muốn %s/nil", id, status, lockedBy, want)
 		}
+	}
+}
+
+// PurgeOperations: xoá done/failed CŨ; giữ queued/running và job done MỚI.
+func TestPurgeOperations(t *testing.T) {
+	pool := testdb.Pool(t)
+	ctx := context.Background()
+	old := uuid.NewString()
+	fresh := uuid.NewString()
+	op := "purge" + uuid.NewString()[:8]
+	if _, err := pool.Exec(ctx, `INSERT INTO operators (id, name) VALUES ($1, 'P')`, op); err != nil {
+		t.Fatal(err)
+	}
+	ins := func(id, status, age string) {
+		if _, err := pool.Exec(ctx, `INSERT INTO operations (id, kind, operator_id, status, created_at)
+			VALUES ($1::uuid, 'system.ping', $2, $3, now() - $4::interval)`,
+			id, op, status, age); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ins(old, "done", "40 days")
+	ins(fresh, "done", "1 day")
+	t.Cleanup(func() {
+		pool.Exec(ctx, `DELETE FROM operations WHERE id = ANY($1::uuid[])`, []string{old, fresh})
+		pool.Exec(ctx, `DELETE FROM operators WHERE id = $1`, op)
+	})
+	if err := PurgeOperations(ctx, pool); err != nil {
+		t.Fatal(err)
+	}
+	var nOld, nFresh int
+	pool.QueryRow(ctx, `SELECT count(*) FROM operations WHERE id = $1::uuid`, old).Scan(&nOld)
+	pool.QueryRow(ctx, `SELECT count(*) FROM operations WHERE id = $1::uuid`, fresh).Scan(&nFresh)
+	if nOld != 0 || nFresh != 1 {
+		t.Fatalf("purge: cũ=%d (muốn 0), mới=%d (muốn 1)", nOld, nFresh)
 	}
 }
