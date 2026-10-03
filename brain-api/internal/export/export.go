@@ -65,8 +65,13 @@ type Result struct {
 
 var citeRe = regexp.MustCompile(`[ \t]*\[\[[^\[\]]*\]\]`)
 
+// parenCite: marker trung hoá của form ("((", "( (") — không phải citation thật nhưng
+// cũng không được lọt vào lời bot gửi khách (s6).
+var parenCite = regexp.MustCompile(`\(\s*\(([^)\s][^)]*)\)\s*\)`)
+
 // StripCitations bỏ [[...]] (và khoảng trắng trước nó).
 func StripCitations(s string) string {
+	s = parenCite.ReplaceAllString(s, "")
 	lines := strings.Split(citeRe.ReplaceAllString(s, ""), "\n")
 	for i := range lines {
 		lines[i] = strings.TrimRight(lines[i], " \t")

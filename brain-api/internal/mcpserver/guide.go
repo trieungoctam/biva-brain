@@ -74,6 +74,8 @@ Mục bắt buộc mà nhà xe CHƯA có tri thức: viết vào fallbacks (nói
   tạo một item "kind=persona" (submit_knowledge) mô tả vai trò/giọng nói, rồi trích dẫn [[id]] ở câu đó.
 - **fallbacks giữ chung chung**: "Chưa rõ thông tin: chuyển nhân viên hỗ trợ." Đừng nhắc chủ đề cụ thể
   (giá, tuyến, giờ) trong câu fallback — nhắc chủ đề là câu trở thành mang thông tin → UNCITED.
+- **Ký hiệu "(( … ))"** trong item từ form: đó là cú pháp trích dẫn đã bị trung hoá vì đến từ
+  đường công khai — KHÔNG trích dẫn, bỏ/markdown lại khi đưa vào artifact.
 - **Hướng dẫn gọi tool** (khi nào gọi query_data, tham số gì) chỉ ghi trong tool_spec và system_prompt,
   không nằm trong faq/fallbacks.
 `

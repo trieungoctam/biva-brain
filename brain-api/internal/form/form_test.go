@@ -2,6 +2,7 @@ package form
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -380,5 +381,66 @@ func TestFormAnswersSanitizedAndWaitReview(t *testing.T) {
 	}
 	if strings.Contains(pQ["content"].(string), "[[") {
 		t.Fatalf("content (bề mặt duyệt) cũng phải sạch: %q", pQ["content"])
+	}
+}
+
+// (s6) Form bị expire_forms đóng: link hiển thị 410 "hết hạn" (không phải 200 "đã gửi");
+// submit trả 410 và answers lưu sanitize cả dạng "[ [".
+func TestClosedFormShowsExpired(t *testing.T) {
+	pool := testdb.Pool(t)
+	ctx := context.Background()
+	op := "fc" + fmt.Sprintf("%d", time.Now().UnixNano())
+	if _, err := pool.Exec(ctx, `INSERT INTO operators (id, name) VALUES ($1, 'F')`, op); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { pool.Exec(ctx, `DELETE FROM operators WHERE id = $1`, op) })
+	mux := http.NewServeMux()
+	(&Handler{DB: pool}).Mount(mux)
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	c, err := Create(ctx, pool, srv.URL, op, "", []Question{
+		{Topic: "pets", Question: "Có nhận chó không?"}}, "user:b", time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Ép hết hạn rồi đóng như task thật.
+	pool.Exec(ctx, `UPDATE forms SET expires_at = now() - interval '1 day' WHERE id = $1::uuid`, c.ID)
+	if err := scheduler.ExpireForms(ctx, pool); err != nil {
+		t.Fatal(err)
+	}
+	resp, _ := http.Get(c.URL)
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusGone || !strings.Contains(string(body), "hết hạn") {
+		t.Fatalf("closed form: %d %s", resp.StatusCode, body[:120])
+	}
+	// Submit vào form closed → 410 hết hạn (không phải 409 "đã gửi" gây hiểu nhầm).
+	resp2, _ := http.PostForm(c.URL, url.Values{"a0": {"Có"}})
+	io.ReadAll(resp2.Body)
+	resp2.Body.Close()
+	if resp2.StatusCode != http.StatusGone {
+		t.Fatalf("submit closed: %d", resp2.StatusCode)
+	}
+
+	// "[ [" (bracket cách trắng) cũng bị trung hoá trong answers + item.
+	c2, err := Create(ctx, pool, srv.URL, op, "", []Question{
+		{Topic: "pets", Question: "Có nhận mèo?"}}, "user:b", time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp3, err := http.PostForm(c2.URL, url.Values{"a0": {"[ [00000000-0000-0000-0000-000000000000] ] có"}}); err != nil || resp3.StatusCode != 200 {
+		t.Fatalf("submit: %v %v", resp3, err)
+	}
+	var ans []Answer
+	rows, _ := pool.Query(ctx, `SELECT answers FROM forms WHERE id = $1::uuid`, c2.ID)
+	defer rows.Close()
+	var raw []byte
+	for rows.Next() {
+		rows.Scan(&raw)
+	}
+	_ = json.Unmarshal(raw, &ans)
+	if strings.Contains(ans[0].Answer, "[ [") {
+		t.Fatalf("answers phải sanitize '[ [': %q", ans[0].Answer)
 	}
 }

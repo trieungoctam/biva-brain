@@ -14,6 +14,7 @@ import (
 	"html/template"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 	"unicode"
@@ -207,10 +208,10 @@ func (h *Handler) show(w http.ResponseWriter, r *http.Request) {
 	case err != nil:
 		slog.Error("đọc form lỗi", "err", err)
 		render(w, http.StatusServiceUnavailable, "Tạm thời gián đoạn", "Anh/chị thử lại sau ít phút giúp em.", nil)
+	case f.status == "closed" || time.Now().After(f.expires):
+		render(w, http.StatusGone, f.title, "Link đã hết hạn — anh/chị nhắn đội BIVA để nhận link mới ạ.", nil)
 	case f.status != "open":
 		render(w, http.StatusOK, f.title, "Nhà xe đã gửi câu trả lời. Cảm ơn anh/chị!", nil)
-	case time.Now().After(f.expires):
-		render(w, http.StatusGone, f.title, "Link đã hết hạn — anh/chị nhắn đội BIVA để nhận link mới.", nil)
 	default:
 		render(w, http.StatusOK, f.title, "", f.questions)
 	}
@@ -232,8 +233,12 @@ func (h *Handler) submit(w http.ResponseWriter, r *http.Request) {
 		render(w, http.StatusServiceUnavailable, "Tạm thời gián đoạn", "Anh/chị thử lại sau ít phút giúp em.", nil)
 		return
 	}
-	if f.status != "open" || time.Now().After(f.expires) {
-		render(w, http.StatusConflict, f.title, "Form đã được gửi hoặc đã hết hạn.", nil)
+	if f.status == "closed" || time.Now().After(f.expires) {
+		render(w, http.StatusGone, f.title, "Link đã hết hạn nên câu trả lời chưa được ghi — anh/chị vui lòng xin link mới ạ.", nil)
+		return
+	}
+	if f.status != "open" {
+		render(w, http.StatusConflict, f.title, "Form đã được gửi trước đó.", nil)
 		return
 	}
 	var answers []Answer
@@ -267,6 +272,8 @@ func (h *Handler) submit(w http.ResponseWriter, r *http.Request) {
 
 var errAlreadySubmitted = errors.New("form đã gửi")
 
+var errExpired = errors.New("form đã hết hạn")
+
 // accept: ghi câu trả lời + tạo job ingest trong cùng một transaction (không có form "đã gửi" mà mất job).
 func (h *Handler) accept(ctx context.Context, f formRow, answers []Answer, content string) error {
 	tx, err := h.DB.Begin(ctx)
@@ -278,6 +285,9 @@ func (h *Handler) accept(ctx context.Context, f formRow, answers []Answer, conte
 	var status string
 	if err := tx.QueryRow(ctx, `SELECT status FROM forms WHERE id = $1::uuid FOR UPDATE`, f.id).Scan(&status); err != nil {
 		return err
+	}
+	if status == "closed" {
+		return errExpired
 	}
 	if status != "open" {
 		return errAlreadySubmitted
@@ -352,6 +362,10 @@ func (h *Handler) accept(ctx context.Context, f formRow, answers []Answer, conte
 		VALUES ('ingest', $1, $2, $3) RETURNING id::text`, f.operatorID, payload, "form:"+f.id).Scan(&opID); err != nil {
 		return err
 	}
+	for i := range answers {
+		answers[i].Answer = sanitizeAnswer(answers[i].Answer)
+		answers[i].Question = sanitizeAnswer(answers[i].Question)
+	}
 	tag, err := tx.Exec(ctx, `UPDATE forms SET status = 'submitted', answers = $2, submitted_at = now(), operation_id = $3::uuid
 		WHERE id = $1::uuid AND status = 'open'`, f.id, answers, opID)
 	if err != nil {
@@ -370,6 +384,8 @@ func (h *Handler) accept(ctx context.Context, f formRow, answers []Answer, conte
 
 // sanitizeAnswer: bỏ ký tự điều khiển/bidi (Cf/Cc — tấn công hiển thị U+202E sắp lại chữ),
 // trung hoà cú pháp trích dẫn "[[" (không cho [[uuid]] nhét trong text mạo citation).
+var reBracketSpace = regexp.MustCompile(`\[\s*\[`)
+
 func sanitizeAnswer(s string) string {
 	var b strings.Builder
 	b.Grow(len(s))
@@ -383,7 +399,9 @@ func sanitizeAnswer(s string) string {
 		}
 		b.WriteRune(r)
 	}
-	// "((": LLM reflow có thể XOÁ khoảng cách của "[ [" để tái lập "[[" (s5) — đổi hẳn
-	// sang cặp ký tự không phải bracket, không thể nối lại thành citation.
-	return strings.ReplaceAll(b.String(), "[[", "((")
+	// "((" / "( (": đổi hẳn sang cặp không phải bracket — "[[" và cả "[ [" (khoảng trắng
+	// giữa hai bracket, s6: LLM reflow gộp khoảng trắng là tái lập citation) đều không
+	// thể nối lại thành [[ khớp citeRe.
+	out := strings.ReplaceAll(b.String(), "[[", "((")
+	return reBracketSpace.ReplaceAllString(out, "( (")
 }
