@@ -11,7 +11,8 @@ chạy 1 script. Không cần GEMINI key (đường chính `submit_knowledge` kh
    `tuyen,gio,loai_xe,ngay_chay`; `ngay_chay` nhận "hằng ngày" hoặc "2,4,6" hoặc "7,cn").
 3. **Chính sách** — điền `chinh_sach_template.csv` (topic,key,text). Topic rủi ro thấp
    (pets/luggage/contact…) **tự áp dụng** ngay; topic chạm tiền (cancellation…) chờ duyệt.
-   Nguồn太难 trích (ảnh, ghi âm) mới cần `ingest` + GEMINI key.
+   Lưu ý: câu trả lời qua **form** (`/f/…`) luôn chờ builder duyệt — form là đường công khai.
+   Nguồn khó trích (ảnh, ghi âm) mới cần `ingest` + GEMINI key.
 
 ## Nạp
 
@@ -63,8 +64,8 @@ thứ bẩn trên đó nạp thật vào stack.
   key với giá thường trong một tin sẽ bị đánh CONFLICT (an toàn, builder phải tự chọn).
 - Đã chạy thử end-to-end: nạp 12 item giá/lịch → queue 12 review NEW rủi ro cao → duyệt giá
   Tết qua `apply_review` (preview + confirm_token) → item active đúng khoảng hiệu lực; nạp 5
-  chính sách → pets/luggage/contact **tự áp dụng** + consolidate tự gom observation,
-  cancellation **chờ duyệt** (đúng phân loại rủi ro theo topic).
+  chính sách (submit_knowledge) → pets/luggage/contact **tự áp dụng** + consolidate tự gom
+  observation, cancellation **chờ duyệt** (đúng phân loại rủi ro theo topic).
 - Loader có self-check chuẩn hoá key lúc khởi động (khớp chuẩn `textnorm` của Brain — đã đối
   chiếu 8/8 fixture `contracts/textnorm/keys.jsonl`); Python/Unicode lạ trên máy nạp sẽ báo
   ngay thay vì tạo key lệch.

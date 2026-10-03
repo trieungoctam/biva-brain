@@ -84,7 +84,8 @@ cá nhân ở trang cấp quyền — xem [docs/mcp.md](docs/mcp.md#2-kết-nố
 ### Vòng đời một bot
 
 1. **Tri thức**: AI phía builder đọc tin/file/ảnh rồi `submit_knowledge` (hoặc `ingest` để ai-worker trích
-   bằng LLM) → diff → phần vô hại tự áp dụng; giá/giờ/huỷ luôn chờ `apply_review` (preview → `confirm_token`).
+   bằng LLM) → diff → phần vô hại tự áp dụng (item từ form công khai thì LUÔN chờ duyệt);
+   giá/giờ/huỷ luôn chờ `apply_review` (preview → `confirm_token`).
    Consolidate gom observation; ≥ 3 nhà xe giống nhau → đề xuất PROMOTE lên L1 cho lead duyệt.
 2. **Build**: prompt `/onboard_operator` → `/build_bot` — AI viết artifact có trích dẫn `[[id]]`,
    `validate_artifact` kiểm tĩnh (6 mã lỗi có dòng) + CONTRADICTION bằng LLM chạy nền.

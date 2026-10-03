@@ -131,8 +131,8 @@ thức budget đúng toàn vùng). Form extraction giờ có bất biến chứn
 câu hỏi giữ ≥min(len,200), câu trả lời chỉ cắt khi thật sự tràn. Bài học quy trình: mọi
 edit string-replace phải grep-verify marker TRƯỚC khi commit claim. Sau hội tụ, chạy chuỗi
 form→ingest→pack LIÊN HOÀN trên build mới (r46): trả lời 4 ký tự "Không" (death-trap cũ)
-→ ingest done tự áp dụng 3/3 → item active kèm ngữ cảnh "Câu hỏi: … → Trả lời: Không" →
-item CÓ MẶT trong knowledge pack — bot đọc được.
+→ ingest done, 3 item vào review queue (s4: form luôn chờ duyệt — bản ghi này viết trước
+fix đó) → builder duyệt → item active kèm ngữ cảnh → pack — bot đọc được.
 
 ## Quality review lần 2 (agent reviewer, diff cbe11c9..HEAD) — 10 finding, sửa đủ trong 1 vòng
 
