@@ -259,12 +259,15 @@ func (h *Handler) submit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.accept(r.Context(), f, answers, content.String()); err != nil {
-		if errors.Is(err, errAlreadySubmitted) {
+		switch {
+		case errors.Is(err, errExpired):
+			render(w, http.StatusGone, f.title, "Link đã hết hạn nên câu trả lời chưa được ghi — anh/chị vui lòng xin link mới ạ.", nil)
+		case errors.Is(err, errAlreadySubmitted):
 			render(w, http.StatusConflict, f.title, "Form đã được gửi trước đó.", nil)
-			return
+		default:
+			slog.Error("nhận form lỗi", "err", err)
+			render(w, http.StatusServiceUnavailable, "Tạm thời gián đoạn", "Chưa gửi được — anh/chị thử lại sau ít phút giúp em.", nil)
 		}
-		slog.Error("nhận form lỗi", "err", err)
-		render(w, http.StatusServiceUnavailable, "Tạm thời gián đoạn", "Chưa gửi được — anh/chị thử lại sau ít phút giúp em.", nil)
 		return
 	}
 	render(w, http.StatusOK, f.title, "Đã gửi. Cảm ơn anh/chị!", nil)
@@ -283,8 +286,13 @@ func (h *Handler) accept(ctx context.Context, f formRow, answers []Answer, conte
 	defer tx.Rollback(ctx)
 	// Khoá form: hai lần bấm Gửi đồng thời → lần sau thấy đã submitted.
 	var status string
-	if err := tx.QueryRow(ctx, `SELECT status FROM forms WHERE id = $1::uuid FOR UPDATE`, f.id).Scan(&status); err != nil {
+	var expires time.Time
+	if err := tx.QueryRow(ctx, `SELECT status, expires_at FROM forms WHERE id = $1::uuid FOR UPDATE`,
+		f.id).Scan(&status, &expires); err != nil {
 		return err
+	}
+	if time.Now().After(expires) {
+		return errExpired // hết hạn giữa precheck và lock (s7): không nhận câu trả lời trễ
 	}
 	if status == "closed" {
 		return errExpired
@@ -384,7 +392,7 @@ func (h *Handler) accept(ctx context.Context, f formRow, answers []Answer, conte
 
 // sanitizeAnswer: bỏ ký tự điều khiển/bidi (Cf/Cc — tấn công hiển thị U+202E sắp lại chữ),
 // trung hoà cú pháp trích dẫn "[[" (không cho [[uuid]] nhét trong text mạo citation).
-var reBracketSpace = regexp.MustCompile(`\[\s*\[`)
+var reBracketSpace = regexp.MustCompile(`\[[\s\x{00a0}\x{2000}-\x{200a}\x{202f}\x{205f}\x{3000}]*\[`)
 
 func sanitizeAnswer(s string) string {
 	var b strings.Builder
@@ -396,6 +404,9 @@ func sanitizeAnswer(s string) string {
 		}
 		if unicode.Is(unicode.Cf, r) || unicode.Is(unicode.Cc, r) {
 			continue // RLO/LRM/ZWSP, control — bỏ, không cắt lặng phần còn lại
+		}
+		if unicode.Is(unicode.Zs, r) {
+			r = ' ' // NBSP… normalize về space thường — không lọt qua regex bracket (s7)
 		}
 		b.WriteRune(r)
 	}

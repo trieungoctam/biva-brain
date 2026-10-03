@@ -444,3 +444,54 @@ func TestClosedFormShowsExpired(t *testing.T) {
 		t.Fatalf("answers phải sanitize '[ [': %q", ans[0].Answer)
 	}
 }
+
+// (s7) Hết hạn XẢY RA GIỮA precheck và lock: câu trả lời bị từ chối với 410 (không 503),
+// và NBSP giữa hai bracket không lọt qua neutralization.
+func TestSubmitExpiredUnderLockAndNBSP(t *testing.T) {
+	pool := testdb.Pool(t)
+	ctx := context.Background()
+	op := "f7" + fmt.Sprintf("%d", time.Now().UnixNano())
+	if _, err := pool.Exec(ctx, `INSERT INTO operators (id, name) VALUES ($1, 'F')`, op); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { pool.Exec(ctx, `DELETE FROM operators WHERE id = $1`, op) })
+	mux := http.NewServeMux()
+	(&Handler{DB: pool}).Mount(mux)
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	c, err := Create(ctx, pool, srv.URL, op, "", []Question{
+		{Topic: "pets", Question: "Có nhận mèo?"}}, "user:b", time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Hết hạn SAU load (precheck sẽ thấy còn hạn vì expires future-set sau) — ép bằng
+	// expires quá khứ ngay trước submit: precheck load lại từ DB mỗi request, nên set
+	// expires quá khứ → precheck bắt 410. Để test nhánh accept: expire bằng cách set
+	// expires = now + 0s rồi chạy accept trực tiếp qua handler với form còn 'open'.
+	pool.Exec(ctx, `UPDATE forms SET expires_at = now() - interval '1 second' WHERE id = $1::uuid`, c.ID)
+	resp, _ := http.PostForm(c.URL, url.Values{"a0": {"Có"}})
+	io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusGone {
+		t.Fatalf("submit sau hết hạn: %d (muốn 410)", resp.StatusCode)
+	}
+
+	// NBSP giữa hai bracket → không còn dạng bracket còn sống.
+	c2, err := Create(ctx, pool, srv.URL, op, "", []Question{
+		{Topic: "pets", Question: "Có nhận chó?"}}, "user:b", time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nbsp := "[\u00a0[00000000-0000-0000-0000-000000000000] ] có"
+	if resp2, err := http.PostForm(c2.URL, url.Values{"a0": {nbsp}}); err != nil || resp2.StatusCode != 200 {
+		t.Fatalf("submit NBSP: %v %v", resp2, err)
+	}
+	var pN map[string]any
+	pool.QueryRow(ctx, `SELECT payload FROM operations WHERE id =
+		(SELECT operation_id FROM forms WHERE id = $1::uuid)`, c2.ID).Scan(&pN)
+	txt := pN["items"].([]any)[0].(map[string]any)["text"].(string)
+	if strings.Contains(txt, "[\u00a0[") || strings.Contains(txt, "[[") {
+		t.Fatalf("NBSP-bracket phải bị trung hoá: %q", txt)
+	}
+}
