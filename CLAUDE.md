@@ -113,6 +113,15 @@ Vòng 2 (sau review) sửa nốt 3 low/medium còn lại: export key thêm nonce
 resource OAuth whitelist chặt (chặn `/mcp/operator/` rỗng + `../`), register hỗ trợ
 `BIVA_OAUTH_REGISTRATION_SECRET`, consent hiển thị client_id. Ghi hướng dẫn trong runbook.
 
+## Chuỗi hội tụ review độc lập (đến 45 vòng)
+
+Security: s1 (1 high sandbox io) → s2 (1 high builtin bypass — lỗi của fix s1) → s3 (0 high, hygiene).
+Quality: q2=10 (2 high) → q3=4 (vạch 2 fix no-op) → q4=4 (1 high: fix chưa land thật) →
+q5=4 (0 high; panic biên 1978) → q6=1 low (test biên — reviewer brute-force CHỨNG MINH công
+thức budget đúng toàn vùng). Form extraction giờ có bất biến chứng minh được: tổng ≤2000,
+câu hỏi giữ ≥min(len,200), câu trả lời chỉ cắt khi thật sự tràn. Bài học quy trình: mọi
+edit string-replace phải grep-verify marker TRƯỚC khi commit claim.
+
 ## Quality review lần 2 (agent reviewer, diff cbe11c9..HEAD) — 10 finding, sửa đủ trong 1 vòng
 
 2 high: nap_du_lieu.py THIẾU import os (CLI gãy hoàn toàn — r40 chỉ fix golden.py, bỏ sót);

@@ -217,9 +217,10 @@ func TestFormItemExtractionQuality(t *testing.T) {
 		t.Fatalf("key phải kết thúc bằng hash 8 hex: %q", k3)
 	}
 
-	// (q5) Biên budget động: câu trả lời 1977/1978/1979/4000 rune — không panic, tổng ≤2000,
-	// câu hỏi không bị rút còn "…", lỗi Check có "1500".
-	for _, ansLen := range []int{1977, 1978, 1979, 4000} {
+	// (q6) Biên của CÔNG THỨC mới với câu hỏi 31 rune: budget-qKeep = 1948 — dưới là vừa khít
+	// (không cắt, tổng đúng 2000, không "…"), từ 1949 là cắt (tổng vẫn đúng 2000). Các mốc
+	// 1977-1979 là hồi quy cho input từng panic ở công thức cũ.
+	for _, ansLen := range []int{1948, 1949, 1977, 1978, 1979, 4000} {
 		muxN := http.NewServeMux()
 		(&Handler{DB: pool}).Mount(muxN)
 		srvN := httptest.NewServer(muxN)
@@ -248,6 +249,35 @@ func TestFormItemExtractionQuality(t *testing.T) {
 		if !strings.Contains(txt, "Quy định hành lý") {
 			t.Fatalf("ans=%d: câu hỏi bị rút mất ngữ cảnh: %q", ansLen, txt[:40])
 		}
+		if ansLen == 1948 && strings.Contains(txt, "…") {
+			t.Fatalf("ans=1948 phải vừa khít KHÔNG cắt: %d rune", utf8.RuneCountInString(txt))
+		}
+		if ansLen >= 1949 && utf8.RuneCountInString(txt) != 2000 {
+			t.Fatalf("ans=%d: cắt rồi thì tổng phải đúng 2000, đang %d", ansLen, utf8.RuneCountInString(txt))
+		}
+	}
+
+	// (q6) Nhánh qLen > 200 — nhánh DUY NHẤT câu hỏi bị clip: giữ sàn 200 rune.
+	muxL := http.NewServeMux()
+	(&Handler{DB: pool}).Mount(muxL)
+	srvL := httptest.NewServer(muxL)
+	defer srvL.Close()
+	cL, err := Create(ctx, pool, srvL.URL, op, "", []Question{
+		{Topic: "luggage", Question: strings.Repeat("mô tả quy định hành lý chi tiết ", 17)}}, "user:b", time.Hour) // ~510 rune
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp, err := http.PostForm(cL.URL, url.Values{"a0": {strings.Repeat("h", 1780)}}); err != nil || resp.StatusCode != 200 {
+		t.Fatalf("submit dài: %v %v", resp, err)
+	}
+	var pL map[string]any
+	pool.QueryRow(ctx, `SELECT payload FROM operations WHERE id =
+		(SELECT operation_id FROM forms WHERE id = $1::uuid)`, cL.ID).Scan(&pL)
+	itL, _ := pL["items"].([]any)
+	txtL := itL[0].(map[string]any)["text"].(string)
+	qPart := strings.TrimPrefix(strings.SplitN(txtL, " → Trả lời:", 2)[0], "Câu hỏi: ")
+	if utf8.RuneCountInString(qPart) < 200 {
+		t.Fatalf("câu hỏi 510 rune phải giữ sàn ≥200, còn %d", utf8.RuneCountInString(qPart))
 	}
 	_, err = Create(ctx, pool, srv2.URL, op, "", []Question{
 		{Topic: "luggage", Question: strings.Repeat("x", 1501)}}, "user:b", time.Hour)
