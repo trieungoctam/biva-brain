@@ -1,0 +1,14 @@
+cau_hoi,key_du_kien
+Nhà xe có nhận chó mèo không?,pets.cho_meo
+Hành lý xách tay được mang bao nhiêu kg?,luggage.mien_phi
+Đặt vé qua kênh nào?,booking.kenh_dat
+Giữ chỗ được bao lâu?,booking.giu_cho
+Có đón tận nơi không?,pickup.don_tan_noi
+Chuyển khoản số tài khoản nào?,payment.tai_khoan
+Xe chạy những tuyến nào?,route.danh_sach_tuyen
+Xe có dừng dọc đường không?,route.diem_dung
+"Xe gì, có wifi không?",vehicle.loai_xe
+Hotline của nhà xe?,contact.hotline
+Trung chuyển ở Đà Lạt thế nào?,transfer.trung_chuyen
+Thanh toán hình thức gì?,payment.hinh_thuc
+Văn phòng ở đâu?,pickup.van_phong

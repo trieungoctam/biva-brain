@@ -36,6 +36,17 @@ Giá/lịch là topic rủi ro cao (fare/schedule) → vào **review queue chờ
 `get_coverage` xem độ phủ mục bắt buộc → đủ thì chạy prompt `build_bot` → `run_tests` →
 `check_release_gate` → `request_publish`.
 
+## Đo recall trên golden set (DYN-112)
+
+`golden_template.csv` (cau_hoi, key_du_kien — quote câu chứa dấu phẩy) + `golden.py`:
+chạy từng câu qua `recall_knowledge`, pass nếu item đúng trong top-k (mặc định 5), exit 1
+khi dưới ngưỡng (mặc định 90%). Thay câu hỏi bằng câu KHÁCH THẬT của nhà xe khi có pilot.
+
+Finding đầu tiên từ chính bộ mẫu (13 câu, 92% top-5, keyword-only local): query chứa token
+hiếm ("Hotline") vẫn bị L0/L1 boilerplate (chứa "nhà xe") tràn xếp hạng — chế độ keyword-only
+báo `degraded` đúng thiết kế; đo AC chính thức cần TEI bật (production). Tune xếp hạng phải
+đợi corpus golden thật, không tune trên N=1.
+
 ## File Excel/CSV "bẩn" cũng ăn
 
 Loader chịu được: BOM, CRLF, delimiter `;` (Excel locale Việt Nam), khoảng trắng thừa,

@@ -1,6 +1,14 @@
 topic,key,text
+route,route.danh_sach_tuyen,Nhà xe chạy tuyến Sài Gòn - Đà Lạt và Đà Lạt - Sài Gòn, xuất phát bến Miền Đông, đến bến Đà Lạt
+route,route.diem_dung,Xe dừng đón trả dọc đường tại Dầu Giây và Bảo Lộc
+pickup,pickup.van_phong,Văn phòng: 123 Nguyễn Huệ, Quận 1, mở cửa 6:00-22:00
+pickup,pickup.don_tan_noi,Đón tận nơi miễn phí trong nội thành Sài Gòn, có mặt trước 30 phút
+booking,booking.kenh_dat,Đặt vé qua Zalo hotline 1900 6067 hoặc tại văn phòng
+booking,booking.giu_cho,Giữ chỗ không cọc trong 2 tiếng, quá 2 tiếng tự nhả ghế
+payment,payment.hinh_thuc,Thanh toán chuyển khoản hoặc tiền mặt khi lên xe
+payment,payment.tai_khoan,Chuyển khoản Vietcombank 0123456789 - Công ty CP Vận tải
+vehicle,vehicle.loai_xe,Xe giường nằm 40 chỗ có wifi và nước suối miễn phí
+transfer,transfer.trung_chuyen,Trung chuyển miễn phí khu vực Đà Lạt trung tâm, chạy từ 5:00 đến 22:00
+contact,contact.hotline,Hotline hỗ trợ 1900 6067, làm việc 24/7
 pets,pets.cho_meo,Không nhận chó mèo trên xe
 luggage,luggage.mien_phi,Hành lý xách tay miễn phí tối đa 20kg
-luggage,luggage.qua_kho,Hành lý quá 20kg tính phí theo kg
-cancellation,cancellation.hoan_ve,Hoàn vé trước 24 giờ được 90%, sau đó 50%
-contact,contact.hotline,Hotline hỗ trợ 1900 6067
