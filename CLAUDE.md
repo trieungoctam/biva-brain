@@ -113,6 +113,19 @@ Vòng 2 (sau review) sửa nốt 3 low/medium còn lại: export key thêm nonce
 resource OAuth whitelist chặt (chặn `/mcp/operator/` rỗng + `../`), register hỗ trợ
 `BIVA_OAUTH_REGISTRATION_SECRET`, consent hiển thị client_id. Ghi hướng dẫn trong runbook.
 
+## biva-integrations review trọn (r53) — 15 finding, sửa bản lề + hợp đồng sandbox
+
+Lần review agent đầu tiên CHẺN (lần trước chết DNS). Headline: test trong repo tự đổi kiểu
+input (date/now) trước khi gọi → CI xanh trong khi QUA SANDBOX THẬT mọi case hold + fare-Tết
+VỠ (payload sandbox là JSON thô) — chứng minh bằng chạy chính cases.yaml qua build_code +
+run_code: trước 4/8, sau fix 13/13. Kèm: module.yaml khai hook/param code không nhận
+(on_expire giờ chạy thật; timezone nhận); header Excel không dòng 1 từng nuốt trọn lịch
+im lặng (giờ tự dò + raise); ô Time Excel từng fail regex; parse_days từng nhận token
+hợp lệ rồi BỎ phần còn lại (mất chuyến cuối tuần); int() phụ thu 0.15×350000=402499;
+half_over_4 tính tiền trẻ 4 tuổi trái tên; trẻ "trả đủ" bị làm tròn xuống; ghế trùng
+double-count quota. CI integrations từng fail 2 lần vì ruff CI mới hơn local (B023 bind
+loop var) — bài: local ruff ≠ CI ruff, luôn đợi CI xanh mới tính xong.
+
 ## Security s4 (r47) — form là untrusted input: HIGH đã sửa
 
 Đường form công khai từng tự áp dụng item (trái lời hứa in trên trang submit) → chuỗi
