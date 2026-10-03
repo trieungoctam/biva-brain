@@ -120,7 +120,10 @@ Quality: q2=10 (2 high) → q3=4 (vạch 2 fix no-op) → q4=4 (1 high: fix chư
 q5=4 (0 high; panic biên 1978) → q6=1 low (test biên — reviewer brute-force CHỨNG MINH công
 thức budget đúng toàn vùng). Form extraction giờ có bất biến chứng minh được: tổng ≤2000,
 câu hỏi giữ ≥min(len,200), câu trả lời chỉ cắt khi thật sự tràn. Bài học quy trình: mọi
-edit string-replace phải grep-verify marker TRƯỚC khi commit claim.
+edit string-replace phải grep-verify marker TRƯỚC khi commit claim. Sau hội tụ, chạy chuỗi
+form→ingest→pack LIÊN HOÀN trên build mới (r46): trả lời 4 ký tự "Không" (death-trap cũ)
+→ ingest done tự áp dụng 3/3 → item active kèm ngữ cảnh "Câu hỏi: … → Trả lời: Không" →
+item CÓ MẶT trong knowledge pack — bot đọc được.
 
 ## Quality review lần 2 (agent reviewer, diff cbe11c9..HEAD) — 10 finding, sửa đủ trong 1 vòng
 
