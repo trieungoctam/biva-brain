@@ -176,24 +176,44 @@ func TestFormItemExtractionQuality(t *testing.T) {
 	(&Handler{DB: pool}).Mount(mux2)
 	srv2 := httptest.NewServer(mux2)
 	defer srv2.Close()
-	longQ := strings.Repeat("Quy định đặc biệt về hành lý khi đi lễ Tết ", 40) // ~1800 rune
-	c2, err := Create(ctx, pool, srv2.URL, op, "", []Question{
-		{Topic: "luggage", Question: longQ}}, "user:b", time.Hour)
+	// (r4) Câu hỏi >1500 rune bị Check chặn NGAY tại create — không còn đường vào
+	// form để rồi bị cắt im lặng trong item.
+	longQ := strings.Repeat("Quy định đặc biệt về hành lý khi đi lễ Tết ", 50) // ~2150 rune
+	if utf8.RuneCountInString(longQ) <= 1500 {
+		t.Fatalf("fixture phải >1500 rune, đang %d", utf8.RuneCountInString(longQ))
+	}
+	if _, err := Create(ctx, pool, srv2.URL, op, "", []Question{
+		{Topic: "luggage", Question: longQ}}, "user:b", time.Hour); err == nil {
+		t.Fatal("câu hỏi >1500 rune phải bị Check chặn")
+	}
+
+	// (r4) Key budget: câu hỏi chứa token dài (số tài khoản dán liền) → key vẫn ≤200,
+	// vẫn kết thúc bằng hash 8 hex.
+	mux3 := http.NewServeMux()
+	(&Handler{DB: pool}).Mount(mux3)
+	srv3 := httptest.NewServer(mux3)
+	defer srv3.Close()
+	c3, err := Create(ctx, pool, srv3.URL, op, "", []Question{
+		{Topic: "payment", Question: "Số tài khoản " + strings.Repeat("12010000", 25) + " tên gì?"}}, "user:b", time.Hour)
 	if err != nil {
-		t.Fatalf("câu hỏi 1800 rune phải được nhận (dưới 1500? %d): %v", utf8.RuneCountInString(longQ), err)
+		t.Fatal(err)
 	}
-	if resp, err := http.PostForm(c2.URL, url.Values{"a0": {"20kg miễn phí"}}); err != nil || resp.StatusCode != 200 {
-		t.Fatalf("submit 2: %v %v", resp, err)
+	if resp, err := http.PostForm(c3.URL, url.Values{"a0": {"Vietcombank Chi nhánh Quận 1"}}); err != nil || resp.StatusCode != 200 {
+		t.Fatalf("submit 3: %v %v", resp, err)
 	}
-	var payload2 map[string]any
+	var payload3 map[string]any
 	pool.QueryRow(ctx, `SELECT payload FROM operations WHERE id = (SELECT operation_id FROM forms WHERE id = $1::uuid)`,
-		c2.ID).Scan(&payload2)
-	items2, _ := payload2["items"].([]any)
-	if len(items2) != 1 {
-		t.Fatalf("items2 = %d", len(items2))
+		c3.ID).Scan(&payload3)
+	items3, _ := payload3["items"].([]any)
+	if len(items3) != 1 {
+		t.Fatalf("items3 = %d", len(items3))
 	}
-	txt2 := items2[0].(map[string]any)["text"].(string)
-	if !strings.Contains(txt2, "20kg miễn phí") {
-		t.Fatalf("clamp nuốt mất câu trả lời: %q…", txt2[:120])
+	k3 := items3[0].(map[string]any)["key"].(string)
+	if len(k3) > 200 {
+		t.Fatalf("key %d > 200", len(k3))
+	}
+	txt3 := items3[0].(map[string]any)["text"].(string)
+	if !strings.Contains(txt3, "Vietcombank") || utf8.RuneCountInString(txt3) > 2000 {
+		t.Fatalf("text3 sai: %d rune, chứa trả lời=%v", utf8.RuneCountInString(txt3), strings.Contains(txt3, "Vietcombank"))
 	}
 }

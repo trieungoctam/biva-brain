@@ -62,6 +62,9 @@ func Check(qs []Question) error {
 		if strings.TrimSpace(q.Question) == "" {
 			return fmt.Errorf("questions[%d]: câu hỏi trống", i)
 		}
+		if utf8.RuneCountInString(q.Question) > 1500 {
+			return fmt.Errorf("questions[%d]: câu hỏi dài quá 1500 ký tự", i)
+		}
 	}
 	return nil
 }
@@ -278,26 +281,42 @@ func (h *Handler) accept(ctx context.Context, f formRow, answers []Answer, conte
 		if ans == "" {
 			continue
 		}
-		// Clamp ƯU TIÊN TRẢ LỜI (nội dung nhà xe): câu hỏi ngắn lại trước, trả lời giữ
-		// tối đa — clamp cả chuỗi từ đầu từng cho câu hỏi dài nuốt mất phần trả lời (r3).
+		// Clamp theo NGÂN SÁCH ĐỘNG, ưu tiên TRẢ LỜI (nội dung nhà xe): câu trả lời chỉ bị
+		// cắt khi tổng thật sự vượt 2000 rune của schema ingest; câu hỏi rút ngắn trước
+		// (r3: clamp từ đầu từng cho câu hỏi dài nuốt câu trả lời; r4: clip cố định 450
+		// từng cắt câu trả lời dài dù câu hỏi ngắn còn dư ngân sách).
 		clip := func(s string, n int) string {
 			if utf8.RuneCountInString(s) <= n {
 				return s
 			}
 			return string([]rune(s)[:n-1]) + "…"
 		}
-		q := clip(a.Question, 1500)
-		a_ := clip(ans, 450)
+		const budget = 2000 - 9 - 12 // "Câu hỏi: " + " → Trả lời: "
+		ansLen := utf8.RuneCountInString(ans)
+		ansBudget := budget - 1
+		if ansLen > ansBudget {
+			ansBudget = budget - 200 // câu hỏi ngắn lại còn ≥199 rune
+		}
+		a_ := clip(ans, ansBudget)
+		q := clip(a.Question, budget-utf8.RuneCountInString(a_)-1)
 		text := "Câu hỏi: " + q + " → Trả lời: " + a_
 		toks := textnorm.Tokens(a.Question)
 		if len(toks) > 6 {
 			toks = toks[:6]
 		}
+		// Ngân sách key ≤200 ký tự của schema ingest; hash 8 hex của toàn bộ câu hỏi
+		// LUÔN giữ (phân biệt hai câu cùng tiền tố) — token chỉ lấp chỗ còn dư (r4).
 		sum := sha256.Sum256([]byte(a.Question))
+		head := a.Topic + ".q_"
+		for _, t := range toks {
+			if len(head)+len(t)+9 > 200 { // 9 = "_" + 8 hex
+				break
+			}
+			head += t + "_"
+		}
+		key := fmt.Sprintf("%s%x", head, sum[:4])
 		items = append(items, map[string]any{
-			"kind": "policy", "topic": a.Topic,
-			"key":  fmt.Sprintf("%s.q_%s_%x", a.Topic, strings.Join(toks, "_"), sum[:4]),
-			"text": text,
+			"kind": "policy", "topic": a.Topic, "key": key, "text": text,
 		})
 	}
 	payload := map[string]any{"operator_id": f.operatorID, "source": "form", "content": content,
