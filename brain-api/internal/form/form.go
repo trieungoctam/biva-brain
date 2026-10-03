@@ -278,10 +278,17 @@ func (h *Handler) accept(ctx context.Context, f formRow, answers []Answer, conte
 		if ans == "" {
 			continue
 		}
-		text := "Câu hỏi: " + a.Question + " → Trả lời: " + ans
-		if utf8.RuneCountInString(text) > 2000 { // schema ingest: 5–2000 ký tự
-			text = string([]rune(text)[:1997]) + "…"
+		// Clamp ƯU TIÊN TRẢ LỜI (nội dung nhà xe): câu hỏi ngắn lại trước, trả lời giữ
+		// tối đa — clamp cả chuỗi từ đầu từng cho câu hỏi dài nuốt mất phần trả lời (r3).
+		clip := func(s string, n int) string {
+			if utf8.RuneCountInString(s) <= n {
+				return s
+			}
+			return string([]rune(s)[:n-1]) + "…"
 		}
+		q := clip(a.Question, 1500)
+		a_ := clip(ans, 450)
+		text := "Câu hỏi: " + q + " → Trả lời: " + a_
 		toks := textnorm.Tokens(a.Question)
 		if len(toks) > 6 {
 			toks = toks[:6]

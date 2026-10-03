@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
 
@@ -163,5 +164,36 @@ func TestFormItemExtractionQuality(t *testing.T) {
 	}
 	if len(keys) != 2 {
 		t.Fatalf("hai câu cùng tiền tố phải KHÁC key: %v", keys)
+	}
+	for k := range keys {
+		if utf8.RuneCountInString(k) > 200 {
+			t.Fatalf("key vượt 200 ký tự (schema ingest): %d", len(k))
+		}
+	}
+
+	// (r3) Câu hỏi DÀI không được nuốt mất câu trả lời khi clamp.
+	mux2 := http.NewServeMux()
+	(&Handler{DB: pool}).Mount(mux2)
+	srv2 := httptest.NewServer(mux2)
+	defer srv2.Close()
+	longQ := strings.Repeat("Quy định đặc biệt về hành lý khi đi lễ Tết ", 40) // ~1800 rune
+	c2, err := Create(ctx, pool, srv2.URL, op, "", []Question{
+		{Topic: "luggage", Question: longQ}}, "user:b", time.Hour)
+	if err != nil {
+		t.Fatalf("câu hỏi 1800 rune phải được nhận (dưới 1500? %d): %v", utf8.RuneCountInString(longQ), err)
+	}
+	if resp, err := http.PostForm(c2.URL, url.Values{"a0": {"20kg miễn phí"}}); err != nil || resp.StatusCode != 200 {
+		t.Fatalf("submit 2: %v %v", resp, err)
+	}
+	var payload2 map[string]any
+	pool.QueryRow(ctx, `SELECT payload FROM operations WHERE id = (SELECT operation_id FROM forms WHERE id = $1::uuid)`,
+		c2.ID).Scan(&payload2)
+	items2, _ := payload2["items"].([]any)
+	if len(items2) != 1 {
+		t.Fatalf("items2 = %d", len(items2))
+	}
+	txt2 := items2[0].(map[string]any)["text"].(string)
+	if !strings.Contains(txt2, "20kg miễn phí") {
+		t.Fatalf("clamp nuốt mất câu trả lời: %q…", txt2[:120])
 	}
 }
