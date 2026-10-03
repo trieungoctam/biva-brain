@@ -67,6 +67,15 @@ Câu trả lời trong faq/fallbacks gửi khách nguyên văn: không chèn ghi
 khi nào chỉ ghi trong tool_spec / system_prompt.
 
 Mục bắt buộc mà nhà xe CHƯA có tri thức: viết vào fallbacks (nói chưa có thông tin, chuyển nhân viên) — không bịa.
+
+## Ba khuôn mẫu hay vấp (rút từ tập dượt build thật)
+
+- **Câu vai trò/xưng hô** (persona, system_prompt dòng đầu) cũng là "câu mang thông tin" nếu ≥ 12 từ:
+  tạo một item "kind=persona" (submit_knowledge) mô tả vai trò/giọng nói, rồi trích dẫn [[id]] ở câu đó.
+- **fallbacks giữ chung chung**: "Chưa rõ thông tin: chuyển nhân viên hỗ trợ." Đừng nhắc chủ đề cụ thể
+  (giá, tuyến, giờ) trong câu fallback — nhắc chủ đề là câu trở thành mang thông tin → UNCITED.
+- **Hướng dẫn gọi tool** (khi nào gọi query_data, tham số gì) chỉ ghi trong tool_spec và system_prompt,
+  không nằm trong faq/fallbacks.
 `
 
 const workflowGuideMD = `# Quy trình làm việc với Brain
