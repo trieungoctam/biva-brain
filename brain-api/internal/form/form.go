@@ -77,13 +77,16 @@ const MaxOpenForms = 3
 // Create: form mới; URL = publicURL/f/<token>.
 func Create(ctx context.Context, db *pgxpool.Pool, publicURL, operatorID, title string, qs []Question, actor string,
 	ttl time.Duration) (Created, error) {
+	// Chỉ đếm form còn hạn: form hết hạn được task expire_forms đóng (nếu không, 3 form
+	// hết hạn khóa vĩnh viễn create_form — s5).
 	var open int
-	if err := db.QueryRow(ctx, `SELECT count(*) FROM forms WHERE operator_id = $1 AND status = 'open'`,
+	if err := db.QueryRow(ctx, `SELECT count(*) FROM forms
+		WHERE operator_id = $1 AND status = 'open' AND expires_at > now()`,
 		operatorID).Scan(&open); err != nil {
 		return Created{}, err
 	}
 	if open >= MaxOpenForms {
-		return Created{}, fmt.Errorf("nhà xe đang có %d form mở (tối đa %d) — đợi nhà xe trả lời hoặc hết hạn", open, MaxOpenForms)
+		return Created{}, fmt.Errorf("nhà xe đang có %d form mở (tối đa %d) — đợi nhà xe trả lời; form cũ hết hạn tự đóng", open, MaxOpenForms)
 	}
 
 	var c Created
@@ -279,6 +282,7 @@ func (h *Handler) accept(ctx context.Context, f formRow, answers []Answer, conte
 	if status != "open" {
 		return errAlreadySubmitted
 	}
+	content = sanitizeAnswer(content)
 	// Trích DETERMINISTIC: mỗi câu trả lời thành một item policy theo topic của câu hỏi
 	// (câu hỏi sinh từ template nên đã gắn topic). Đường chính theo kiến trúc — form không
 	// phụ thuộc GEMINI key; nội dung thô vẫn giữ trong payload.content để duyệt lại/ingest LLM
@@ -316,7 +320,7 @@ func (h *Handler) accept(ctx context.Context, f formRow, answers []Answer, conte
 			qKeep = 200
 		}
 		a_ := clip(ans, budget-qKeep)
-		q := clip(a.Question, budget-utf8.RuneCountInString(a_))
+		q := sanitizeAnswer(clip(a.Question, budget-utf8.RuneCountInString(a_)))
 		text := "Câu hỏi: " + q + " → Trả lời: " + a_
 		toks := textnorm.Tokens(a.Question)
 		if len(toks) > 6 {
@@ -379,5 +383,7 @@ func sanitizeAnswer(s string) string {
 		}
 		b.WriteRune(r)
 	}
-	return strings.ReplaceAll(b.String(), "[[", "[ [")
+	// "((": LLM reflow có thể XOÁ khoảng cách của "[ [" để tái lập "[[" (s5) — đổi hẳn
+	// sang cặp ký tự không phải bracket, không thể nối lại thành citation.
+	return strings.ReplaceAll(b.String(), "[[", "((")
 }

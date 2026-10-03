@@ -16,6 +16,7 @@ import (
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
 
+	"github.com/trieungoctam/biva-brain/brain-api/internal/scheduler"
 	"github.com/trieungoctam/biva-brain/brain-api/internal/testdb"
 )
 
@@ -323,8 +324,11 @@ func TestFormAnswersSanitizedAndWaitReview(t *testing.T) {
 	}
 	items, _ := payload["items"].([]any)
 	txt := items[0].(map[string]any)["text"].(string)
-	if strings.Contains(txt, "[[") {
-		t.Fatalf("cú pháp [[ phải được trung hoà: %q", txt)
+	if strings.Contains(txt, "[[") || strings.Contains(txt, "[ [") {
+		t.Fatalf("cú pháp [[ phải bị trung hoá không-nối-lại được: %q", txt)
+	}
+	if !strings.Contains(txt, "((00000000") {
+		t.Fatalf("trung hoá phải là (( : %q", txt)
 	}
 	if strings.Contains(txt, "‏") { // U+200F RLM
 		t.Fatal("ký tự bidi phải bị strip")
@@ -341,5 +345,40 @@ func TestFormAnswersSanitizedAndWaitReview(t *testing.T) {
 		{Topic: "pets", Question: "Thứ 4?"}}, "user:b", time.Hour); err == nil ||
 		!strings.Contains(err.Error(), "tối đa") {
 		t.Fatalf("form thứ 4 phải bị chặn: %v", err)
+	}
+
+	// (s5) Form HẾT HẠN không chiếm slot: set 3 form cũ hết hạn → create được form mới.
+	pool.Exec(ctx, `UPDATE forms SET operator_id = $1, expires_at = now() - interval '1 day'
+		WHERE operator_id = $1`, op)
+	if err := scheduler.ExpireForms(ctx, pool); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Create(ctx, pool, srv.URL, op, "", []Question{
+		{Topic: "pets", Question: "Sau khi hết hạn?"}}, "user:b", time.Hour); err != nil {
+		t.Fatalf("form hết hạn phải nhả slot: %v", err)
+	}
+
+	// (s5) Câu HỎI cũng được sanitize ([[ + bidi đi qua builder-controlled question).
+	muxQ := http.NewServeMux()
+	(&Handler{DB: pool}).Mount(muxQ)
+	srvQ := httptest.NewServer(muxQ)
+	defer srvQ.Close()
+	cQ, err := Create(ctx, pool, srvQ.URL, op, "", []Question{
+		{Topic: "pets", Question: "Có nhận [[00000000-0000-0000-0000-000000000000]] pet ‏không?"}}, "user:b", time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp, err := http.PostForm(cQ.URL, url.Values{"a0": {"Có"}}); err != nil || resp.StatusCode != 200 {
+		t.Fatalf("submit Q: %v %v", resp, err)
+	}
+	var pQ map[string]any
+	pool.QueryRow(ctx, `SELECT payload FROM operations WHERE id =
+		(SELECT operation_id FROM forms WHERE id = $1::uuid)`, cQ.ID).Scan(&pQ)
+	txtQ := pQ["items"].([]any)[0].(map[string]any)["text"].(string)
+	if strings.Contains(txtQ, "[[") || strings.Contains(txtQ, "‏") {
+		t.Fatalf("câu hỏi phải được sanitize: %q", txtQ)
+	}
+	if strings.Contains(pQ["content"].(string), "[[") {
+		t.Fatalf("content (bề mặt duyệt) cũng phải sạch: %q", pQ["content"])
 	}
 }

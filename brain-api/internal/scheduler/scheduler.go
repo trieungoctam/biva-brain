@@ -40,6 +40,7 @@ func DefaultTasks() []Task {
 		// Lịch sử job (done/failed) chỉ để chẩn đoán gần đây — promote enqueue job mỗi
 		// 5 phút nên bảng operations lớn vô hạn nếu không dọn (đo live: 115 row/10h).
 		{Name: "purge_operations", Every: time.Hour, Run: PurgeOperations},
+		{Name: "expire_forms", Every: time.Hour, Run: ExpireForms},
 	}
 }
 
@@ -178,4 +179,18 @@ func (s *Scheduler) setLeader(v bool) {
 	if s.OnLeader != nil {
 		s.OnLeader(v)
 	}
+}
+
+// ExpireForms: form hết hạn → 'closed' (status CHECK cho sẵn) — không chiếm slot cap
+// MaxOpenForms và link /f/ trả 410 nhất quán (s5: từng chiếm slot vĩnh viễn).
+func ExpireForms(ctx context.Context, db *pgxpool.Pool) error {
+	tag, err := db.Exec(ctx, `UPDATE forms SET status = 'closed'
+		WHERE status = 'open' AND expires_at < now()`)
+	if err != nil {
+		return err
+	}
+	if n := tag.RowsAffected(); n > 0 {
+		slog.Info("scheduler: đóng form hết hạn", "số form", n)
+	}
+	return nil
 }
