@@ -113,6 +113,13 @@ Vòng 2 (sau review) sửa nốt 3 low/medium còn lại: export key thêm nonce
 resource OAuth whitelist chặt (chặn `/mcp/operator/` rỗng + `../`), register hỗ trợ
 `BIVA_OAUTH_REGISTRATION_SECRET`, consent hiển thị client_id. Ghi hướng dẫn trong runbook.
 
+## rf3 integrations (r56) — HỘI TỤ: 1 low (docstring còn mô tả fallback đã bỏ — builder đọc
+get_logic_module sẽ không bắt ValueError) + 1 info (dict comprehension last-wins khi key NFC
+trùng, lệch luật first-non-empty của read_worksheet). Cả hai đóng. Chuỗi integrations khép:
+review(15) → fix → rf1(HIGH regression) → fix → rf2(HIGH regression: fallback tái tạo lỗi
+gốc) → fix(rút lại) → rf3(low+info) — giống hệt hình brain security/quality. Tag
+integrations `v0.2.0-pilot-ready` (bỏ tag cũ v0.1.0 cho cùng commit khi behavioral changes).
+
 ## review-of-fix-2 integrations (r55) — fallback tái tạo lỗi "nuốt im lặng"; đóng sạch
 
 Fallback "dòng không trống đầu" của r54 tái tạo CHÍNH lỗi r53 sửa: sheet có tiêu đề + header
