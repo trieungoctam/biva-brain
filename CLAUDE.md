@@ -43,6 +43,13 @@ list_stale JOIN ràng operator (chặn leak chéo tenant qua logic_param_sources
 ownership khi ghi — bộ test cũ tự dùng nguồn chéo, đã sửa fixture), OAuth resource bắt buộc
 (RFC 8707). SLO đo lại sau 36 fix: recall p95 8,8ms — không suy giảm.
 
+Tập dượt /refresh_bot (03/10): ĐẠT — stale reason JSON đủ để builder sửa không đoán
+(line, line_text kèm trích dẫn cũ, new_text, superseded_by); làm theo prompt (get_artifact →
+sửa đúng dòng → save base_version + note → validate) cho valid ngay và list_stale về 0.
+Tình trạng tập dượt prompt: build_bot ✓ · refresh_bot ✓ · process_update ✓ (flow kit r16) ·
+onboard_operator ✓ (chuỗi r22) · còn lại review_quality (RO) và implement_operator_logic
+(các bước riêng đã test r12).
+
 Tập dượt /build_bot (DYN-65, 03/10): đóng vai AI builder làm theo prompt từng bước trên stack
 local — KẾT QUẢ ĐẠT (5 artifact valid + snapshot v1). Học được (đã sửa/nắm pattern): mọi câu
 thông tin phải có [[id]] kể cả câu vai trò (tạo item kind=persona rồi trích); fallbacks giữ
