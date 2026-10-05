@@ -113,6 +113,17 @@ Vòng 2 (sau review) sửa nốt 3 low/medium còn lại: export key thêm nonce
 resource OAuth whitelist chặt (chặn `/mcp/operator/` rỗng + `../`), register hỗ trợ
 `BIVA_OAUTH_REGISTRATION_SECRET`, consent hiển thị client_id. Ghi hướng dẫn trong runbook.
 
+## Builder thật duyệt residual + tự cảnh giác dữ liệu mẫu (r62)
+
+2 review payment (từ seed kit r59) được CHÍNH builder duyệt qua flow 2-bước (get_review_item
+→ preview confirm_token → applied). Ba nhận xét tự phát: (1) số tài khoản "0123456789" trông
+như GIÁ TRỊ MẪU template — vẫn duyệt theo lệnh nhưng cảnh báo "bot sẽ hướng khách chuyển tiền
+vào tài khoản không có thật — đối chiếu nhà xe trước", kèm đường sửa (CHANGE/REMOVE lại chờ
+duyệt); (2) item NEW không làm artifact stale — muốn bot trả lời thanh toán phải CHỦ ĐỘNG thêm
+vào artifact với trích dẫn (đúng cơ chế stale: chỉ artifact trích dẫn item bị THAY mới stale);
+(3) gợi ý dọn item trùng không-key (đã retract bằng SQL — item không-key không có đường REMOVE
+qua tool vì REMOVE match theo key; chỉ dữ liệu test cũ mới không-key).
+
 ## Fix validator được người-dùng-thật xác nhận (r61)
 
 Rebuild stack với fix r60 (giờ CÓ [[id]] là tri thức, giá luôn chặn) rồi cho CÙNG AI builder
