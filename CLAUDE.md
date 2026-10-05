@@ -121,6 +121,17 @@ system_prompt trích nó bị STALE_CITATION → builder TỰ sửa: bỏ cite r
 ranh giới GEMINI đúng). Chuỗi "xóa tri thức → trích dẫn theo đó stale → bot theo kịp" khép
 trọn qua client thật. Golden pilot1 hoàn chỉnh: 12/13 = 92% top-5 ĐẠT.
 
+## r70: client thật PHÁT HÀNH production — mode thứ 10 + chứng minh multi-server
+
+Builder client tự dựng operator phát-hành-được (submit đủ required topics → duyệt → viết 5
+artifact valid → export snapshot v1). Lead client (config 2 MCP server: op + platform) chạy
+TRỌN vòng phát hành: gate → staging published → production requested → approve 3-BƯỚC (liệt
+kê không-token → preview đúng release_id → confirm) → production published. DB verify: staging
++ production đều published, audit release.publish×2 + release.approve×1. Đáng chú ý: lần đầu
+em nối nhầm endpoint (platform thay op) — client TỰ chẩn đoán ranh quyền tool theo endpoint,
+đề xuất đúng flow CLAUDE.md (tách 2 server) và cả câu hỏi confirm-policy ("được tự gửi token
+sau preview không?"). Ranh giới phân quyền đọc được từ chính schema tool.
+
 ## r65: pilot1 chạm "gate trừ tests" — chuỗi stale→refresh chạy qua client thật
 
 Nạp cancellation → builder: TỪ CHỐI bản không-dấu (em nạp nhầm ASCII) và khuyên "chọn B:
