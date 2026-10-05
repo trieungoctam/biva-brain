@@ -113,6 +113,18 @@ Vòng 2 (sau review) sửa nốt 3 low/medium còn lại: export key thêm nonce
 resource OAuth whitelist chặt (chặn `/mcp/operator/` rỗng + `../`), register hỗ trợ
 `BIVA_OAUTH_REGISTRATION_SECRET`, consent hiển thị client_id. Ghi hướng dẫn trong runbook.
 
+## AI builder THẬT build trọn bot (r59, 05/10) — LUẬN ĐIỂM SẢN PHẨM ĐƯỢC CHỨNG MINH
+
+Cho claude CLI prompt build_bot (nội dung prompt MCP, không kèm kiến thức nội bộ) + 7 tool,
+tự làm trọn: 5 artifact valid (system_prompt v3 sau 2 vòng sửa lỗi validator — TỰ đọc lỗi
+HARDCODED_DATA, TỰ sửa đúng dòng), 84 trích dẫn, đủ 15/15 locked_rules, tool_spec khai 6 tool
+không ghi cứng giá/giờ, thông lệ chung có nhãn mời xác nhận, fallbacks chung chung đúng quy ước.
+Verify độc lập DB + export snapshot v2. Client còn TỰ phát hiện: 2 item trùng "khó mèo"
+(trích đúng bản có key), 2 đề xuất high-risk chờ duyệt (không đụng), job index.items failed
+(chưa điều tra — TEI off), MỚT HARDCODED_DATA false-positive (giờ làm việc văn phòng bị bắt
+như giờ xe) — nêu cho chủ dự án quyết định. Không prompt nào hướng các nhận xét này: LLM đọc
+tool output và suy luận đúng ngữ cảnh vận hành.
+
 ## Claude Code client thật E2E (r58, 05/10)
 
 Lần đầu dùng CHÍNH claude CLI (2.1.286, --mcp-config + --strict-mcp-config + --allowedTools)
