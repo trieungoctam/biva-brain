@@ -410,7 +410,7 @@ cd ai-worker && uv run pytest -q
 - Bí mật (Gemini key, token) chỉ qua biến môi trường — không ghi vào repo/log. Đường dẫn `/f/` không vào trace.
 - Không thêm tên/ID model AI vào commit, code, docs.
 
-## Trạng thái (05/10/2026) — M0–M5 XONG + 77 VÒNG, tag v0.2.2
+## Trạng thái (05/10/2026) — M0–M5 XONG + 82 VÒNG, tag v0.2.2
 
 Toàn bộ story code M0–M5 xong (chi tiết theo epic bên dưới) **+ 71 vòng hardening sau code**
 (mỗi vòng một mục ghi phía trên, mới nhất trên cùng):
