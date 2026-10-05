@@ -191,6 +191,12 @@ vào stack local như một builder AI thật, 3 lượt:
 Tool schema đủ rõ để LLM hiểu ngữ nghĩa; hệ phân loại rủi ro + confirm_token hoạt động đúng
 từ phía client THẬT — không chỉ test script.
 
+## Tag v0.2.1 (r68): HEAD cuối sau gate-fix + validator-hours + demo re-verify
+
+v0.2.0 (r57) cũ 8 commit hành vi. v0.2.1 = 1595b7c: gate required-only, validator giờ-có-cite,
+thêm cancellation vào kit template. Chứng nhận: CI xanh + demo.sh XONG trên HEAD + chaos/SLO
+tái kiểm (r67). Thang tag: v0.1 → v0.2 → v0.2.1 rollback theo mức hành vi.
+
 ## Tag baseline (r57): brain `v0.2.0-pilot-ready` + integrations `v0.2.0-pilot-ready`
 
 Brain v0.1.0 (r30) cũ ~25 commit hành vi (form always-review + sanitize, purge operations,
