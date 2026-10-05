@@ -121,6 +121,15 @@ system_prompt trích nó bị STALE_CITATION → builder TỰ sửa: bỏ cite r
 ranh giới GEMINI đúng). Chuỗi "xóa tri thức → trích dẫn theo đó stale → bot theo kịp" khép
 trọn qua client thật. Golden pilot1 hoàn chỉnh: 12/13 = 92% top-5 ĐẠT.
 
+## r72: golden mở rộng fare/schedule — 15/16 = 94% + finding chuẩn-hoá thời gian
+
+Thêm 3 câu fare/schedule (topic nặng dữ liệu nhất) vào golden: giá ghế Phan Thiết ✓, lịch
+07:30 ✓, giá giường SG-ĐL ✓ (sau khi sửa bug template CỦA EM: query không ngày → kỳ vọng
+giá Tết là sai, giá cơ sở mới đúng). Finding thật: **"7 giờ sáng" không khớp "07:30"**
+trong dữ liệu — token "7" ≠ "07", bigram "7_gio" ≠ "07_30" → miss top-5. Backlog textnorm:
+chuẩn hoá giờ tự nhiên tiếng Việt ("7 giờ sáng"/"7h"/"7g" → 07:30) trong query-side — cần
+golden thật của nhà xe để tune (cùng loại với finding hotline keyword-mode).
+
 ## r70: client thật PHÁT HÀNH production — mode thứ 10 + chứng minh multi-server
 
 Builder client tự dựng operator phát-hành-được (submit đủ required topics → duyệt → viết 5
