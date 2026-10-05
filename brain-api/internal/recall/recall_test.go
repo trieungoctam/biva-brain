@@ -334,6 +334,24 @@ func TestQueryDataHalfOpen(t *testing.T) {
 	}
 }
 
+// (r72 finding) "7 giờ sáng" phải sinh token "07" để khớp dữ liệu "07:30".
+func TestTsQueryHourPad(t *testing.T) {
+	got := tsQuery("Xe 7 giờ sáng thứ 2 4 6 chạy tuyến nào?")
+	if !strings.Contains(got, "07") {
+		t.Fatalf("thiếu arm 07: %q", got)
+	}
+	got2 := tsQuery("có xe 21h không")
+	if !strings.Contains(got2, "21") {
+		t.Fatalf("giờ 2 chữ số giữ nguyên: %q", got2)
+	}
+	got3 := tsQuery("giá vé 320000")
+	for _, arm := range strings.Split(got3, " | ") {
+		if arm == "03" || arm == "32" { // token ĐÚNG, không phải substring của "320000"
+			t.Fatalf("số không theo giờ không được pad thành token: %q", got3)
+		}
+	}
+}
+
 func TestQueryData(t *testing.T) {
 	e := setup(t)
 	ctx := context.Background()

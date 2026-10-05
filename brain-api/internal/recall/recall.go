@@ -16,6 +16,8 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -275,8 +277,20 @@ func (r *Recaller) expand(text string) string {
 
 // tsQuery: token + bigram của textnorm nối bằng OR. Bigram khớp cụm từ nên item chứa đúng cụm được điểm cao hơn.
 // Token chỉ gồm [a-z0-9_] nên không cần escape cú pháp tsquery.
+// hourBigramRe: trên chuỗi đã fold, "7 giờ sáng" thành "7 gio" → bigram token "7_gio";
+// "21h" giữ liền "21h". Dữ liệu ghi giờ dạng "07:30" — token "7" không khớp "07"
+// (r72: query giờ-tự-nhiên miss top-5). Thêm arm zero-pad cho giờ 1 chữ số.
+var hourBigramRe = regexp.MustCompile(`(?:^|\s)([0-9])(?:_gio|gio|h|g)(?:\s|$)`)
+
 func tsQuery(text string) string {
 	parts := strings.Fields(textnorm.SearchText(text))
+	folded := textnorm.SearchText(text)
+	for _, m := range hourBigramRe.FindAllStringSubmatch(folded, -1) {
+		padded := "0" + m[1]
+		if !slices.Contains(parts, padded) {
+			parts = append(parts, padded) // "7 giờ sáng" giờ cũng khớp item "07:30"
+		}
+	}
 	return strings.Join(parts, " | ")
 }
 
