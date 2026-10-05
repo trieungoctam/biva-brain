@@ -19,8 +19,8 @@ wait_for() { # mô tả, số giây, lệnh...
 services=(postgres redis s3 migrate brain-api ai-worker)
 [[ "${SMOKE_SKIP_TEI:-}" == 1 ]] || services+=(tei-embed)
   export BIVA_RERANK_URL=http://tei-rerank:80   # compose đọc env host → brain-api
-  RERANK_ARGS="--profile rerank"
-$C up -d --build $RERANK_ARGS "${services[@]}"
+  export COMPOSE_PROFILES=rerank                # --profile phải trước subcommand — env sạch hơn
+$C up -d --build "${services[@]}"
 
 wait_for "brain-api /health/ready" 120 curl -fsS "$API/health/ready"
 wait_for "S3 (SeaweedFS) trả lời ListBuckets" 60 bash -c "curl -sS 127.0.0.1:8333/ | grep -q ListAllMyBucketsResult"
