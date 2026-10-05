@@ -214,3 +214,100 @@ func TestNoCapability(t *testing.T) {
 		t.Fatalf("đã có hồ sơ: %+v", rep)
 	}
 }
+
+// (r59 AI builder phát hiện) Giờ/giá CÓ [[id]] là tri thức đã duyệt (giờ mở cửa văn phòng) —
+// không bị HARDCODED_DATA; KHÔNG trích dẫn vẫn chặn như cũ.
+func TestHardcodedDataAllowsCitedHours(t *testing.T) {
+	pool := testdb.Pool(t)
+	ctx := context.Background()
+	op := "hd" + fmt.Sprintf("%d", time.Now().UnixNano())
+	if _, err := pool.Exec(ctx, `INSERT INTO operators (id, name) VALUES ($1, 'V')`, op); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { pool.Exec(ctx, `DELETE FROM operators WHERE id = $1`, op) })
+	var gid string
+	if err := pool.QueryRow(ctx, `INSERT INTO items (layer, operator_id, kind, topic, key, text, status)
+		VALUES (2, $1, 'policy', 'contact', 'contact.van_phong',
+		'Văn phòng mở cửa 6:00 đến 22:00 hằng ngày', 'active') RETURNING id::text`, op).Scan(&gid); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { pool.Exec(ctx, `DELETE FROM items WHERE id = $1::uuid`, gid) })
+
+	save := func(content string) {
+		t.Helper()
+		res, err := artifact.Save(ctx, pool, artifact.SaveInput{OperatorID: op, Kind: "faq",
+			Content: content, Author: "t"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		a, err := artifact.Get(ctx, pool, op, "", "faq", res.Version)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rep, err := Validate(ctx, pool, op, a, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		hd := false
+		for _, iss := range rep.Errors {
+			if iss.Code == "HARDCODED_DATA" {
+				hd = true
+			}
+		}
+		if hd {
+			t.Fatalf("HARDCODED_DATA không được xuất hiện: %+v", rep.Errors)
+		}
+	}
+
+	// Có trích dẫn → giờ là tri thức đã duyệt, KHÔNG HARDCODED_DATA.
+	save("Văn phòng mở cửa 6:00–22:00 hằng ngày. [[" + gid + "]]")
+	// Giá tiền CÓ trích dẫn vẫn chặn (giá theo ngày — tool luôn luôn).
+	save2 := func(content string) (bool, error) {
+		res, err := artifact.Save(ctx, pool, artifact.SaveInput{OperatorID: op, Kind: "faq",
+			Content: content, Author: "t"})
+		if err != nil {
+			return false, err
+		}
+		a, err := artifact.Get(ctx, pool, op, "", "faq", res.Version)
+		if err != nil {
+			return false, err
+		}
+		rep, err := Validate(ctx, pool, op, a, nil)
+		if err != nil {
+			return false, err
+		}
+		for _, iss := range rep.Errors {
+			if iss.Code == "HARDCODED_DATA" {
+				return true, nil
+			}
+		}
+		return false, nil
+	}
+	if hd, err := save2("Giá vé 320.000đ ạ. [[" + gid + "]]"); err != nil || !hd {
+		t.Fatalf("giá CÓ trích dẫn vẫn phải HARDCODED_DATA (giá theo ngày): hd=%v err=%v", hd, err)
+	}
+
+	// Không trích dẫn → vẫn phải chặn.
+	res, err := artifact.Save(ctx, pool, artifact.SaveInput{OperatorID: op, Kind: "faq",
+		Content: "Xe chạy lúc 6:00 mỗi sáng.", Author: "t"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := artifact.Get(ctx, pool, op, "", "faq", res.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rep, err := Validate(ctx, pool, op, a, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hd := false
+	for _, iss := range rep.Errors {
+		if iss.Code == "HARDCODED_DATA" {
+			hd = true
+		}
+	}
+	if !hd {
+		t.Fatalf("giờ KHÔNG trích dẫn vẫn phải HARDCODED_DATA: %+v", rep.Errors)
+	}
+}

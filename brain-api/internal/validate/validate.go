@@ -289,11 +289,17 @@ func Validate(ctx context.Context, db *pgxpool.Pool, operatorID string, a artifa
 						"phải nói rõ, vd 'thông thường…, anh/chị vui lòng xác nhận lại với nhà xe'"})
 			}
 		}
+		// GIÁ TIỀN: luôn chặn (kể cả có trích dẫn) — giá bay theo ngày đi (Tết, cuối tuần),
+		// thiết kế M1 yêu cầu bot gọi tool lấy giá theo ngữ cảnh ngày của khách.
 		text := citeStrip(b.text)
 		if m := strings.TrimRight(moneyRe.FindString(text), " ,.;:)"); m != "" {
 			rep.Errors = append(rep.Errors, Issue{Code: "HARDCODED_DATA", Line: b.start, Excerpt: strings.TrimSpace(m),
 				Message: "không ghi cứng giá tiền: hướng bot gọi tool tra giá (khai báo trong tool_spec)"})
-		} else if m := strings.TrimRight(clockRe.FindString(text), " ,.;:)"); m != "" {
+		} else if m := strings.TrimRight(clockRe.FindString(text), " ,.;:)"); m != "" && len(cited) == 0 {
+			// GIỜ: chỉ chặn khi KHÔNG trích dẫn — giờ CÓ [[id]] là tri thức tĩnh đã duyệt
+			// (giờ mở cửa văn phòng, giờ trung chuyển; r59: validator từng bắt giờ làm việc
+			// là cứng, buộc AI builder bỏ thông tin hữu ích). Giờ xe chạy không-trích-dẫn
+			// vẫn là cứng vì lịch phải tra theo ngày.
 			rep.Errors = append(rep.Errors, Issue{Code: "HARDCODED_DATA", Line: b.start, Excerpt: strings.TrimSpace(m),
 				Message: "không ghi cứng giờ chạy: hướng bot gọi tool tra lịch (khai báo trong tool_spec)"})
 		}
