@@ -24,6 +24,13 @@ wait_for "brain-api /health/ready" 120 curl -fsS "$API/health/ready"
 wait_for "S3 (SeaweedFS) trả lời ListBuckets" 60 bash -c "curl -sS 127.0.0.1:8333/ | grep -q ListAllMyBucketsResult"
 
 # Tri thức nền L0/L1 từ kb/ (image brain-api) — chạy hai lần: lần hai không được đổi gì.
+# TEI phải READY TRƯỚC kb sync: sync trigger job index.items cần embedding; chạy sớm hơn
+# từng làm job cạn 5 lần retry (~20s) trong khi model bge-m3 load mất phút (r80).
+if [[ "${SMOKE_SKIP_TEI:-}" != 1 ]]; then
+  wait_for "TEI embed (bge-m3, CPU) — trước kb sync" 900 curl -fsS 127.0.0.1:8081/embed \
+    -H 'Content-Type: application/json' -d '{"inputs":"xe giường nằm"}'
+fi
+
 $C exec -T brain-api brain-api kb sync
 $C exec -T brain-api brain-api kb sync | grep -q "thêm 0, sửa 0, bỏ 0" && echo "✓ kb sync idempotent" \
   || { echo "✗ kb sync lần hai vẫn ghi"; exit 1; }
@@ -66,8 +73,6 @@ code=$(curl -s -o /dev/null -w '%{http_code}' "$API/mcp/operator/khac$sfx/" -H "
 [[ "$code" == 403 ]] && echo "✓ sai phạm vi → 403" || { echo "✗ sai phạm vi → $code"; exit 1; }
 
 if [[ "${SMOKE_SKIP_TEI:-}" != 1 ]]; then
-  wait_for "TEI embed (bge-m3, CPU)" 900 curl -fsS 127.0.0.1:8081/embed \
-    -H 'Content-Type: application/json' -d '{"inputs":"xe giường nằm Sài Gòn Đà Lạt"}'
   dim=$(curl -fsS 127.0.0.1:8081/embed -H 'Content-Type: application/json' -d '{"inputs":"xe"}' \
     | python3 -c 'import json,sys; print(len(json.load(sys.stdin)[0]))')
   [[ "$dim" == 1024 ]] && echo "✓ embedding 1024 chiều (khớp items.embedding)" || { echo "✗ dim=$dim"; exit 1; }

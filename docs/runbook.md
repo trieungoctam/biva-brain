@@ -175,6 +175,14 @@ nên job bị claim lại sau khi chết giữa chừng xử lý lại từ đ�
 `BIVA_RESTORE_VERIFY=1 deploy/backup.sh` → 39/39 bảng, 45/45 items, 119/119 operations
 khớp tuyệt đối giữa bản và DB scratch.
 
+## kb sync / ingest khi TEI chưa ready
+
+TEI load model mất phút (bge-m3 ~2GB). Job index.items chỉ có 5 lần retry (~20s backoff) —
+chạy kb sync hay ingest ngay sau cold-start khi TEI chưa xong sẽ để lại job failed (dữ liệu
+vẫn ghi, chỉ thiếu embedding; keyword vẫn tìm được). An toàn: đợi `/health` TEI (hoặc curl
+/embed với input mẫu) trước khi kb sync/ingest lớn. Smoke đã đổi thứ tự này (r81); runner
+cân nhắc tăng backoff cho RetryableError nếu pilot thấy tái diễn.
+
 ## Redis dùng làm gì & hành vi khi chết (kiểm chứng 03/10)
 
 Redis chỉ giữ **quota LLM** (`RedisQuota` trong ai-worker). Khi Redis chết: quota
