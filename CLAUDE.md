@@ -113,6 +113,22 @@ Vòng 2 (sau review) sửa nốt 3 low/medium còn lại: export key thêm nonce
 resource OAuth whitelist chặt (chặn `/mcp/operator/` rỗng + `../`), register hỗ trợ
 `BIVA_OAUTH_REGISTRATION_SECRET`, consent hiển thị client_id. Ghi hướng dẫn trong runbook.
 
+## Claude Code client thật E2E (r58, 05/10)
+
+Lần đầu dùng CHÍNH claude CLI (2.1.286, --mcp-config + --strict-mcp-config + --allowedTools)
+vào stack local như một builder AI thật, 3 lượt:
+1. ĐỌC: list_knowledge + get_coverage — trả đúng số liệu, TỰ nhận ra key "smoke" là dữ liệu
+   test, giải thích đúng nuance industry_default chưa tính là phủ, gợi ý đúng generate_questions
+   → create_form của flow onboard.
+2. GHI low-risk: submit_knowledge → tự phát hiện review ĐÃ auto-apply (NEW/luggage), giải
+   thích đúng luật rủi ro, CHÊ response hint "apply_review" là thừa cho review đã applied,
+   và lưu ý thiếu quyền get_operation.
+3. GHI high-risk 2-BƯỚC: submit CHANGE 25kg→20kg → đợi job → trình bảng trước/sau → xin
+   confirm_token → apply → item mới active, bản cũ superseded; client còn gợi ý đúng
+   refresh_bot vì artifact trích dẫn bản cũ giờ stale.
+Tool schema đủ rõ để LLM hiểu ngữ nghĩa; hệ phân loại rủi ro + confirm_token hoạt động đúng
+từ phía client THẬT — không chỉ test script.
+
 ## Tag baseline (r57): brain `v0.2.0-pilot-ready` + integrations `v0.2.0-pilot-ready`
 
 Brain v0.1.0 (r30) cũ ~25 commit hành vi (form always-review + sanitize, purge operations,
