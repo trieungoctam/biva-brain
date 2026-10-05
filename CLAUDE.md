@@ -388,7 +388,7 @@ cd ai-worker && uv run pytest -q
 - Bí mật (Gemini key, token) chỉ qua biến môi trường — không ghi vào repo/log. Đường dẫn `/f/` không vào trace.
 - Không thêm tên/ID model AI vào commit, code, docs.
 
-## Trạng thái (05/10/2026) — M0–M5 XONG + 71 VÒNG HARDENING KHÉP
+## Trạng thái (05/10/2026) — M0–M5 XONG + 77 VÒNG, tag v0.2.2
 
 Toàn bộ story code M0–M5 xong (chi tiết theo epic bên dưới) **+ 71 vòng hardening sau code**
 (mỗi vòng một mục ghi phía trên, mới nhất trên cùng):
@@ -397,8 +397,9 @@ Toàn bộ story code M0–M5 xong (chi tiết theo epic bên dưới) **+ 71 v�
 - **10 chế độ client thật** (claude CLI): đọc/ghi/confirm/build-trọn-bot/verify-fix/duyệt/
   update-tri-thức/stale-refresh/dựng-phát-hành-production — 4 finding tự phát (validator giờ,
   dữ liệu mẫu, gate topics, item trùng) đều thành fix.
-- **Chứng nhận đóng gói**: tags đôi v0.1/v0.2/v0.2.1 (brain) + v0.2.0 (integrations); chaos +
-  SLO + golden + demo + sandbox-contract 13/13 tái kiểm trên HEAD; CI xanh liên tục.
+- **Chứng nhận đóng gói**: tags v0.1/v0.2/v0.2.1/**v0.2.2** (brain — v0.2.2 = recall giờ-tự-nhiên
+  + golden set-expectation) + v0.2.0 (integrations); chaos + SLO + golden (94% top-1..10,
+  kỳ vọng tập) + demo + sandbox 13/13 trên HEAD; CI xanh liên tục.
 - **Kit pilot** (`deploy/pilot-kit/`): 4 template + loader + coverage + golden — diễn trọn.
 - Chờ 3 đầu vào chủ dự án: **dữ liệu 3 nhà xe · GEMINI key (chốt cuối: run_tests → gate 5/5 →
   publish) · URL https (ChatGPT connector)**.
