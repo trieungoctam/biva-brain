@@ -379,9 +379,22 @@ cd ai-worker && uv run pytest -q
 - Bí mật (Gemini key, token) chỉ qua biến môi trường — không ghi vào repo/log. Đường dẫn `/f/` không vào trace.
 - Không thêm tên/ID model AI vào commit, code, docs.
 
-## Trạng thái (02/10/2026) — M0–M5 HẾT STORY CODE
+## Trạng thái (05/10/2026) — M0–M5 XONG + 71 VÒNG HARDENING KHÉP
 
-Toàn bộ story code của lộ trình M0–M5 đã xong, CI xanh (Go 21 pkg + Python 351 test + compose-smoke).
+Toàn bộ story code M0–M5 xong (chi tiết theo epic bên dưới) **+ 71 vòng hardening sau code**
+(mỗi vòng một mục ghi phía trên, mới nhất trên cùng):
+- **19 review độc lập hội tụ**: security ×7 (hội tụ info-only), quality ×6 (hội tụ brute-force
+  proof), integrations ×5 (hội tụ rút-lại); 6/6 lần review-of-fix bắt regression của vòng trước.
+- **10 chế độ client thật** (claude CLI): đọc/ghi/confirm/build-trọn-bot/verify-fix/duyệt/
+  update-tri-thức/stale-refresh/dựng-phát-hành-production — 4 finding tự phát (validator giờ,
+  dữ liệu mẫu, gate topics, item trùng) đều thành fix.
+- **Chứng nhận đóng gói**: tags đôi v0.1/v0.2/v0.2.1 (brain) + v0.2.0 (integrations); chaos +
+  SLO + golden + demo + sandbox-contract 13/13 tái kiểm trên HEAD; CI xanh liên tục.
+- **Kit pilot** (`deploy/pilot-kit/`): 4 template + loader + coverage + golden — diễn trọn.
+- Chờ 3 đầu vào chủ dự án: **dữ liệu 3 nhà xe · GEMINI key (chốt cuối: run_tests → gate 5/5 →
+  publish) · URL https (ChatGPT connector)**.
+
+Mọi chi tiết cũ của story code:
 Chi tiết từng story nằm trong comment các issue Linear (kèm link CI). Tóm tắt theo epic:
 
 - **M0–M1** nền móng + tri thức + build v1 (queue, MCP + auth, ingest/review, recall, knowledge pack,
