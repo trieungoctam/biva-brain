@@ -141,6 +141,15 @@ em nối nhầm endpoint (platform thay op) — client TỰ chẩn đoán ranh q
 đề xuất đúng flow CLAUDE.md (tách 2 server) và cả câu hỏi confirm-policy ("được tự gửi token
 sau preview không?"). Ranh giới phân quyền đọc được từ chính schema tool.
 
+## r82: audit rank-dependent tests — sạch, khác biệt với guard hotline được ghi rõ
+
+Rà mọi assert thứ-tự trong test (hits[0], rows[0]): cả hai nơi đều dùng corpus TỰ SEED
+(4-6 item mình kiểm soát, không kb sync) → rank mang tính quyết định được, không phụ thuộc
+trạng thái embedding của items ngoài. Khác bản chất với guard hotline smoke (r81): smoke chạy
+trên corpus kb ĐẦY + embedding state biến thiên theo thứ tự khởi động. Bài tổng quát: rank
+assert hợp lệ khi test là chủ vũ trụ của dữ liệu; rank assert trên corpus dùng chung cần
+membership-assert.
+
 ## r81: sửa race smoke (kb sync trước TEI) — lộ guard r25 pass NHỜ race đó
 
 smoke chạy kb sync TRƯỚC khi TEI ready → job index.items của L0/L1 cạn retry → chúng KHÔNG
