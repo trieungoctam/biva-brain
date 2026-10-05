@@ -113,6 +113,16 @@ Vòng 2 (sau review) sửa nốt 3 low/medium còn lại: export key thêm nonce
 resource OAuth whitelist chặt (chặn `/mcp/operator/` rỗng + `../`), register hỗ trợ
 `BIVA_OAUTH_REGISTRATION_SECRET`, consent hiển thị client_id. Ghi hướng dẫn trong runbook.
 
+## Builder tự hoàn tất bot khi tri thức tới (r63) — vòng process_update khép qua client thật
+
+Payment items active → builder TỰ: đọc artifact hiện có, bổ sung 2 câu faq + phần system_prompt
+kèm [[id]] đúng, save base_version, validate valid. Coverage: payment → covered (4/5 required
+— fare/schedule còn thiếu đúng vì chưa nạp). Golden trên pilot1 sau cập nhật: 12/13 = 92%
+top-5 ĐẠT (miss duy nhất vẫn là finding hotline keyword-mode, đã có CI guard semantic).
+Export snapshot v3. Builder tiếp tục nhắc: số tài khoản dạng mẫu — hỏi nhà xe trước publish;
+và đường lên 100%: generate_questions → create_form (đúng flow onboard). Vòng "tri thức tới →
+bot theo kịp" giờ chạy trọn bằng client thật, không script.
+
 ## Builder thật duyệt residual + tự cảnh giác dữ liệu mẫu (r62)
 
 2 review payment (từ seed kit r59) được CHÍNH builder duyệt qua flow 2-bước (get_review_item
