@@ -141,6 +141,15 @@ em nối nhầm endpoint (platform thay op) — client TỰ chẩn đoán ranh q
 đề xuất đúng flow CLAUDE.md (tách 2 server) và cả câu hỏi confirm-policy ("được tự gửi token
 sau preview không?"). Ranh giới phân quyền đọc được từ chính schema tool.
 
+## r84: kb/ content audit (kỹ thuật, không phải duyệt nghiệp vụ DYN-111)
+
+7 kiểm tra tự động: key trùng L0↔L1 (0) · rule trùng nội dung fold (0) · alias entity thuộc
+nhiều entity (0) · orphan L1 topic ngoài template (0) · **7 topic template không có L1 rule**
+(route/pickup/booking/payment/vehicle/transfer/contact) — **đúng thiết kế**: đây là topic
+operator-specific (nội dung từng nhà xe), L1 chỉ có thông lệ chung cho topic nhà xe THƯỜNG
+chưa có riêng (pets/luggage/cancellation/children/parcel/boarding/onboard + fare/schedule
+defaults). Không phát hiện mâu thuẫn nội dung nào cần sửa.
+
 ## r82: audit rank-dependent tests — sạch, khác biệt với guard hotline được ghi rõ
 
 Rà mọi assert thứ-tự trong test (hits[0], rows[0]): cả hai nơi đều dùng corpus TỰ SEED
