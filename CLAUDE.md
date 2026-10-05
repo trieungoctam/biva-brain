@@ -113,6 +113,15 @@ Vòng 2 (sau review) sửa nốt 3 low/medium còn lại: export key thêm nonce
 resource OAuth whitelist chặt (chặn `/mcp/operator/` rỗng + `../`), register hỗ trợ
 `BIVA_OAUTH_REGISTRATION_SECRET`, consent hiển thị client_id. Ghi hướng dẫn trong runbook.
 
+## Fix validator được người-dùng-thật xác nhận (r61)
+
+Rebuild stack với fix r60 (giờ CÓ [[id]] là tri thức, giá luôn chặn) rồi cho CÙNG AI builder
+viết lại system_prompt: nó GIỮ được cả hai mốc giờ ("mở cửa 6:00-22:00" + "trung chuyển 5:00-22:00",
+mỗi mốc kèm đúng [[id]] item nguồn) — bản v3 trước đó buộc bỏ vì HARDCODED_DATA. DB verify
+độc lập: system_prompt v4 valid, chứa "6:00-22:00". Builder còn tự nêu tiếp: item "khởi hành
+21:30" thuộc nhóm tuyến chứ không phải mục Lịch chạy nên nó KHÔNG ghi giờ đó vào prompt —
+phân biệt chủ đề đúng; và gợi ý dọn item chó-mèo trùng key rỗng.
+
 ## AI builder THẬT build trọn bot (r59, 05/10) — LUẬN ĐIỂM SẢN PHẨM ĐƯỢC CHỨNG MINH
 
 Cho claude CLI prompt build_bot (nội dung prompt MCP, không kèm kiến thức nội bộ) + 7 tool,
