@@ -31,13 +31,15 @@ def fold_key(k: str) -> str:
     return ".".join(_fold(seg) for seg in k.split("."))
 
 
-def recall(api: str, token: str, operator: str, question: str, top: int) -> list[dict]:
+def recall(api: str, token: str, operator: str, question: str, top: int, valid_at: str = "") -> list[dict]:
+    args = {"query": question, "max_tokens": 4000}
+    if valid_at:
+        args["valid_at"] = valid_at  # bot thật lấy từ ngữ cảnh hội thoại — golden ghi rõ cột 3
     req = urllib.request.Request(
         f"{api.rstrip('/')}/mcp/operator/{operator}/",
         data=json.dumps({
             "jsonrpc": "2.0", "id": 1, "method": "tools/call",
-            "params": {"name": "recall_knowledge",
-                       "arguments": {"query": question, "max_tokens": 4000}},
+            "params": {"name": "recall_knowledge", "arguments": args},
         }).encode(),
         headers={"Authorization": f"Bearer {token}",
                  "Content-Type": "application/json",
@@ -85,7 +87,7 @@ def main() -> None:
             print(f"? [{i}] thiếu key_du_kien — CSV cần quote câu chứa dấu phẩy")
         # Tập hợp lệ: "a | b" — pass nếu BẤT KỲ key nào khớp (r75: câu nhiều đáp án hợp lệ)
         wants = [fold_key(k.strip()) for k in raw_want.split("|") if k.strip()]
-        hits = recall(a.api, a.token, a.operator, q, a.top)
+        hits = recall(a.api, a.token, a.operator, q, a.top, (r.get("valid_at") or "").strip())
         got_keys = [fold_key(h.get("key") or "") for h in hits]
         ok = any(w in got_keys for w in wants)
         passed += ok

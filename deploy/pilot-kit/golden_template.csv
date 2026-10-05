@@ -1,17 +1,19 @@
-cau_hoi,key_du_kien
-Nhà xe có nhận chó mèo không?,pets.cho_meo
-Hành lý xách tay được mang bao nhiêu kg?,luggage.mien_phi
-Đặt vé qua kênh nào?,booking.kenh_dat
-Giữ chỗ được bao lâu?,booking.giu_cho
-Có đón tận nơi không?,pickup.don_tan_noi
-Chuyển khoản số tài khoản nào?,payment.tai_khoan
-Xe chạy những tuyến nào?,route.danh_sach_tuyen
-Xe có dừng dọc đường không?,route.diem_dung
+cau_hoi,key_du_kien,valid_at
+Nhà xe có nhận chó mèo không?,pets.cho_meo,
+Hành lý xách tay được mang bao nhiêu kg?,luggage.mien_phi,
+Đặt vé qua kênh nào?,booking.kenh_dat,
+Giữ chỗ được bao lâu?,booking.giu_cho,
+Có đón tận nơi không?,pickup.don_tan_noi,
+Chuyển khoản số tài khoản nào?,payment.tai_khoan,
+Xe chạy những tuyến nào?,route.danh_sach_tuyen,
+Xe có dừng dọc đường không?,route.diem_dung,
 "Xe gì, có wifi không?",vehicle.loai_xe
-Hotline của nhà xe?,contact.hotline
-Trung chuyển ở Đà Lạt thế nào?,transfer.trung_chuyen | route.danh_sach_tuyen
-Thanh toán hình thức gì?,payment.hinh_thuc
-Văn phòng ở đâu?,pickup.van_phong
-Giá vé giường nằm Sài Gòn Đà Lạt bao nhiêu?,fare.sai_gon_da_lat.giuong_nam
-Giá ghế ngồi đi Phan Thiết?,fare.sai_gon_phan_thiet.ghe_ngoi
-Xe 7 giờ sáng thứ 2 4 6 chạy tuyến nào?,schedule.sai_gon_da_lat.0730
+Hotline của nhà xe?,contact.hotline,
+Trung chuyển ở Đà Lạt thế nào?,transfer.trung_chuyen | route.danh_sach_tuyen,
+Thanh toán hình thức gì?,payment.hinh_thuc,
+Văn phòng ở đâu?,pickup.van_phong,
+Giá vé giường nằm Sài Gòn Đà Lạt bao nhiêu?,fare.sai_gon_da_lat.giuong_nam,
+Giá ghế ngồi đi Phan Thiết?,fare.sai_gon_phan_thiet.ghe_ngoi,
+Xe 7 giờ sáng thứ 2 4 6 chạy tuyến nào?,schedule.sai_gon_da_lat.0730,
+Tết đi Đà Lạt ngày 05/02/2027 giá giường nằm bao nhiêu?,fare.sai_gon_da_lat.giuong_nam.tu_2027_02_04_den_2027_02_12,2027-02-05
+"""Ngày 20/10 giá giường nằm Sài Gòn Đà Lạt?""",fare.sai_gon_da_lat.giuong_nam,2026-10-20
