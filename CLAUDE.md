@@ -113,6 +113,14 @@ Vòng 2 (sau review) sửa nốt 3 low/medium còn lại: export key thêm nonce
 resource OAuth whitelist chặt (chặn `/mcp/operator/` rỗng + `../`), register hỗ trợ
 `BIVA_OAUTH_REGISTRATION_SECRET`, consent hiển thị client_id. Ghi hướng dẫn trong runbook.
 
+## r66: dọn item trùng đúng hướng — trích dẫn theo, stale theo, builder theo
+
+Retract obs trùng (c83ea581 — bản consolidate gom từ chính sách, không phải bản chính) →
+system_prompt trích nó bị STALE_CITATION → builder TỰ sửa: bỏ cite retracted, giữ [[7b80cb35]]
+(bản chính sách chính), save, validate valid, export snapshot v5, gate lại 4/5 (chỉ tests —
+ranh giới GEMINI đúng). Chuỗi "xóa tri thức → trích dẫn theo đó stale → bot theo kịp" khép
+trọn qua client thật. Golden pilot1 hoàn chỉnh: 12/13 = 92% top-5 ĐẠT.
+
 ## r65: pilot1 chạm "gate trừ tests" — chuỗi stale→refresh chạy qua client thật
 
 Nạp cancellation → builder: TỪ CHỐI bản không-dấu (em nạp nhầm ASCII) và khuyên "chọn B:
