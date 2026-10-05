@@ -37,6 +37,20 @@ Giá/lịch là topic rủi ro cao (fare/schedule) → vào **review queue chờ
 `get_coverage` xem độ phủ mục bắt buộc → đủ thì chạy prompt `build_bot` → `run_tests` →
 `check_release_gate` → `request_publish`.
 
+## Đường cong recall đo được (05/10, pilot1 đầy đủ, keyword-mode)
+
+| top-k | recall |
+|---|---|
+| 1 | 14/16 = 88% |
+| 3 | 15/16 = 94% |
+| 5 | 15/16 = 94% |
+| 10 | 15/16 = 94% |
+
+Plateau tại top-3: mọi câu (trừ hotline keyword-mode, có CI guard semantic) nằm trong top-3,
+14/16 đúng rank-1. 2 miss top-1: hotline (biết) + trung chuyển (top1 = item tuyến Đà Lạt —
+cũng là đáp án hợp lệ, câu hỏi calibration của golden, không hẳn lỗi xếp hạng). Đây là
+baseline để so khi có golden THẬT của nhà xe.
+
 ## Đo recall trên golden set (DYN-112)
 
 `golden_template.csv` (cau_hoi, key_du_kien — quote câu chứa dấu phẩy) + `golden.py`:
