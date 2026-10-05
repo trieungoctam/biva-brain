@@ -83,14 +83,15 @@ def main() -> None:
         raw_want = (r.get("key_du_kien") or "").strip()
         if not raw_want:
             print(f"? [{i}] thiếu key_du_kien — CSV cần quote câu chứa dấu phẩy")
-        want = fold_key(raw_want)
+        # Tập hợp lệ: "a | b" — pass nếu BẤT KỲ key nào khớp (r75: câu nhiều đáp án hợp lệ)
+        wants = [fold_key(k.strip()) for k in raw_want.split("|") if k.strip()]
         hits = recall(a.api, a.token, a.operator, q, a.top)
         got_keys = [fold_key(h.get("key") or "") for h in hits]
-        ok = want in got_keys
+        ok = any(w in got_keys for w in wants)
         passed += ok
         mark = "✓" if ok else "✗"
         best = hits[0].get("key", "-") if hits else "(không có kết quả)"
-        print(f"{mark} [{i}/{len(rows)}] {q[:60]}  muốn={r.get('key_du_kien')}  top1={best}")
+        print(f"{mark} [{i}/{len(rows)}] {q[:60]}  muốn={wants[0]}{' (+%d)' % (len(wants)-1) if len(wants) > 1 else ''}  top1={best}")
 
     rate = passed / len(rows)
     verdict = "ĐẠT" if rate >= a.pass_rate else "KHÔNG ĐẠT"

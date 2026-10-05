@@ -41,7 +41,7 @@ Giá/lịch là topic rủi ro cao (fare/schedule) → vào **review queue chờ
 
 | top-k | recall |
 |---|---|
-| 1 | 14/16 = 88% |
+| 1 | 15/16 = 94% (với kỳ vọng tập cho câu đa-đáp-án) · 14/16 = 88% (kỳ vọng đơn) |
 | 3 | 15/16 = 94% |
 | 5 | 15/16 = 94% |
 | 10 | 15/16 = 94% |
