@@ -133,6 +133,14 @@ ORDER BY published_at DESC LIMIT 3;` — bản mong muốn đang `published`.
 
 ---
 
+## Chaos + SLO tái kiểm chứng trên HEAD cuối (05/10)
+
+Postgres chết 12s trên binary có ĐỦ scheduler task mới (purge_operations, expire_forms):
+health 503 → 503 → 503 như cũ, không container restart, scheduler mất lock → tái tuyển,
+worker claim lỗi WARNING sống tiếp; DB về → job ping mới `done` ngay. SLO trên HEAD
+(60 lượt/tool): recall p95 **15,1ms** (mục tiêu 150), pack 5,1ms, validate 4,3ms —
+không suy giảm so với mốc r11 (8,8ms — chênh lệch trong nhiễu đo đạc, cùng bậc bậc lớn).
+
 ## Chaos: postgres chết giữa vận hành (đã kiểm chứng 02/10)
 
 `docker stop postgres` 15s rồi start lại:
