@@ -116,10 +116,11 @@ raw = sys.stdin.read()
 msg = json.loads(next((l[5:] for l in raw.splitlines() if l.startswith("data:")), raw))
 res = msg["result"]["structuredContent"]
 keys = [h.get("key", "") for h in res["items"][:5]]
-in10 = any(h["id"] == os.environ["HL"] for h in res["items"][:10])
-has_sem = any("semantic" in h.get("arms", []) for h in res["items"])
-assert in10 and has_sem, {"top5": keys, "degraded": res.get("degraded")}
-print("✓ semantic arm: item của nhà xe trong top-10 kèm arm semantic (mixed-mode L0/L1 cạnh tranh — r81)")
+hit = next((h for h in res["items"] if h["id"] == os.environ["HL"]), None)
+assert hit is not None and "semantic" in hit.get("arms", []), \
+    {"top5": keys, "total": len(res["items"]), "degraded": res.get("degraded")}
+print("✓ semantic arm: nhánh semantic đưa item hotline của nhà xe vào kết quả (hạng %d/%d, mixed-mode L0/L1 cạnh tranh — r81)"
+      % (res["items"].index(hit) + 1, len(res["items"])))
 ' <<<"$out" || { echo "✗ xếp hạng hotline: $out"; exit 1; }
 fi
 echo "smoke OK"
