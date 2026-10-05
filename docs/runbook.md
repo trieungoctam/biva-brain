@@ -133,6 +133,12 @@ ORDER BY published_at DESC LIMIT 3;` — bản mong muốn đang `published`.
 
 ---
 
+## SLO sau tsQuery hour-pad (r74)
+
+Regex giờ-tự-nhiên chạy mỗi recall query: p95 **10,6ms** (trước 15,1ms — trong nhiễu, không
+hồi quy; thậm chí nhanh hơn vì cache ấm). Chuỗi SLO: r11 8,8ms → r67 15,1ms → r74 10,6ms —
+đều << 150ms mục tiêu, cùng bậc bậc lớn.
+
 ## Chaos + SLO tái kiểm chứng trên HEAD cuối (05/10)
 
 Postgres chết 12s trên binary có ĐỦ scheduler task mới (purge_operations, expire_forms):
