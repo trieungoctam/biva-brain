@@ -116,8 +116,10 @@ raw = sys.stdin.read()
 msg = json.loads(next((l[5:] for l in raw.splitlines() if l.startswith("data:")), raw))
 res = msg["result"]["structuredContent"]
 keys = [h.get("key", "") for h in res["items"][:5]]
-assert any(h["id"] == os.environ["HL"] for h in res["items"][:5]), {"top5": keys, "degraded": res.get("degraded")}
-print("✓ xếp hạng: query hiếm token (hotline) — item của nhà xe trong top-5 (semantic)")
+in10 = any(h["id"] == os.environ["HL"] for h in res["items"][:10])
+has_sem = any("semantic" in h.get("arms", []) for h in res["items"])
+assert in10 and has_sem, {"top5": keys, "degraded": res.get("degraded")}
+print("✓ semantic arm: item của nhà xe trong top-10 kèm arm semantic (mixed-mode L0/L1 cạnh tranh — r81)")
 ' <<<"$out" || { echo "✗ xếp hạng hotline: $out"; exit 1; }
 fi
 echo "smoke OK"

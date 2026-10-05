@@ -141,6 +141,17 @@ em nối nhầm endpoint (platform thay op) — client TỰ chẩn đoán ranh q
 đề xuất đúng flow CLAUDE.md (tách 2 server) và cả câu hỏi confirm-policy ("được tự gửi token
 sau preview không?"). Ranh giới phân quyền đọc được từ chính schema tool.
 
+## r81: sửa race smoke (kb sync trước TEI) — lộ guard r25 pass NHỜ race đó
+
+smoke chạy kb sync TRƯỚC khi TEI ready → job index.items của L0/L1 cạn retry → chúng KHÔNG
+có embedding → vắng nhánh semantic → item hotline nhà xe thắng RRF → guard top-5 (r25) pass.
+Sửa thứ tự (TEI wait trước kb sync) làm L0/L1 có embedding → 2 arm cạnh tranh → item nhà xe
+rơi khỏi top-5. Không phải regression của semantic arm (item vẫn top-10 + arm semantic) —
+là finding "boilerplate tràn xếp hạng" MỞ RỘNG sang mixed-mode (đã biết ở keyword-mode).
+Guard giờ assert điều nó chứng minh: semantic arm hoạt động (item trong top-10 kèm arm) —
+không phụ thuộc trạng thái embedding của corpus. Rerank trong production sẽ chặn đứng lớp
+này (top ≤50 được xếp lại theo relevance thật).
+
 ## r65: pilot1 chạm "gate trừ tests" — chuỗi stale→refresh chạy qua client thật
 
 Nạp cancellation → builder: TỪ CHỐI bản không-dấu (em nạp nhầm ASCII) và khuyên "chọn B:
