@@ -525,7 +525,7 @@ func (s *Server) addReleaseTools(srv *mcp.Server, operatorID string) {
 				channel = "zalo"
 			}
 			rep, err := release.Gate(ctx, s.db, operatorID, channel,
-				s.template.Artifacts.Required, s.topicIDs())
+				s.template.Artifacts.Required, s.requiredTopicIDs())
 			if err != nil {
 				return nil, gateOut{}, internal("check_release_gate", err)
 			}
@@ -593,7 +593,7 @@ func (s *Server) addPublishTools(srv *mcp.Server, operatorID string) {
 			subject := confirm.Subject("request_publish", operatorID, channel, stage)
 			if in.ConfirmToken == "" {
 				gate, err := release.Gate(ctx, s.db, operatorID, channel,
-					s.template.Artifacts.Required, s.topicIDs())
+					s.template.Artifacts.Required, s.requiredTopicIDs())
 				if err != nil {
 					return nil, publishOut{}, internal("request_publish", err)
 				}
@@ -613,7 +613,7 @@ func (s *Server) addPublishTools(srv *mcp.Server, operatorID string) {
 				return nil, publishOut{}, err
 			}
 			id, status, err := release.Publish(ctx, s.db, operatorID, channel, stage, p.Actor(),
-				s.template.Artifacts.Required, s.topicIDs())
+				s.template.Artifacts.Required, s.requiredTopicIDs())
 			if errors.Is(err, release.ErrGateBlocked) {
 				return nil, publishOut{}, err
 			}

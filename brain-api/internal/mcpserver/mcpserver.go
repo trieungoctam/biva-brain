@@ -65,6 +65,19 @@ func (s *Server) topicIDs() []string {
 	return ids
 }
 
+// requiredTopicIDs: CHỈ topic bắt buộc — gate phát hành kiểm "coverage mục bắt buộc 100%",
+// truyền topicIDs() đủ 16 topic (gồm khuyến nghị) từng khiến gate chặn cả khi đã đủ 5/5
+// (AI builder thật phát hiện khi duyệt trọn dữ liệu pilot mẫu, r64).
+func (s *Server) requiredTopicIDs() []string {
+	var ids []string
+	for _, t := range s.topics {
+		if t.Required {
+			ids = append(ids, t.ID)
+		}
+	}
+	return ids
+}
+
 // topicGuide: "route (Tuyến & điểm dừng), fare (Giá vé), …" — đưa vào mô tả tool để AI chọn đúng topic.
 func (s *Server) topicGuide() string {
 	parts := make([]string, len(s.topics))

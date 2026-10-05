@@ -504,3 +504,74 @@ func TestCreateFormRejectsInvalidTopic(t *testing.T) {
 		t.Fatal("không được tạo form khi topic sai")
 	}
 }
+
+// (r64 AI builder phát hiện) Gate chỉ kiểm mục BẮT BUỘC: truyền topicIDs() đủ 16 topic
+// (gồm khuyến nghị) từng khiến gate chặn dù đã 5/5 required.
+func TestGateUsesRequiredTopicsOnly(t *testing.T) {
+	f := setup(t)
+	ctx := context.Background()
+	// Setup đủ điều kiện gate trừ coverage: artifacts + item MỖI topic required + test pass.
+	bot := f.opA + ":zalo"
+	if _, err := f.pool.Exec(ctx, `INSERT INTO bots (id, operator_id, channel) VALUES ($1, $2, 'zalo')`, bot, f.opA); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { f.pool.Exec(ctx, `DELETE FROM releases WHERE operator_id = $1`, f.opA) })
+	req := s0Required(t, f)
+	for _, topic := range req {
+		f.pool.Exec(ctx, `INSERT INTO items (layer, operator_id, kind, topic, text, status)
+			VALUES (2, $1, 'policy', $2, 'nội dung', 'active')`, f.opA, topic)
+	}
+	var snap string
+	f.pool.QueryRow(ctx, `INSERT INTO snapshots (bot_id, operator_id, version, artifact_versions,
+		definition, created_by) VALUES ($1, $2, 1, '{}', '{}', 't') RETURNING id::text`, bot, f.opA).Scan(&snap)
+	f.pool.Exec(ctx, `INSERT INTO test_runs (operator_id, bot_channel, snapshot_id, total, passed, report)
+		VALUES ($1, 'zalo', $2::uuid, 1, 1, '[]')`, f.opA, snap)
+
+	// Gate với CHỈ required topics → coverage pass (đủ item mỗi required, không cần recommended).
+	s, err := connect(t, f.url+"/mcp/operator/"+f.opA+"/", f.builderTok)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	isErr, out, raw := call(t, s, "check_release_gate", map[string]any{})
+	_ = raw
+	_ = isErr
+	// Gate ĐẠT khi đủ mọi mục required dù KHÔNG có item nào cho topic khuyến nghị —
+	// trước fix, coverage tính trên 16 topic nên luôn chặn (r64).
+	if out["passed"] != true {
+		t.Fatalf("gate phải ĐẠT khi đủ required: %+v", out)
+	}
+}
+
+// s0Required: artifact bắt buộc valid để qua nhánh artifact của gate.
+func s0Required(t *testing.T, f *fixture) []string {
+	t.Helper()
+	ctx := context.Background()
+	for _, kind := range []string{"system_prompt", "faq", "persona", "tool_spec", "fallbacks"} {
+		if _, err := f.pool.Exec(ctx, `INSERT INTO bot_artifacts (bot_id, operator_id, kind, version,
+			content, content_hash, status, author) VALUES ($1, $2, $3, 1, 'x', 'h', 'valid', 't')`,
+			f.opA+":zalo", f.opA, kind); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Lấy danh sách topic required từ kb template qua tool get_bot_spec của chính server.
+	s, err := connect(t, f.url+"/mcp/operator/"+f.opA+"/", f.builderTok)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	_, out, _ := call(t, s, "get_bot_spec", map[string]any{"channel": "zalo"})
+	var req []string
+	if secs, ok := out["sections"].([]any); ok {
+		for _, sec := range secs {
+			m, _ := sec.(map[string]any)
+			if m["level"] == "required" {
+				req = append(req, m["topic"].(string))
+			}
+		}
+	}
+	if len(req) == 0 {
+		t.Fatal("không lấy được topic required")
+	}
+	return req
+}
