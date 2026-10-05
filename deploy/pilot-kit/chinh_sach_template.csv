@@ -5,6 +5,7 @@ pickup,pickup.van_phong,"Văn phòng: 123 Nguyễn Huệ, Quận 1, mở cửa 6
 pickup,pickup.don_tan_noi,"Đón tận nơi miễn phí trong nội thành Sài Gòn, có mặt trước 30 phút"
 booking,booking.kenh_dat,Đặt vé qua Zalo hotline 1900 6067 hoặc tại văn phòng
 booking,booking.giu_cho,"Giữ chỗ không cọc trong 2 tiếng, quá 2 tiếng tự nhả ghế"
+cancellation,cancellation.hoan_ve,"Hoàn vé trước 24 giờ được 90%, sau đó 50% phí"
 payment,payment.hinh_thuc,Thanh toán chuyển khoản hoặc tiền mặt khi lên xe
 payment,payment.tai_khoan,Chuyển khoản Vietcombank 0123456789 - Công ty CP Vận tải
 vehicle,vehicle.loai_xe,Xe giường nằm 40 chỗ có wifi và nước suối miễn phí

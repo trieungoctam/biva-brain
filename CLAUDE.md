@@ -113,6 +113,18 @@ Vòng 2 (sau review) sửa nốt 3 low/medium còn lại: export key thêm nonce
 resource OAuth whitelist chặt (chặn `/mcp/operator/` rỗng + `../`), register hỗ trợ
 `BIVA_OAUTH_REGISTRATION_SECRET`, consent hiển thị client_id. Ghi hướng dẫn trong runbook.
 
+## r65: pilot1 chạm "gate trừ tests" — chuỗi stale→refresh chạy qua client thật
+
+Nạp cancellation → builder: TỪ CHỐI bản không-dấu (em nạp nhầm ASCII) và khuyên "chọn B:
+reject rồi submit lại bản đúng" — tự phê bình chất liệu đầu vào; duyệt bản đúng → gate báo
+system_prompt stale (thông lệ hoàn vé bị thay bởi chính sách riêng) → builder chạy ĐÚNG
+prompt refresh_bot: sửa đúng dòng theo reason, thay thông lệ bằng chính sách kèm [[id]],
+save base_version, validate valid, export snapshot v4. Gate cuối: **4/5 đạt, chỉ chặn
+"tests"** — chính xác ranh giới GEMINI key (run_tests cần LLM). Builder còn phát hiện: 2 item
+trùng trong superseded_by (nói rõ bản nào nên dọn), chính sách mới phủ HOÀN vé nhưng không
+ĐỔI vé (bot sẽ chuyển nhân viên — đúng), và hỏi có muốn chạy run_tests không (chờ key).
+Kit template r65 bổ dòng cancellation (từng thiếu).
+
 ## Builder tự hoàn tất bot khi tri thức tới (r63) — vòng process_update khép qua client thật
 
 Payment items active → builder TỰ: đọc artifact hiện có, bổ sung 2 câu faq + phần system_prompt
