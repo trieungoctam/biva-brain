@@ -18,7 +18,9 @@ wait_for() { # mô tả, số giây, lệnh...
 
 services=(postgres redis s3 migrate brain-api ai-worker)
 [[ "${SMOKE_SKIP_TEI:-}" == 1 ]] || services+=(tei-embed)
-$C up -d --build "${services[@]}"
+  export BIVA_RERANK_URL=http://tei-rerank:80   # compose đọc env host → brain-api
+  RERANK_ARGS="--profile rerank"
+$C up -d --build $RERANK_ARGS "${services[@]}"
 
 wait_for "brain-api /health/ready" 120 curl -fsS "$API/health/ready"
 wait_for "S3 (SeaweedFS) trả lời ListBuckets" 60 bash -c "curl -sS 127.0.0.1:8333/ | grep -q ListAllMyBucketsResult"
@@ -72,6 +74,11 @@ if [[ "${SMOKE_SKIP_TEI:-}" != 1 ]]; then
     | python3 -c 'import json,sys; print(len(json.load(sys.stdin)[0]))')
   [[ "$dim" == 1024 ]] && echo "✓ embedding 1024 chiều (khớp items.embedding)" || { echo "✗ dim=$dim"; exit 1; }
 
+  # Rerank (S3.1.3): đợi model, rồi verify recall_knowledge không còn báo degraded-rerank.
+  wait_for "TEI rerank (bge-reranker-v2-m3)" 900 curl -fsS 127.0.0.1:8082/rerank \
+    -H 'Content-Type: application/json' \
+    -d '{"query":"xe","texts":["xe giường nằm","vé máy bay"]}' 
+
   # Job index.items: ai-worker → TEI thật → search_text + embedding; tìm được bằng query không dấu.
   psql_q() { $C exec -T postgres psql -U biva -d biva -Atc "$1"; }
   item=$(psql_q "INSERT INTO items (layer, operator_id, kind, topic, text, status)
@@ -114,5 +121,18 @@ keys = [h.get("key", "") for h in res["items"][:5]]
 assert any(h["id"] == os.environ["HL"] for h in res["items"][:5]), {"top5": keys, "degraded": res.get("degraded")}
 print("✓ xếp hạng: query hiếm token (hotline) — item của nhà xe trong top-5 (semantic)")
 ' <<<"$out" || { echo "✗ xếp hạng hotline: $out"; exit 1; }
+
+  # Rerank sống (S3.1.3): query phải KHÔNG báo degraded-rerank (budget 80ms có fallback,
+  # nhưng trên CI model đã ready nên phải rerank thật hoặc bỏ qua không lỗi).
+  out=$(mcp '{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"recall_knowledge","arguments":{"query":"giá vé giường nằm đi đà lạt","max_tokens":2000}}}')
+  R=$API python3 -c '
+import json, os, sys
+raw = sys.stdin.read()
+msg = json.loads(next((l[5:] for l in raw.splitlines() if l.startswith("data:")), raw))
+res = msg["result"]["structuredContent"]
+deg = res.get("degraded") or []
+assert not any("rerank" in d.lower() for d in deg), {"degraded": deg}
+print("✓ rerank: không degraded (bge-reranker-v2-m3 sống, %d hits)" % len(res["items"]))
+' <<<"$out" || { echo "✗ rerank degraded: $out"; exit 1; }
 fi
 echo "smoke OK"
